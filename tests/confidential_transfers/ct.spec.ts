@@ -49,9 +49,7 @@ describe('Confidential Transfers', function ()  {
 
         aliceDenomHash = getDenomToSignEthers('usei');
         aliceSignedDenom = await alice.evmWallet.wallet.signMessage(aliceDenomHash);
-        console.log('Alice signed denom' , aliceSignedDenom);
         bobDenomHash = getDenomToSignEthers('usei');
-        console.log('All initialized');
         rpcClient = new EvmRpcClient(admin.evmRpcEndpoint);
     });
 
@@ -96,13 +94,10 @@ describe('Confidential Transfers', function ()  {
         expect(account.decryptable_available_balance).to.be.a("string");
     });
 
-    it.skip('Users can decrypt balance', async () =>{
+    it('Users can decrypt balance', async () =>{
         const account = await queryAccountEthers(alice.evmAddress, 'usei', alice.evmWallet.wallet) as CtAccount;
         const decryptedBalance = await decryptAvailableBalanceEthers(aliceSignedDenom, account);
         expect(decryptedBalance.toString()).to.be.eq('0');
-
-        const allDecryptedField = await decryptAccountEthers(aliceSignedDenom, account, true);
-        console.log(allDecryptedField);
     });
 
     it.skip('Wrong private keys dont decrypt available balance', async () =>{
@@ -146,7 +141,6 @@ describe('Confidential Transfers', function ()  {
         expect(allDecryptedField.pendingBalanceCreditCounter).to.be.a("number");
         expect(allDecryptedField.availableBalance).to.be.a("string");
         const publicKey = (await alice.seiWallet.wallet.getAccounts())[0];
-        console.log(publicKey.pubkey);
     });
 
     it('Uninitialized cant deposit tokens', async () =>{
@@ -176,11 +170,6 @@ describe('Confidential Transfers', function ()  {
 
     it('Alice can apply pending balances', async () =>{
         await applyPendingBalanceEthers(alice.evmAddress, 'usei', aliceSignedDenom, alice.evmWallet.wallet);
-        const account = await queryAccountEthers(alice.evmAddress, 'usei', alice.evmWallet.wallet) as CtAccount;
-
-        // const decryptedAccount = await decryptAccountEthers(aliceSignedDenom, account, true);
-        // expect(decryptedAccount).to.be.an("object");
-        // expect(decryptedAccount.decryptableAvailableBalance).to.be.eq(1000000n);
     });
 
     it('Alice can send tokens to initialized Bob', async () => {
@@ -188,10 +177,11 @@ describe('Confidential Transfers', function ()  {
         const tx = await transferEthers(alice.evmAddress, bob.evmAddress, 'usei', 500000, aliceSignedDenom, alice.evmWallet.wallet);
         console.log(tx);
         console.log('Finished transferring ethers');
+        console.log('Trying to decrypt the balance');
         const bobAccount = await queryAccountEthers(bob.evmAddress, 'usei', bob.evmWallet.wallet) as CtAccount;
         expect(bobAccount.pending_balance_credit_counter).to.be.eq(1);
-       //  const decrypted = await decryptPendingBalancesEthers(bobSignedDenom, bobAccount);
-        // console.log(decrypted);
+        const decrypted = await decryptPendingBalancesEthers(bobSignedDenom, bobAccount);
+        console.log(decrypted);
     });
 
     let transferBlock: number;
@@ -215,45 +205,35 @@ describe('Confidential Transfers', function ()  {
         const aliceBalance = await alice.evmWallet.queryBalance();
         const tx = await withdrawEthers(alice.evmAddress, 'usei', 100000, aliceSignedDenom, alice.evmWallet.wallet);
         const aliceAfterBalance = await alice.evmWallet.queryBalance();
-        console.log(tx);
         await closeAccountEthers(alice.evmAddress, 'usei', aliceSignedDenom, alice.evmWallet.wallet);
         const account = await queryAccountEthers(alice.evmAddress, 'usei', alice.evmWallet.wallet) as CtAccount;
-        console.log(account);
-    });
-
-    it('Admin can close account with no balance in it', async () =>{
-
-    });
-
-    it('Given that there are two accounts available, closing account doesnt effect the other account', async () =>{
-
     });
 
     let transferBlockHeight = 13362;
-    it.only('Can query the block on transfer', async () =>{
+    it.skip('Can query the block on transfer', async () =>{
         const blockInfo = await rpcClient.getBlockByNumber(ethers.toQuantity(transferBlockHeight), true);
         console.log(blockInfo);
     });
 
     let txHash = "0xf0538e11dd03463d9b751aaa17d154a8b8735705642f1b5f560bb578f868b109";
     let blockHash = "0x958214c9c760081033a56ece03622236468de8e685069f570e8bf2eccaad8d2d";
-    it.only('Can query the block with hash', async () => {
+    it.skip('Can query the block with hash', async () => {
         const blockInfo = await rpcClient.getBlockByHash(blockHash, true);
         console.log(blockInfo);
     });
 
-    it.only('Can query with tx receipt', async () =>{
+    it.skip('Can query with tx receipt', async () =>{
         const txReceipt = await rpcClient.getTransactionReceipt(txHash);
         console.log(txReceipt);
     });
 
-    it.only('Can debugtrace block in it', async () =>{
+    it.skip('Can debugtrace block in it', async () =>{
         const debugTraceTx = await rpcClient.debugTraceTransaction(txHash, {tracer: "callTracer"});
         console.log(debugTraceTx);
     });
 
     it.skip('Can trace the call', async () =>{
-        const trace = await rpcClient.debugTraceCall()
+        const trace = await rpcClient.debugTraceCall(txHash)
     });
 
 })
