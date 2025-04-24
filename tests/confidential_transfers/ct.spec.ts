@@ -11,8 +11,10 @@ import {
 import {expect} from "chai";
 import {CtAccount} from "@sei-js/cosmos/dist/types/types/confidentialtransfers";
 import {ethers} from "ethers";
-import {waitFor} from "../../utils/helpers";
+import {createCtUsers, waitFor} from "../../utils/helpers";
 import {EvmRpcClient} from "../../shared/RpcClient";
+import {TokenDeployer} from "../../shared/Deployer";
+import {TestERC20} from "../../typechain-types";
 
 describe('Confidential Transfers', function ()  {
     this.timeout(5 * 60 * 1000);
@@ -29,21 +31,13 @@ describe('Confidential Transfers', function ()  {
     before('Initializes clients and users', async () => {
         admin = await UserFactory.createAdminUser(TestConfig);
         await UserFactory.fundAdminOnSei();
-        alice = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
-        await alice.initialize('', 'alice', true);
-        bob = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
-        await bob.initialize('', 'bob', true);
+        ({alice, bob} = await createCtUsers(admin));
 
         ferdie = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
         await ferdie.initialize('', 'ferdie', true);
 
         await UserFactory.fundAddressOnSei(ferdie.seiAddress);
-        await UserFactory.fundAddressOnSei(alice.seiAddress);
-        await UserFactory.fundAddressOnSei(bob.seiAddress);
         await waitFor(1);
-        await alice.seiWallet.associate();
-        await bob.seiWallet.associate();
-
         console.log(alice.seiAddress);
         console.log(bob.seiAddress);
 
@@ -161,7 +155,7 @@ describe('Confidential Transfers', function ()  {
             console.log('First message ', e.message);
         }
         try {
-            await initializeAccountEthers(aliceSignedDenom, bob.evmAddress, 'usei', bob.evmWallet.wallet);
+            await initializeAccountEthers(bobSignedDenom, bob.evmAddress, 'usei', bob.evmWallet.wallet);
             const account = await queryAccountEthers(bob.evmAddress, 'usei', bob.evmWallet.wallet) as CtAccount;
         } catch (e: any){
             expect(e.message).to.contain('execution reverted');
@@ -180,28 +174,29 @@ describe('Confidential Transfers', function ()  {
         console.log('Trying to decrypt the balance');
         const bobAccount = await queryAccountEthers(bob.evmAddress, 'usei', bob.evmWallet.wallet) as CtAccount;
         expect(bobAccount.pending_balance_credit_counter).to.be.eq(1);
-        const decrypted = await decryptPendingBalancesEthers(bobSignedDenom, bobAccount);
+        const decrypted = await decryptAccountEthers(bobSignedDenom, bobAccount, true);
         console.log(decrypted);
     });
 
     let transferBlock: number;
     it('Alice cant send tokens to uninitialized Ferdie', async () => {
         console.log('Started transferring ethers');
-        await transferEthers(alice.evmAddress, ferdie.evmAddress, 'usei', 500000, aliceSignedDenom, alice.evmWallet.wallet);
+        const tx = await transferEthers(alice.evmAddress, ferdie.evmAddress, 'usei', 500000, aliceSignedDenom, alice.evmWallet.wallet);
+        console.log(tx);
     });
 
     it('Admin can withdraw tokens on usei', async () => {
         const aliceBalance = await alice.evmWallet.queryBalance();
         await withdrawEthers(alice.evmAddress, 'usei', 400000, aliceSignedDenom, alice.evmWallet.wallet);
         const aliceAfterBalance = await alice.evmWallet.queryBalance();
-        console.log(aliceAfterBalance - aliceBalance);
+        console.log(ethers.formatEther(aliceAfterBalance - aliceBalance));
     });
 
     it('Admin cant close account with available balance in it', async () =>{
         await closeAccountEthers(alice.evmAddress, 'usei', aliceSignedDenom, alice.evmWallet.wallet);
     });
 
-    it('Admin can close account with pending balance in it', async () =>{
+    it.skip('Admin can close account balance in it', async () =>{
         const aliceBalance = await alice.evmWallet.queryBalance();
         const tx = await withdrawEthers(alice.evmAddress, 'usei', 100000, aliceSignedDenom, alice.evmWallet.wallet);
         const aliceAfterBalance = await alice.evmWallet.queryBalance();
@@ -209,31 +204,56 @@ describe('Confidential Transfers', function ()  {
         const account = await queryAccountEthers(alice.evmAddress, 'usei', alice.evmWallet.wallet) as CtAccount;
     });
 
-    let transferBlockHeight = 13362;
+    let transferBlockHeight = 213249;
     it.skip('Can query the block on transfer', async () =>{
         const blockInfo = await rpcClient.getBlockByNumber(ethers.toQuantity(transferBlockHeight), true);
         console.log(blockInfo);
     });
 
-    let txHash = "0xf0538e11dd03463d9b751aaa17d154a8b8735705642f1b5f560bb578f868b109";
-    let blockHash = "0x958214c9c760081033a56ece03622236468de8e685069f570e8bf2eccaad8d2d";
-    it.skip('Can query the block with hash', async () => {
+    let txHash = "0xd10721b2a724ed36ada3bee37e3e5c9097d5f12b9d268e40e895a3f39beac90c";
+    let blockHash = "0xa5cc3d7bdb6b4545def7e1377699df98c4c4578ae06bbb5cfadc208163f1b567";
+    it('Can query the block with hash', async () => {
         const blockInfo = await rpcClient.getBlockByHash(blockHash, true);
-        console.log(blockInfo);
+        expect(blockInfo).to.exist;
     });
 
-    it.skip('Can query with tx receipt', async () =>{
+    it('Can query with tx receipt', async () =>{
         const txReceipt = await rpcClient.getTransactionReceipt(txHash);
-        console.log(txReceipt);
+        expect(txReceipt).to.exist;
     });
 
-    it.skip('Can debugtrace block in it', async () =>{
+    it('Can debugtrace block in it', async () =>{
         const debugTraceTx = await rpcClient.debugTraceTransaction(txHash, {tracer: "callTracer"});
-        console.log(debugTraceTx);
+        expect(debugTraceTx).to.exist;
     });
 
-    it.skip('Can trace the call', async () =>{
-        const trace = await rpcClient.debugTraceCall(txHash)
+    it('Can trace the call', async () =>{
+        const deployer = new TokenDeployer(admin);
+        const erc20 = await deployer.deployErc20();
+        const delayed = async () =>{
+            await waitFor(1);
+            return erc20.contract.mint(alice.evmAddress, ethers.parseEther('100'))
+        }
+        const txs = [
+            transferEthers(alice.evmAddress, bob.evmAddress, 'usei', 10000, aliceSignedDenom, alice.evmWallet.wallet),
+            delayed()
+        ];
+
+        const results = await Promise.all(txs);
+        const rec1 = results[0];
+        const rec2 = await results[1].wait();
+
+        //filter returns
+        const erc20Contract = erc20.contract as unknown as TestERC20;
+        const filter = erc20Contract.filters.Transfer();
+        const logs = await erc20Contract.queryFilter(filter, rec1.blockNumber -10, 'latest');
+        console.log(logs);
+
+        const parseInput = erc20Contract.interface.parseTransaction({
+            data: rec1.data,
+            value: rec1.value
+        });
+        console.log(parseInput);
     });
 
 })

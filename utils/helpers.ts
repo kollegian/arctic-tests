@@ -1,4 +1,4 @@
-import {SeiUser} from "../shared/User";
+import {SeiUser, UserFactory} from "../shared/User";
 import testConfig from "../config/testConfig.json";
 import {Funder} from "../shared/Funder";
 
@@ -32,6 +32,20 @@ export async function associateAllUsers(users: SeiUser[]){
         await Promise.all(userSlice.map(user => user.seiWallet.associate()));
         users = users.slice(150);
     }
+}
+
+export async function createCtUsers(admin: SeiUser){
+    const alice = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
+    await alice.initialize('', 'alice', true);
+    const bob = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
+    await bob.initialize('', 'bob', true);
+
+    await UserFactory.fundAddressOnSei(bob.seiAddress);
+    await UserFactory.fundAddressOnSei(alice.seiAddress);
+
+    await alice.seiWallet.associate();
+    await bob.seiWallet.associate();
+    return {alice, bob};
 }
 
 
