@@ -11,12 +11,23 @@ export class EvmRpcClient {
     }
 
     private async call(method: string, params: any[] = []): Promise<any> {
-        const payload = { jsonrpc: '2.0', id: this.idCounter++, method, params };
-        const resp = await fetch(this.url, {
-            method: 'POST',
+        const payload = { jsonrpc: '2.0', id: this.idCounter, method, params };
+
+        const url     = this.url;
+        const options = {
+            method: 'POST' as const,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-        });
+        };
+
+        // console.log('📡 RPC ▶', url);
+        // console.log('   payload:', payload);
+        // console.log('   options:', {
+        //     method: options.method,
+        //     headers: options.headers,
+        // });
+
+        const resp = await fetch(url, options);
         if (!resp.ok) throw new Error(`RPC HTTP error: ${resp.status} ${resp.statusText}`);
         const json = await resp.json();
         if (json.error) throw new Error(`RPC error: ${json.error.code} ${json.error.message}`);
@@ -117,7 +128,9 @@ export class EvmRpcClient {
 
     async getBlockByNumber(blockTag: string, fullTx: boolean = false): Promise<any> {
         return this.call('eth_getBlockByNumber', [blockTag, fullTx]);
-    }  async getLogs(filter: {
+    }
+
+    async getLogs(filter: {
         fromBlock?: string;
         toBlock?: string;
         address?: string | string[];
@@ -205,4 +218,14 @@ export class EvmRpcClient {
         return this.call('debug_storageRangeAt', [blockHashOrTag, idx, address, startKey, maxResults]);
     }
 
+    async debugTraceByBlockNumber(
+        blockNumber: string,
+        options: Record<string, any> = {}
+    ){
+        return this.call('debug_traceBlockByNumber', [blockNumber, options]);
+    }
+
+    async getBlockReceipts(blockNumber: string) {
+        return this.call('eth_getBlockReceipts', [blockNumber]);
+    }
 }
