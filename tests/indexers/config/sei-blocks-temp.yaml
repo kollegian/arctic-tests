@@ -1,0 +1,23 @@
+version: "3"
+name: sei-blocks-temp
+
+pipeline:
+  source:
+    type: "dataset"
+    name: "sei.raw_blocks"
+    version: "1.0.0"
+    options:
+      start_at: "latest"
+      backfill: true
+
+  destination:
+    type: "postgres"
+    options:
+      connection:
+        host: "localhost"
+        port: 5432
+        database: "your_db"
+        user: "your_user"
+        password: "your_pass"
+      batch_size: 1000
+      create_tables: true

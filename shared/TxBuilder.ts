@@ -1,7 +1,7 @@
 import {TransactionResponse, TransactionReceipt, BigNumberish} from 'ethers';
 import { DeliverTxResponse } from '@cosmjs/stargate';
 import { waitFor } from '../utils/helpers';
-import { EvmRpcClient } from './EvmRpcClient';
+import { EvmRpcClient } from './RpcClient';
 import {SeiUser} from "./User";
 
 /**

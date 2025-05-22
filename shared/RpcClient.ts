@@ -20,13 +20,6 @@ export class EvmRpcClient {
             body: JSON.stringify(payload),
         };
 
-        // console.log('📡 RPC ▶', url);
-        // console.log('   payload:', payload);
-        // console.log('   options:', {
-        //     method: options.method,
-        //     headers: options.headers,
-        // });
-
         const resp = await fetch(url, options);
         if (!resp.ok) throw new Error(`RPC HTTP error: ${resp.status} ${resp.statusText}`);
         const json = await resp.json();

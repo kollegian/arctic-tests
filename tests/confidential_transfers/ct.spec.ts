@@ -3,7 +3,7 @@ import * as TestConfig from "../../config/testConfig.json";
 import {
     applyPendingBalanceEthers, closeAccountEthers, confidentialTransferEthers,
     decryptAccountEthers,
-    decryptAvailableBalanceEthers, decryptPendingBalancesEthers, depositToPrivateBalanceEthers,
+    decryptAvailableBalanceEthers, decryptPendingBalancesEthers,
     getDenomToSignEthers,
     initializeAccountEthers,
     queryAccountEthers, withdrawFromPrivateBalanceEthers,
@@ -165,11 +165,11 @@ describe('Confidential Transfers', function ()  {
 
     it('Alice can apply pending balances', async () =>{
         const aliceAccountPre = await queryAccountEthers(alice.evmAddress, 'usei', alice.evmWallet.wallet) as CtAccount;
-        const alicePreBalance = await decryptAvailableBalanceEthers(aliceSignedDenom, aliceAccountPre, false);
+        const alicePreBalance = await decryptAvailableBalanceEthers(aliceSignedDenom, aliceAccountPre);
         console.log(alicePreBalance);
         await applyPendingBalanceEthers(alice.evmAddress, 'usei', aliceSignedDenom, alice.evmWallet.wallet);
         const aliceAccountAfter = await queryAccountEthers(alice.evmAddress, 'usei', alice.evmWallet.wallet) as CtAccount;
-        const aliceAfterBalance = await decryptAvailableBalanceEthers(aliceSignedDenom, aliceAccountAfter, false);
+        const aliceAfterBalance = await decryptAvailableBalanceEthers(aliceSignedDenom, aliceAccountAfter);
         console.log(aliceAfterBalance);
     });
 
