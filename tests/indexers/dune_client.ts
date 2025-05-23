@@ -9,21 +9,11 @@ export class DuneLocalClient {
   }
 
   async fetchLatestBlockDetails(blockHeight: number){
-    // kick off the query
-    /*const execRes = await this.client.getLatestResult({queryId: 5171960});
-    // wait for it to finish and pull the rows
-    console.log(execRes);*/
-
-    const query_parameters = [
-      QueryParameter.number("Height", blockHeight),
-    ];
-
-    // pass everything as one object
+    console.log('Querying Data from dune')
     const { result } = await this.client.runQuery({
       queryId: DUNE_BLOCK_QUERY,
     });
 
-    console.log(result?.rows);
     return result?.rows;
   }
 

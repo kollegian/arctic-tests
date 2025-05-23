@@ -1,0 +1,17 @@
+{
+  "version": "1",
+  "name": "sei-usdc",
+  "abis": {
+    "usdc": {
+      "path": "./usdcAbi.json"
+    }
+  },
+  "instances": [
+    {
+      "abi": "usdc",
+      "address": "0x3894085ef7ff0f0aedf52e2a2704928d1ec074f1",
+      "startBlock": 148584390,
+      "chain": "sei"
+    }
+  ]
+}
