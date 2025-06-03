@@ -8,8 +8,8 @@ import { coins } from '@cosmjs/amino';
 import { Encoder } from '@sei-js/cosmos/encoding';
 import util from 'node:util';
 import {SigningCosmWasmClient} from '@cosmjs/cosmwasm-stargate';
-import {execCommandAndReturnJson} from "../utils/cliUtils";
-import {waitFor} from "../utils/helpers";
+import {execCommandAndReturnJson} from "./utils/cliUtils";
+import {waitFor} from "./utils/helpers";
 import {Funder} from "./Funder";
 import path from "path";
 import fs from "fs";
@@ -232,6 +232,13 @@ export class UserFactory {
 
     static async fundAddressOnSei(address: string, tokenName = 'usei', amount = '75000000') {
         await this.funder.fundAddressOnSei(address, tokenName, amount);
+    }
+
+    static async createUnassociatedUsers(admin: SeiUser){
+        const user = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
+        await user.initialize('', 'unassocUser', false);
+        await this.fundAddressOnSei(user.seiAddress);
+        return user;
     }
 
     static async createSeiUsers(admin: SeiUser, count: number, recordMnemonics = false): Promise<SeiUser[]> {

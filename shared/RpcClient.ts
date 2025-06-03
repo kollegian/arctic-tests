@@ -1,3 +1,7 @@
+import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
+import {ContractTransactionReceipt, ethers, JsonRpcProvider} from "ethers";
+import {DeliverTxResponse, logs} from "@cosmjs/stargate";
+
 /**
  * Lightweight JSON-RPC client for EVM-compatible chains.
  * Allows direct calls to an HTTP JSON-RPC endpoint without ethers.js.
@@ -5,20 +9,24 @@
 export class EvmRpcClient {
     private url: string;
     private idCounter = 1;
+    private provider: ethers.JsonRpcProvider;
 
-    constructor(url: string) {
+    constructor(url: string, provider: JsonRpcProvider) {
         this.url = url;
+        this.provider = provider;
     }
 
     private async call(method: string, params: any[] = []): Promise<any> {
-        const payload = { jsonrpc: '2.0', id: this.idCounter, method, params };
-
-        const url     = this.url;
+        const payload = {jsonrpc: '2.0', id: this.idCounter, method, params};
+        const url = this.url;
         const options = {
             method: 'POST' as const,
-            headers: { 'Content-Type': 'application/json' },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload),
         };
+        const curlCommand = `curl -X POST '${url}' \
+            -H 'Content-Type: application/json' \
+            -d '${JSON.stringify(payload, null, 2)}'`;
 
         const resp = await fetch(url, options);
         if (!resp.ok) throw new Error(`RPC HTTP error: ${resp.status} ${resp.statusText}`);
@@ -214,11 +222,142 @@ export class EvmRpcClient {
     async debugTraceByBlockNumber(
         blockNumber: string,
         options: Record<string, any> = {}
-    ){
+    ) {
         return this.call('debug_traceBlockByNumber', [blockNumber, options]);
     }
 
     async getBlockReceipts(blockNumber: string) {
         return this.call('eth_getBlockReceipts', [blockNumber]);
+    }
+
+    formLogQuery(receipt: ExecuteResult | ContractTransactionReceipt | DeliverTxResponse, topic: string, address: string) {
+        let logParams = {};
+        if (this.isCosmosReceipt(receipt)) {
+            receipt = receipt as ExecuteResult | DeliverTxResponse;
+            if (address !== '') {
+                logParams = {
+                    fromBlock: ethers.toQuantity(Number(receipt.height) - 1),
+                    toBlock: ethers.toQuantity(Number(receipt.height) + 1),
+                    topics: [topic],
+                    address: address
+                };
+            } else {
+                logParams = {
+                    fromBlock: ethers.toQuantity(Number(receipt.height) - 1),
+                    toBlock: ethers.toQuantity(Number(receipt.height) + 1),
+                    topics: [topic],
+                };
+            }
+            return logParams;
+        }
+        receipt = receipt as ContractTransactionReceipt;
+        logParams = {
+            fromBlock: ethers.toQuantity(Number(receipt.blockNumber) - 1),
+            toBlock: ethers.toQuantity(Number(receipt.blockNumber) + 1),
+            topics: [topic]
+        };
+        return logParams;
+    }
+
+    async findHashFromReceipt(receipt: ExecuteResult | ContractTransactionReceipt | DeliverTxResponse) {
+        if (this.isCosmosReceipt(receipt)) {
+            receipt = receipt as ExecuteResult;
+            return (await this.provider.getBlock(Number(receipt.height)))!.hash;
+        }
+        receipt = receipt as ContractTransactionReceipt;
+        return receipt.blockHash;
+
+    }
+
+    async findHash(blockNumber: number) {
+        return (await this.provider.getBlock(blockNumber))!.hash;
+    }
+
+    async findBlockNumber(receipt: ExecuteResult | ContractTransactionReceipt | DeliverTxResponse) {
+        if (this.isCosmosReceipt(receipt)) {
+            receipt = receipt as ExecuteResult;
+            return receipt.height;
+        }
+        receipt = receipt as ContractTransactionReceipt;
+        return receipt.blockNumber;
+    }
+
+    isCosmosReceipt(receipt: ExecuteResult | ContractTransactionReceipt | DeliverTxResponse) {
+        return !('blobGasPrice' in receipt);
+    }
+
+    formLogQueryForBlock(startBlockNumber: number, endBlockNumber: number, topic: string, address = '') {
+        let logParams;
+        if (address !== '') {
+            logParams = {
+                fromBlock: ethers.toQuantity(startBlockNumber),
+                toBlock: ethers.toQuantity(endBlockNumber),
+                topics: [topic],
+                address: address
+            };
+        } else {
+            logParams = {
+                fromBlock: ethers.toQuantity(startBlockNumber),
+                toBlock: ethers.toQuantity(endBlockNumber),
+                topics: [topic],
+            };
+        }
+        return logParams;
+    }
+
+    async checkAndReturnRpcResultsForBlock(startBlockNumber: number, endBlockNumber: number, endpoint: string, contractAddress: string, topic: string) {
+        if (endpoint.includes('FilterLogs')) {
+            const logParams = this.formLogQueryForBlock(startBlockNumber, endBlockNumber, topic, contractAddress);
+            let transferFilterId;
+            if (endpoint.includes('sei')) {
+                transferFilterId = await this.call('sei_newFilter', [logParams]);
+            } else {
+                transferFilterId = await this.call('eth_newFilter', [logParams]);
+            }
+            return await this.call(endpoint, [transferFilterId]);
+        } else if (endpoint.includes('getLogs')) {
+            const logParams = this.formLogQueryForBlock(startBlockNumber, endBlockNumber, topic, contractAddress);
+            return await this.call(endpoint, [logParams]);
+        } else if (endpoint.includes('Hash')) {
+            const hash = await this.findHash(endBlockNumber);
+            const result = await this.call(endpoint, [hash, true]);
+            return result.transactions;
+        } else {
+            const result = await this.call(endpoint, [ethers.toQuantity(endBlockNumber), true]);
+            return result.transactions;
+        }
+    }
+
+    async sei_newFilter(filter: {}){
+        return await this.call('sei_newFilter', [filter]);
+    }
+
+
+    async checkAndReturnRpcCallResults(syntheticEvent: string,
+                                       receipt: ExecuteResult | ContractTransactionReceipt | DeliverTxResponse,
+                                       topic: string,
+                                       address = ''
+    ) {
+        if (syntheticEvent.includes('FilterLogs')) {
+            const logParams = this.formLogQuery(receipt, topic, address);
+            let transferFilterId;
+            if (syntheticEvent.includes('sei')) {
+                transferFilterId = await this.call('sei_newFilter', [logParams]);
+            } else {
+                transferFilterId = await this.call('eth_newFilter', [logParams]);
+            }
+            return await this.call(syntheticEvent, [transferFilterId]);
+        } else if (syntheticEvent.includes('getLogs')) {
+            const logParams = this.formLogQuery(receipt, topic, address);
+            return await this.call(syntheticEvent, [logParams]);
+        } else if (syntheticEvent.includes('Hash')) {
+            const hash = await this.findHashFromReceipt(receipt);
+            const result = await this.call(syntheticEvent, [hash, true]);
+            return result.transactions;
+        } else {
+            const blockNumber = await this.findBlockNumber(receipt);
+            const result = await this.call(syntheticEvent, [ethers.toQuantity(blockNumber), true]);
+            return result.transactions;
+        }
     }
 }

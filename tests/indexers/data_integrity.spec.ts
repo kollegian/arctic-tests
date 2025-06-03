@@ -19,6 +19,7 @@ describe('Indexer Tests', function () {
     targetBlockNumber = duneData[0].block_number - 5000;
     endBlockNumber = targetBlockNumber - 2000;
     duneTimeDiffs.map(results => expect(results.isEarlierThan2Hours).to.be.false);
+    console.log(duneData);
   });
 
   it('Queries graph and goldsky data with given blocks and expects complete equality', async () => {

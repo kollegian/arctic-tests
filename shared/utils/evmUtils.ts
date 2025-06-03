@@ -1,4 +1,4 @@
-import {SeiUser} from "../shared/User";
+import {SeiUser} from "../User";
 
 export async function broadcastTx(sender: SeiUser, payload: any, contractAddress: string){
     const nonce = await sender.evmWallet.wallet.getNonce();
@@ -16,4 +16,16 @@ export async function broadcastTx(sender: SeiUser, payload: any, contractAddress
     const signedTx = await sender.evmWallet.wallet.signTransaction(tx);
     const txResponse = await sender.evmWallet.signingClient.broadcastTransaction(signedTx);
     return await txResponse.wait();
+}
+
+export function decodeTxInput(input: string){
+    if (input.startsWith('0x')) {
+        input = input.slice(2);
+    }
+
+    // Convert hex to buffer
+    const buffer = Buffer.from(input, 'hex');
+
+    // Convert buffer to UTF-8 string
+    return JSON.parse(buffer.toString('utf8'));
 }

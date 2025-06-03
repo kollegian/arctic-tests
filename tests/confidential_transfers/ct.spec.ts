@@ -258,26 +258,26 @@ describe('Confidential Transfers', function ()  {
     });
 
     let transferBlockHeight = 319958;
-    it.only('Can query the block on transfer', async () =>{
+    it('Can query the block on transfer', async () =>{
         const blockInfo = await rpcClient.getBlockByNumber(ethers.toQuantity(transferBlockHeight), true);
         console.log(blockInfo);
     });
 
     let txHash = "0x1cf2082dd110e805d7742efe1c945000ad71b9ea502dbebd19ddfdab8d4f63a3";
     let blockHash = "0x3fee0f50afa208cd659f8176658ffc7bf79b8c39b45b68d7e040886e43e73f7d";
-    it.only('Can query the block with hash', async () => {
+    it('Can query the block with hash', async () => {
         const blockInfo = await rpcClient.getBlockByHash(blockHash, true);
         expect(blockInfo).to.exist;
         console.log(blockInfo);
     });
 
-    it.only('Can query with tx receipt', async () =>{
+    it('Can query with tx receipt', async () =>{
         const txReceipt = await rpcClient.getTransactionReceipt(txHash);
         expect(txReceipt).to.exist;
         console.log(txReceipt);
     });
 
-    it.only('Can debugtrace block in it', async () =>{
+    it('Can debugtrace block in it', async () =>{
         const debugTraceTx = await rpcClient.debugTraceTransaction(txHash, {tracer: "callTracer"});
         expect(debugTraceTx).to.exist;
         console.log(debugTraceTx);

@@ -1,12 +1,16 @@
 import { SeiUser } from "./User";
 import { ethers, Contract, BigNumberish } from "ethers";
-import { DeliverTxResponse, StdFee } from "@cosmjs/stargate";
-import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
+import {calculateFee, DeliverTxResponse, StdFee} from "@cosmjs/stargate";
+import {ExecuteInstruction, ExecuteResult} from "@cosmjs/cosmwasm-stargate";
+const exec = util.promisify(require('node:child_process').exec);
 
 import ERC20_ARTIFACT from '../artifacts/contracts/TestERC20.sol/TestERC20.json';
 import ERC721_ARTIFACT from '../artifacts/contracts/TestNFT.sol/TestNFT.json';
 import ERC1155_ARTIFACT from '../artifacts/contracts/TestERC1155.sol/TestERC1155.json';
 import {TestERC20, TestNFT} from "../typechain-types";
+import util from "node:util";
+import {waitFor} from "./utils/helpers";
+import {execCommandAndReturnJson} from "./utils/cliUtils";
 
 
 export interface IFungibleToken {
@@ -51,7 +55,7 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
     constructor(user: SeiUser, address: string) {
         super(user, new ethers.Contract(address, ERC20_ARTIFACT.abi, user.evmWallet.wallet));
     }
-
+    getAddress() { return this.contract.target; }
     name() { return this.contract.name(); }
     symbol() { return this.contract.symbol(); }
     decimals() { return this.contract.decimals(); }
@@ -60,6 +64,33 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
     transfer(to: string, amount: BigNumberish) { return this.contract.transfer(to, amount); }
     approve(spender: string, amount: BigNumberish) { return this.contract.approve(spender, amount); }
     allowance(owner: string, spender: string) { return this.contract.allowance(owner, spender); }
+    mint(to: string, amount: string){return this.contract.mint(to, amount)}
+    async mintToUsers(users: SeiUser[], amount = '100'){
+        const txs = [];
+        for (const user of users) {
+            txs.push(this.contract.connect(user.evmWallet.wallet).mint(user.evmAddress, ethers.parseEther(amount)));
+        }
+        const txRequests = await Promise.all(txs);
+        await Promise.all(txRequests.map(tx => tx.wait()));
+        console.log('Finished');
+    }
+    async deployPointer(evmRpcEndpoint: string){
+        console.info(`Deploying pointer for ${(this.contract.target)} on ${evmRpcEndpoint}`);
+        await exec(`seid tx evm register-cw-pointer ERC20 ${(this.contract.target)} --from admin --fees 24200usei -y`);
+        await waitFor(2);
+        const {stdout} = await exec(`seid q evm pointer ERC20 ${this.contract.target} --output json`);
+        return JSON.parse(stdout).pointer;
+    }
+
+    async sendMultipleTxs(users: SeiUser[]){
+        const txs = [];
+        for(const user of users){
+            txs.push(this.contract
+                .connect(user.evmWallet.wallet).transfer(this.user.evmAddress, ethers.parseEther('0.1')));
+        }
+        const txRequests = await Promise.all(txs);
+        return await Promise.all(txRequests.map((request: { wait: () => any; }) => request.wait()));
+    }
 }
 
 
@@ -79,6 +110,17 @@ export class Cw20Token implements IFungibleToken {
         );
     }
 
+    execMultiple(msgs: ExecuteInstruction[], memo = ""): Promise<ExecuteResult> {
+        const fee = calculateFee(500000, '0.25usei');
+        return this.user.seiWallet.cosmWasmSigningClient.executeMultiple(
+            this.user.seiAddress,
+            msgs,
+            fee,
+        )
+    }
+
+    getAddress() { return this.address};
+    setSigner(newSigner: SeiUser) {this.user = newSigner;}
     async name() { const res = await this.query<{ name: string }>({ name: {} }); return res.name; }
     async symbol() { const res = await this.query<{ symbol: string }>({ symbol: {} }); return res.symbol; }
     async decimals() { const res = await this.query<{ decimals: number }>({ decimals: {} }); return res.decimals; }
@@ -87,6 +129,64 @@ export class Cw20Token implements IFungibleToken {
     transfer(to: string, amount: string | number) { return this.exec({ transfer: { recipient: to, amount: amount.toString() } }); }
     approve(spender: string, amount: string | number) { return this.exec({ increase_allowance: { spender, amount: amount.toString() } }); }
     allowance(owner: string, spender: string) { return this.query<{ allowance: string }>({ allowance: { owner, spender } }).then(r => r.allowance); }
+    async mint(to: string, amount: string | number) {
+        return this.exec({ mint: { recipient: to, amount: amount.toString() } });
+    }
+    async burn(amount: string | number) {
+        return this.exec({ burn: { amount: amount.toString() } });
+    }
+    async transferFrom(owner: string, recipient: string, amount: string | number) {
+        return this.exec({ transfer_from: { owner, recipient, amount: amount.toString() } });
+    }
+    async decreaseAllowance(spender: string, amount: string | number) {
+        return this.exec({ decrease_allowance: { spender, amount: amount.toString() } });
+    }
+    async mintMultiple(recipients: string[], amounts: string[]): Promise<ExecuteResult> {
+        if (recipients.length !== amounts.length) {
+            throw new Error("Recipients and amounts arrays must be the same length");
+        }
+
+        const messages: ExecuteInstruction[] = recipients.map((recipient, i) => ({
+            contractAddress: this.address,
+            msg: {
+                mint: {
+                    recipient: recipient,
+                    amount: amounts[i]
+                }
+            }
+        }));
+        return this.execMultiple(messages, '');
+    }
+
+    async deployPointer(evmEndpoint: string){
+        const resp = await exec(`seid tx evm register-evm-pointer CW20 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --fees 24200usei --broadcast-mode block`);
+        console.log(resp);
+    }
+    async queryPointerAddress(){
+        const {stdout, stderror} = await exec(`seid q evm pointer CW20 ${this.address} --output json`);
+        console.log(stdout);
+        return (JSON.parse(stdout)).pointer;
+    }
+
+    async executeMultipleInTheSameBlock(sender: SeiUser, cw20ContractAddress: string, msgs: object[], chainId: string) {
+        await waitFor(1);
+        const fileNames = ['./tests/tokens/firstTx.json', './tests/tokens/secondTx.json'];
+        const preSequence = await execCommandAndReturnJson(`seid query account ${sender.seiAddress}`);
+        for (const msg of msgs) {
+            const index = msgs.indexOf(msg);
+            const fileName = fileNames[index];
+            await exec(`seid tx wasm execute ${cw20ContractAddress} '${JSON.stringify(msg)}' --from ${sender.seiAddress} --fees 24200usei -y --generate-only > ${fileName}`);
+        }
+
+        await exec(`seid tx sign ${fileNames[0]} --from ${sender.seiAddress} --chain-id ${chainId} > ./tests/tokens/firstTxSigned.json`);
+        await exec(`seid tx sign ${fileNames[1]} --from ${sender.seiAddress} --chain-id ${chainId} --sequence ${Number(preSequence.sequence) + 1} --offline --account-number ${preSequence.account_number} > ./tests/tokens/secondTxSigned.json`);
+
+        const broadcast1 = exec(`seid tx broadcast ./tests/tokens/firstTxSigned.json --output json`);
+        await waitFor(0.1);
+        const broadcast2 = exec(`seid tx broadcast ./tests/tokens/secondTxSigned.json --output json`);
+        return await Promise.all([broadcast1, broadcast2]);
+    }
+
 }
 
 export class Erc721Token extends EvmTokenBase implements INft721 {
@@ -196,6 +296,7 @@ export class Cw721Token implements INft721 {
     private query<T>(msg: object): Promise<T> {
         return this.user.seiWallet.cosmWasmSigningClient.queryContractSmart(this.address, msg) as Promise<T>;
     }
+
     private exec(msg: object, memo = ""): Promise<ExecuteResult> {
         return this.user.seiWallet.cosmWasmSigningClient.execute(
             this.user.seiAddress,
@@ -206,16 +307,50 @@ export class Cw721Token implements INft721 {
         );
     }
 
+    private execMultiple(msgs: ExecuteInstruction[], memo = ""): Promise<ExecuteResult> {
+        const fee = calculateFee(500000, '0.25usei');
+        return this.user.seiWallet.cosmWasmSigningClient.executeMultiple(
+            this.user.seiAddress,
+            msgs,
+            fee,
+        )
+    }
+
+    getAddress() { return this.address};
+    setSigner(newSigner: SeiUser) {this.user = newSigner;}
     async name() { const r = await this.query<{ name: string }>({ name: {} }); return r.name; }
     async symbol() { const r = await this.query<{ symbol: string }>({ symbol: {} }); return r.symbol; }
     async balanceOf(owner?: string) { const r = await this.query<{ balance: string }>({ tokens: { owner: owner ?? this.user.seiAddress, start_after: null, limit: 1 } }); return r.balance; }
     async ownerOf(tokenId: string) { const r = await this.query<{ owner: string }>({ owner_of: { token_id: tokenId } }); return r.owner; }
     safeTransferFrom(from: string, to: string, tokenId: string) { return this.exec({ transfer_nft: { recipient: to, token_id: tokenId } }); }
     approve(to: string, tokenId: string) { return this.exec({ approve: { spender: to, token_id: tokenId } }); }
-    getApproved(tokenId: string) { return this.query<{ approval: { spender: string } }>({ approval: { token_id: tokenId } }).then(r => r.approval.spender); }
+    getApproved(tokenId: string, spender: string) { return this.query<{ approval: { spender: string, token_id: string, include_expired: boolean } }>({ approval: { token_id: tokenId, spender, include_expired: true } }).then(r => r.approval.spender); }
     setApprovalForAll(operator: string, approved: boolean) { return this.exec({ approve_all: { operator, expires: null } }); }
     isApprovedForAll(owner: string, operator: string) { return this.query<{ approved: boolean }>({ approvals: { owner, operator } }).then(r => r.approved); }
     tokenUri(tokenId: string) { return this.query<{ token_uri: string }>({ nft_info: { token_id: tokenId } }).then(r => r.token_uri); }
+    mintTx(nftId: string, receiverAddress: string) { return this.exec({ mint: { token_id: nftId, owner: receiverAddress, token_uri: `https://example.com/token${nftId}.json`, extension: {} } }); }
+    mintMultiple(nftIds: string[], receiverAddresses: string[]) {
+        const messages: ExecuteInstruction[] = nftIds.map((nftId, i) => ({
+            contractAddress: this.address,
+            msg: {
+                mint: {
+                    token_id: nftId,
+                    owner: receiverAddresses[i],
+                    token_uri: `https://example.com/token${nftId}.json`,
+                    extension: {}
+                }
+            }
+        }));
+        return this.execMultiple(messages, '');}
+    async deployPointer(evmEndpoint: string){
+        const resp = await exec(`seid tx evm register-evm-pointer CW721 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --fees 24200usei --broadcast-mode block`);
+        console.log(resp);
+    }
+    async queryPointerAddress(){
+        const {stdout, stderror} = await exec(`seid q evm pointer CW721 ${this.address} --output json`);
+        console.log(stdout);
+        return (JSON.parse(stdout)).pointer;
+    }
 }
 
 

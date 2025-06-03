@@ -14,6 +14,9 @@ import {
 import ERC20_ARTIFACT from '../artifacts/contracts/TestERC20.sol/TestERC20.json';
 import ERC721_ARTIFACT from '../artifacts/contracts/TestNFT.sol/TestNFT.json';
 import ERC1155_ARTIFACT from '../artifacts/contracts/TestERC1155.sol/TestERC1155.json';
+import DEBUG_ARTIFACT from '../artifacts/contracts/DebugContract.sol/DebugContract.json';
+import {calculateFee} from "@cosmjs/stargate";
+import {DebugContract} from "../typechain-types";
 
 
 export class TokenDeployer {
@@ -88,6 +91,7 @@ export class TokenDeployer {
             wasmFilePath,
             initMsg,
             label)
+        console.log('Contract deployed to ', instantiateRes.contractAddress);
         return new Cw721Token(this.user, instantiateRes.contractAddress);
     }
 
@@ -105,20 +109,32 @@ export class TokenDeployer {
     }
 
     async deployWasm(wasmFilePath: string, initMsg: any, label: string) {
+        const defaultUploadFee = calculateFee(10000000, '0.4usei');
         const wasm = fs.readFileSync(path.resolve(wasmFilePath));
         const uploadRes = await this.user.seiWallet.cosmWasmSigningClient.upload(
             this.user.seiAddress,
             wasm,
-            this.user.seiWallet.fee
+            defaultUploadFee
         );
         const codeId = uploadRes.codeId;
-
         return await this.user.seiWallet.cosmWasmSigningClient.instantiate(
             this.user.seiAddress,
             codeId,
             initMsg,
             label,
-            this.user.seiWallet.fee
+            defaultUploadFee
         );
+    }
+
+    async deployDebugContract(){
+        const factory = new ethers.ContractFactory(
+            DEBUG_ARTIFACT.abi,
+            DEBUG_ARTIFACT.bytecode,
+            this.user.evmWallet.wallet
+        );
+        const contract = await factory.deploy(this.user.evmWallet.wallet);
+        const debugContract = await contract.waitForDeployment() as DebugContract;
+        console.log('Contract deployed to ', contract.target);
+        return debugContract;
     }
 }

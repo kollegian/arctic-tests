@@ -2,7 +2,7 @@ import util from 'node:util';
 import {SeiUser} from './User';
 import fs from 'fs/promises';
 import {coins, StdFee} from "@cosmjs/stargate";
-import {waitFor} from "../utils/helpers";
+import {waitFor} from "./utils/helpers";
 
 const exec = util.promisify(require('node:child_process').exec);
 
@@ -27,7 +27,7 @@ export class Funder {
         console.log('Admin wallet funded');
     }
 
-    async fundAddressOnSei(address: string, tokenName = 'usei', amount = '75000000') {
+    async fundAddressOnSei(address: string, tokenName = 'usei', amount = '7000000') {
         let {stdout} = await exec(`seid keys show admin -a`);
         const output = await exec(`seid tx bank send ${stdout.trim()} ${address} ${amount}${tokenName} --fees 24500usei -y --broadcast-mode block`);
         await waitFor(1);

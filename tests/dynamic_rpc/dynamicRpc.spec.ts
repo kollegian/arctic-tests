@@ -3,7 +3,7 @@ import {EvmRpcClient} from "../../shared/RpcClient";
 import * as TestConfig from "../../config/testConfig.json";
 import {Block, ContractTransactionReceipt, ethers, Log, LogDescription, TransactionReceipt} from "ethers";
 import {expect} from "chai";
-import {waitFor} from "../../utils/helpers";
+import {waitFor} from "../../shared/utils/helpers";
 
 describe('Dynamic RPC queries', function (){
 
@@ -14,13 +14,14 @@ describe('Dynamic RPC queries', function (){
 
     before('Initializes clients', async () =>{
         admin = await UserFactory.createAdminUser(TestConfig);
-        rpcClient = new EvmRpcClient('https://evm-rpc.sei-apis.com');
+        rpcClient = new EvmRpcClient(TestConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
     });
 
     let currentBlock: Block;
     it('Gets current block', async () =>{
         currentBlock = await rpcClient.getBlockByNumber('latest', false);
-        blockNumber = ethers.toQuantity(Number(currentBlock.number) - 1);
+        // blockNumber = ethers.toQuantity(Number(currentBlock.number) - 1);
+        blockNumber = ethers.toQuantity(Number(94802250));
     });
 
     let txInfoFromGetBlockCall = new Map<string, ContractTransactionReceipt>();
@@ -145,6 +146,9 @@ describe('Dynamic RPC queries', function (){
             const hash = txHashes[i];
 
             const singleTrace = await rpcClient.debugTraceTransaction(hash, debugTraceConfig);
+            console.log(singleTrace);
+            console.log('-----');
+            console.log(blockTraces[i]);
             expect(blockTraces[i]).to.deep.equal(singleTrace, `trace mismatch for tx ${hash}`);
         }
     });

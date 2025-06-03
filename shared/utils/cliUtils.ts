@@ -1,7 +1,7 @@
 import util from "node:util";
 import {exec as execCallback} from "node:child_process";
 import {waitFor} from "./helpers";
-import {SeiUser} from "../shared/User";
+import {SeiUser} from "../User";
 const exec = util.promisify(execCallback);
 import abi from "../utils/abis/ct_abi.json";
 export async function execCommandAndReturnJson(command: string): Promise<any> {

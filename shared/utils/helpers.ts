@@ -1,6 +1,6 @@
-import {SeiUser, UserFactory} from "../shared/User";
-import testConfig from "../config/testConfig.json";
-import {Funder} from "../shared/Funder";
+import {SeiUser, UserFactory} from "../User";
+import testConfig from "../../config/testConfig.json";
+import {Funder} from "../Funder";
 
 export async function waitFor(seconds: number): Promise<void> {
     return new Promise(resolve => {

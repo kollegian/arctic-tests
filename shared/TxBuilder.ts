@@ -1,6 +1,6 @@
-import {TransactionResponse, TransactionReceipt, BigNumberish} from 'ethers';
+import {TransactionResponse, TransactionReceipt, BigNumberish, ethers} from 'ethers';
 import { DeliverTxResponse } from '@cosmjs/stargate';
-import { waitFor } from '../utils/helpers';
+import { waitFor } from './utils/helpers';
 import { EvmRpcClient } from './RpcClient';
 import {SeiUser} from "./User";
 
@@ -9,6 +9,11 @@ import {SeiUser} from "./User";
  * and provides low-level raw EVM tx submission.
  */
 export class AtomicTxSender {
+
+    static async sendMultipleEvmTxs(evmCalls: string[], rpcUrl: string, sender: SeiUser) {
+        return await Promise.all(evmCalls.map(evmCall => this.sendRawTransaction(rpcUrl, evmCall, sender)));
+    }
+
     static async sendUntilSameBlock(
         evmCall: () => Promise<TransactionResponse>,
         cosmosCall: () => Promise<DeliverTxResponse>,
@@ -105,6 +110,7 @@ export class AtomicTxSender {
      * Send a raw, signed EVM transaction via JSON-RPC (no ethers.js)
      * @param rpcUrl     JSON-RPC endpoint
      * @param signedTx   Raw signed transaction hex
+     * @param sender
      * @returns          Transaction hash
      *
      * Example:
@@ -140,25 +146,32 @@ export class AtomicTxSender {
      */
     static async sendRawTransaction(
         rpcUrl: string,
-        signedTx: string
+        signedTx: string,
+        sender: SeiUser,
     ): Promise<string> {
-        const client = new EvmRpcClient(rpcUrl);
+        const client = new EvmRpcClient(rpcUrl, sender.evmWallet.signingClient);
         return client.sendRawTransaction(signedTx);
     }
 
     static async signEvmTransaction(
         user: SeiUser,
-        to: string,
+        to: string | ethers.Addressable,
         data: string,
+        increaseNonce = false,
         value: BigNumberish = 0
     ): Promise<string> {
         const provider = user.evmWallet.signingClient;
         const wallet = user.evmWallet.wallet;
         const from = await wallet.getAddress();
-        const nonce = await provider.getTransactionCount(from);
+        let nonce = await provider.getTransactionCount(from);
+        if (increaseNonce) {
+            nonce +=1;
+        }
         const feeDataOnChain = (await provider.getFeeData()).gasPrice;
-        const gasLimit = await provider.estimateGas({ to, data, from, value });
-        const tx = { to, data, value, nonce, gasPrice: feeDataOnChain, gasLimit };
+        const gasLimit = 400000;
+        const network = await provider.getNetwork();
+        const chainId = network.chainId;
+        const tx = { to, data, value, nonce, gasPrice: feeDataOnChain, gasLimit, chainId };
         return wallet.signTransaction(tx);
     }
 }
