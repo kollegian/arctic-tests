@@ -67,7 +67,7 @@ export class Funder {
             };
 
             const fee: StdFee = {
-                amount: coins(1600000, 'usei'),
+                amount: coins(1200000, 'usei'),
                 gas: "3500000",
             };
             await this.admin.seiWallet.signingClient.signAndBroadcast(this.admin.seiAddress, [msgMultiSend],  fee);

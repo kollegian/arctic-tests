@@ -15,7 +15,7 @@ import {CW20ERC20Pointer} from "../../typechain-types";
 import {decodeTxInput} from "../../shared/utils/evmUtils";
 
 const exec = util.promisify(require('node:child_process').exec);
-const CHAIN_ID = 'sei';
+const CHAIN_ID = 'psu-evm-test-5';
 describe('CW20 Token Tests', function () {
     /**
      * Deploys ERC20 contract. Checks mint, transfer, approve functions with RPC events. Deploys a pointer and executes transactions
@@ -28,7 +28,7 @@ describe('CW20 Token Tests', function () {
     let cw20Contract: Cw20Token;
 
     before('Deploys cw20 wasm into cosmos runtime', async () => {
-        admin = await UserFactory.createAdminUser(testConfig);
+        admin = await UserFactory.createAdminUser();
         await UserFactory.fundAdminOnSei();
         ([alice, bob] = await UserFactory.createSeiUsers(admin, 2, false));
         const deployer = new TokenDeployer(admin);
@@ -330,14 +330,14 @@ describe('CW20 Token Tests', function () {
 
 
         const delayedCosmosTx = async () => {
-            await waitFor(0.05);
-            return cw20Contract.transfer(bob.seiAddress, cosmosTransferAmount);
+            await waitFor(0.2);
+            return admin.evmWallet.signingClient.broadcastTransaction(signedTx);
         };
 
         // Send both transactions closely to try to get them in the same block
         const [evmReceipt, cosmosTxResult] = await Promise.all([
-            admin.evmWallet.signingClient.broadcastTransaction(signedTx),
-            delayedCosmosTx()
+            delayedCosmosTx(),
+            cw20Contract.transfer(bob.seiAddress, cosmosTransferAmount)
         ]);
         const txBlock = (await rpcClient.getTransactionReceipt(evmReceipt.hash));
         console.log(ethers.toNumber(txBlock.blockNumber));
@@ -381,8 +381,12 @@ describe('CW20 Token Tests', function () {
         const encodedTx = pointerContract.connect(admin.evmWallet.wallet).interface
             .encodeFunctionData('transfer(address,uint256)', [alice.evmAddress, '100000000']);
         const signedTx = await AtomicTxSender.signEvmTransaction(admin, pointerContract.target, encodedTx);
+        const delayed = async () => {
+            await waitFor(0.2);
+            return admin.evmWallet.signingClient.broadcastTransaction(signedTx);
+        }
         const [evmReceipt, cosmosTxResult] = await Promise.all([
-            admin.evmWallet.signingClient.broadcastTransaction(signedTx),
+            delayed(),
             cw20Contract.transfer(alice.seiAddress, '1000')
         ]);
         const receipt = await rpcClient.getTransactionReceipt(evmReceipt.hash);

@@ -59,8 +59,9 @@ export class TokenDeployer {
             ERC1155_ARTIFACT.bytecode,
             this.user.evmWallet.wallet
         );
-        const contract = await factory.deploy(uri);
+        const contract = await factory.deploy(this.user.evmAddress);
         await contract.waitForDeployment();
+        console.log('Contract deployed to ', contract.target);
         return new Erc1155Token(this.user, contract.target as string);
     }
 
@@ -79,6 +80,7 @@ export class TokenDeployer {
             wasmFilePath,
             initMsg,
             label)
+        console.log('CW20 deployed to ', instantiateRes.contractAddress);
         return new Cw20Token(this.user, instantiateRes.contractAddress);
     }
 
@@ -91,7 +93,7 @@ export class TokenDeployer {
             wasmFilePath,
             initMsg,
             label)
-        console.log('Contract deployed to ', instantiateRes.contractAddress);
+        console.log('CW721 Contract deployed to ', instantiateRes.contractAddress);
         return new Cw721Token(this.user, instantiateRes.contractAddress);
     }
 
@@ -109,7 +111,7 @@ export class TokenDeployer {
     }
 
     async deployWasm(wasmFilePath: string, initMsg: any, label: string) {
-        const defaultUploadFee = calculateFee(10000000, '0.4usei');
+        const defaultUploadFee = calculateFee(10000000, '3.5usei');
         const wasm = fs.readFileSync(path.resolve(wasmFilePath));
         const uploadRes = await this.user.seiWallet.cosmWasmSigningClient.upload(
             this.user.seiAddress,

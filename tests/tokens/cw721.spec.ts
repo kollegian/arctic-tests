@@ -24,7 +24,7 @@ describe('CW721 Tests', function () {
         'eth_getFilterLogs', 'eth_getBlockByHash', 'eth_getBlockByNumber'];
 
     before('Deploys contracts', async () => {
-        admin = await UserFactory.createAdminUser(TestConfig);
+        admin = await UserFactory.createAdminUser();
         await UserFactory.fundAdminOnSei();
         startBlockHeight = (await admin.evmWallet.signingClient.getBlock('latest'))!.number;
         ([alice, ferdie] = await UserFactory.createSeiUsers(admin, 2));
@@ -226,6 +226,7 @@ describe('CW721 Tests', function () {
                 const results = await rpcClient.checkAndReturnRpcResultsForBlock(evmAndCosmosBlockHeight - 2, evmAndCosmosBlockHeight, endpoint, erc721PointerContract.target, topic);
                 expect(results.length).to.be.eq(2);
                 if (endpoint.includes('Logs')) {
+                    console.log(results);
                     results.forEach(result => {
                         expect(result.address).to.be.eq(erc721PointerContract.target.toLowerCase());
                         expect(result.topics.length).to.be.eq(4);
@@ -293,6 +294,7 @@ describe('CW721 Tests', function () {
         evmBlockEndpoints.forEach(endpoint => {
             it(`Evm log information matches with evm block information with ${endpoint}`, async () => {
                 const blockResult = await rpcClient.checkAndReturnRpcResultsForBlock(evmAndCosmosBlockHeight - 2, evmAndCosmosBlockHeight, endpoint, '', topic);
+                console.log(blockResult);
                 blockResult.forEach(result => {
                     expect(result.blockNumber).to.be.eq(transactionIndexes[result.hash].blockNumber);
                     expect(result.transactionIndex).to.be.eq(transactionIndexes[result.hash].transactionIndex);

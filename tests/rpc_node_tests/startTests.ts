@@ -24,14 +24,16 @@ describe('Deploys the contracts and records addresses', function () {
 
     before('Initializes', async () => {
         console.log('Deploying contracts and funding users for tests...');
-        admin = await UserFactory.createAdminUser(TestConfig)
-        users = await UserFactory.createSeiUsers(admin, 40, true);
+        admin = await UserFactory.createAdminUser();
+        await UserFactory.fundAdminOnSei();
+        users = await UserFactory.createSeiUsers(admin, 2, true);
         const deployer = new TokenDeployer(admin);
         erc20 = await deployer.deployErc20();
-        await erc20.mintToUsers(users);
+        // await erc20.mintToUsers(users);
 
         console.info('All users are funded for erc20');
         cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
+        console.log(cwPointerAddress);
         const initialBalances = users.map(user =>{
             return {
                 address: user.seiAddress,
@@ -39,14 +41,14 @@ describe('Deploys the contracts and records addresses', function () {
             }
         });
         baseCw20 = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
-            "name": 'myCw',
-            "symbol": 'mycw',
+            "name": 'myCwSolo',
+            "symbol": 'mycwSolo',
             "decimals": 6,
             "initial_balances": initialBalances,
             "mint": {
                 minter: admin.seiAddress,
             },
-        }, 'myCw');
+        }, 'myCwSolo');
         await baseCw20.deployPointer(TestConfig.evmRpcEndpoint);
         await waitFor(1);
         ercPointerAddress = await baseCw20.queryPointerAddress();
@@ -54,13 +56,20 @@ describe('Deploys the contracts and records addresses', function () {
         await (await erc20.contract.mint(admin.evmAddress, ethers.parseEther('100000'))).wait();
         await baseCw20.mint(admin.seiAddress, '100000000000');
         debugContract = await deployer.deployDebugContract();
+        const cw721Contract = await deployer.deployCw721('wasm_store/cw2981_royalties.wasm', {
+            name: 'cw721solo',
+            symbol: 'mycwsolo',
+            minter: admin.seiAddress
+        }, 'mycwsolo');
+        await cw721Contract.mintTx('200', 'sei1p6dxs2l7x6pqyl2h8h8dcqprpqwrz9cpcutsar');
+        await cw721Contract.mintTx('201', 'sei1p6dxs2l7x6pqyl2h8h8dcqprpqwrz9cpcutsar');
     });
 
     it('Writes contract addresses to a file', async () => {
        const contractInfo = {
            erc20: erc20.getAddress(),
            cw20: baseCw20.getAddress(),
-           ercPointerOnCosmos: cwPointerAddress,
+           ercPointerOnCosmos: 'cwPointerAddress',
            cwPointerOnEvm: ercPointerAddress,
            debugAddress: await debugContract.getAddress()
        };

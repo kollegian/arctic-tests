@@ -34,7 +34,7 @@ describe('CW20 Token Tests', function () {
 
     before('Initialize users and deploy CW20 contract', async () => {
         // Initialize admin user
-        admin = await UserFactory.createAdminUser(TestConfig);
+        admin = await UserFactory.createAdminUser();
         await UserFactory.fundAdminOnSei();
         await waitFor(1);
 

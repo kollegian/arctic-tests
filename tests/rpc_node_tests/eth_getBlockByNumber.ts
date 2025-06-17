@@ -1,40 +1,34 @@
-import {SeiUser} from "../../modules/utils/User";
-import testConfig from "../testConfig.json";
-import {Funder} from "../../modules/utils/Funder";
-import {returnExpect} from "../../modules/bank/utils";
-import {ERC20Token} from "../shared/Token";
-import RPCClient from "../../tokens/utils/RPCClient";
-import {Block, ContractTransactionReceipt, ethers} from "ethers";
-import {waitFor} from "../../modules/tokenfactory/helpers";
-import {CW20Token} from "../../tokens/utils/Token20";
-import {createUsersFromMnemonic} from "../shared/EvmUtils";
-import ContractAddresses from '../contractAddresses.json';
+import {SeiUser, UserFactory} from "../../shared/User";
+import {EvmRpcClient} from "../../shared/RpcClient";
+import {Cw20Token, Erc20Token} from "../../shared/Token";
+import testConfig from "../../config/testConfig.json";
+import ContractAddresses from "./contractAddresses.json";
+import {ContractTransactionReceipt, ethers} from "ethers";
+import {expect} from "chai";
+import {AtomicTxSender} from "../../shared/TxBuilder";
 import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
+import {waitFor} from "../../shared/utils/helpers";
 
 describe('Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
     let users: SeiUser[];
     let admin: SeiUser;
-    let expect: Chai.ExpectStatic;
-    let erc20: ERC20Token;
-    let rpcClient: RPCClient;
-    let baseCw20: CW20Token;
+    let erc20: Erc20Token;
+    let rpcClient: EvmRpcClient;
+    let baseCw20: Cw20Token;
 
     before('Initializes', async () => {
-        admin = new SeiUser(testConfig.seiRpcEndpoint, testConfig.evmRpcEndpoint, testConfig.restEndpoint);
-        await admin.initialize(testConfig.mnemonic, 'admin', false);
-        users = await createUsersFromMnemonic();
-        expect = await returnExpect();
-        erc20 = new ERC20Token(admin, users, ContractAddresses.erc20);
-        await erc20.initialize();
-        rpcClient = new RPCClient(admin.evmWallet.signingClient);
-        baseCw20 = new CW20Token(ContractAddresses.cw20)
+        admin = await UserFactory.createAdminUser(testConfig);
+        users = await UserFactory.createSeiUsers(admin, 30, true);
+        erc20 = new Erc20Token(admin, ContractAddresses.erc20);
+        rpcClient = new EvmRpcClient(testConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
+        baseCw20 = new Cw20Token(admin, ContractAddresses.cw20);
     })
 
     let multipleTxReceipt: ContractTransactionReceipt;
     let txBlocks: Map<string, number> = new Map<string, number>();
-    it('Sends multiple evm txs', async () => {
-        const responses = await erc20.sendMultipleTxFromUsers();
+    it.only('Sends multiple evm txs', async () => {
+        const responses = await erc20.mintToUsers(users);
         multipleTxReceipt = responses[0];
         for (const response of responses) {
             expect(response.status).to.be.eq(1);
@@ -45,37 +39,79 @@ describe('Evm Rpc Tests', function () {
             }
         }
         console.log('Sent tx number is ', responses.length);
-        console.log(txBlocks);
     });
 
-    let oneSyntheticOneEvmTx: ContractTransactionReceipt;
-    it('Send a synthetic and evm tx', async () => {
-        const results = await erc20.sendOneSyntheticOneEvmTx(baseCw20);
-        oneSyntheticOneEvmTx = results[0];
+    let multipleSyntheticAndEvmTxs: ExecuteResult;
+    it.only('Send multiple synthetic and evm tx in the same block', async () => {
+        const encodedTx = erc20.contract.interface.encodeFunctionData('mint', [admin.evmAddress, ethers.parseEther('100000000')]);
+        const signedTxs = await Promise.all(users.map(user => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
+
+        const txPromise = baseCw20.mintMultiple(users.map(user => user.seiAddress), users.map(user => '100000000'))
+        await waitFor(0.5);
+        for (let i = 0; i < signedTxs.length; i++) {
+            await waitFor(0.03);
+            const response = AtomicTxSender.sendRawTransaction(testConfig.evmRpcEndpoint, signedTxs[i], admin);
+        }
+        multipleSyntheticAndEvmTxs = await txPromise;
+        const txLength = await rpcClient.getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true);
+        expect(txLength.transactions.length).to.be.gt(2);
     });
 
-    let multipleSyntheticAndOneFailingEvmTx: ExecuteResult;
+    let multipleSyntheticAndOneFailingEvmTx: number;
     let failingTxHash: string;
-    it('Sends multiple failing txs', async () => {
-        const results = await erc20.sendMultipleFailingTxs(ContractAddresses.cw20);
-        failingTxHash = results[0].receipt.hash;
-        multipleSyntheticAndOneFailingEvmTx = results[1];
+    it.only('Sends multiple failing txs', async () => {
+        const encodedTX = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('100000000')]);
+        const signedTxs = await Promise.all(users.map(user => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTX)));
+        const txs = await Promise.all(signedTxs.map(signedTx => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)));
+        await waitFor(1);
+        failingTxHash = txs[0];
     });
 
-    let multipleSyntheticAndEvmTx: ContractTransactionReceipt;
-    it('Sends multiple synthetic and multiple evm txs', async () => {
+    it.only('In a block there are failing and successful txs', async () => {
+        const encodedTX = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('100000000')]);
+        const signedTx = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encodedTX);
+
+        const encoded2Tx = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('0.5')]);
+        const signedTx2 = await AtomicTxSender.signEvmTransaction(users[2], erc20.getAddress(), encoded2Tx);
+
+        const encoded3Tx = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('0.5')]);
+        const signedTx3 = await AtomicTxSender.signEvmTransaction(users[2], erc20.getAddress(), encoded3Tx, true);
         const results = await Promise.all([
-            baseCw20.transfer(users[0], users[1], '100000000'),
-            baseCw20.transfer(users[2], users[3], '100000000'),
-            baseCw20.transfer(users[4], users[5], '100000000'),
-            erc20.sendOneTx(users[6]),
-            erc20.sendOneTx(users[7]),
-            erc20.sendOneTx(users[8])
-        ])
-        multipleSyntheticAndEvmTx = results[3];
+            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin),
+            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx2, admin),
+            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx3, admin),
+        ]);
+
+        await waitFor(1);
+        multipleSyntheticAndOneFailingEvmTx = (await rpcClient.getTransactionReceipt(results[0])).blockNumber;
     })
 
-    it('Given there are multiple txs on a block, eth_getBlockByNumber returns gas as expected', async () => {
+    let multipleSyntheticAndEvmTx: ExecuteResult;
+    it.only('Sends multiple synthetic and multiple evm txs', async () => {
+        const encoded1 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('0.1')]);
+        const delayed = async (encodedData: string) => {
+            await waitFor(0.5);
+            return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, encodedData, admin);
+        }
+        const signed1 = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
+        const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded1);
+        const signed3 = await AtomicTxSender.signEvmTransaction(users[5], erc20.getAddress(), encoded1);
+        const results = await Promise.all([
+            baseCw20.transferFromSender(users[0], users[1].seiAddress, '100000000'),
+            baseCw20.transferFromSender(users[2], users[3].seiAddress, '100000000'),
+            baseCw20.transferFromSender(users[4], users[5].seiAddress, '100000000'),
+            delayed(signed1),
+            delayed(signed2),
+            delayed(signed3),
+        ])
+        multipleSyntheticAndEvmTx = results[2];
+        const blockData = await rpcClient.sei_getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTx.height), true);
+        console.log(blockData);
+
+
+    });
+
+    it.only('Given there are multiple evm txs on a block, eth_getBlockByNumber returns gas as expected', async () => {
         const provider = admin.evmWallet.signingClient;
         for (const blockNumber of txBlocks.keys()) {
             let totalGas = 0;
@@ -92,11 +128,64 @@ describe('Evm Rpc Tests', function () {
         }
     });
 
-    it('Given that there are synthetic and evm events on a block, eth_getBlockByNumber returns gas as expected', async () => {
+    it.only('Given that there are synthetic and evm events on a block, eth_getBlockByNumber returns gas as expected', async () => {
         const provider = admin.evmWallet.signingClient;
-        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(multipleSyntheticAndEvmTx.blockNumber), true]);
+        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true]);
         expect(blockInfo.transactions.length).to.be.greaterThan(0);
         expect(ethers.toNumber(blockInfo.gasLimit)).to.be.gt(100000);
+        console.log(multipleSyntheticAndEvmTxs.height);
+        let totalGasUsed = 0;
+        let index = 0;
+        for (const tx of blockInfo.transactions) {
+            const receipt = await rpcClient.getTransactionReceipt(tx.hash);
+            totalGasUsed += ethers.toNumber(receipt.gasUsed);
+        }
+        console.log(totalGasUsed);
+        expect(ethers.toNumber(blockInfo.gasUsed)).to.be.eq(totalGasUsed);
+    });
+
+    it.only('Given that there are synthetic and txs on a block evm transaction index excludes synthetic txs', async () =>{
+        const provider = admin.evmWallet.signingClient;
+        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true]);
+        const indexes = blockInfo.transactions.map(tx => ethers.toNumber(tx.transactionIndex));
+        expect(indexes.sort((a, b) => b - a)[0]).to.be.eq(blockInfo.transactions.length - 1);
+    });
+
+    it.only('Given that there are synthetic and evm tx on a block synthetic tx index includes all txs', async () =>{
+        const provider = admin.evmWallet.signingClient;
+        const blockInfo = await provider.send('sei_getBlockByNumber', [ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true]);
+        const indexes = blockInfo.transactions.map(tx => ethers.toNumber(tx.transactionIndex));
+        expect(indexes.sort((a, b) => b - a)[0]).to.be.eq(blockInfo.transactions.length - 1);
+    });
+
+    it.only('Eth get block by receipts returns correct info on tx indexes', async () =>{
+        for (const blockNumber of txBlocks.keys()) {
+            const receipts = await rpcClient.getBlockReceipts(ethers.toQuantity(blockNumber));
+            for (const receipt of receipts) {
+                const txReceipt = await rpcClient.getTransactionReceipt(receipt.transactionHash);
+                expect(txReceipt.transactionIndex).to.be.eq(receipt.transactionIndex);
+                expect(txReceipt.blockNumber).to.be.eq(receipt.blockNumber);
+                expect(txReceipt.blockHash).to.be.eq(receipt.blockHash);
+                expect(txReceipt.transactionIndex).to.be.eq(receipt.transactionIndex);
+                expect(txReceipt.transactionHash).to.be.eq(receipt.transactionHash);
+                expect(txReceipt.from).to.be.eq(receipt.from);
+                expect(txReceipt.to).to.be.eq(receipt.to);
+                expect(txReceipt.gasUsed).to.be.eq(receipt.gasUsed);
+                expect(txReceipt.cumulativeGasUsed).to.be.eq(receipt.cumulativeGasUsed);
+            }
+        }
+    });
+
+    it.only('Eth get block by number matches with sei getBlock by Number', async () =>{
+        const ethBlock = await rpcClient.getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTx.height), true);
+        const seiBlock = await rpcClient.sei_getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTx.height), true);
+        expect(ethBlock.baseFeePerGas).to.be.eq(seiBlock.baseFeePerGas);
+        expect(ethBlock.gasLimit).to.be.eq(seiBlock.gasLimit);
+        expect(ethBlock.gasUsed).to.be.eq(seiBlock.gasUsed);
+        expect(ethBlock.number).to.be.eq(seiBlock.number);
+        expect(ethBlock.timestamp).to.be.eq(seiBlock.timestamp);
+        expect(ethBlock.stateRoot).to.be.eq(seiBlock.stateRoot);
+        expect(ethBlock.miner).to.be.eq(seiBlock.miner);
     });
 
     it('Given that there are synthetic and failing txs on a block, eth_getBlockByNumber returns gas as expected', async () => {

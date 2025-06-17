@@ -4,8 +4,9 @@ import {ethers} from 'ethers';
 import ERC20_ARTIFACT from '../artifacts/contracts/TestERC20.sol/TestERC20.json';
 import * as TestConfig from "../config/testConfig.json";
 import {TokenDeployer} from "./Deployer";
-import {Erc20Token} from "./Token";
+import {Cw20Token, Cw721Token, Erc20Token} from "./Token";
 import { bech32 } from "bech32";
+import {EvmRpcClient} from "./RpcClient";
 
 const main = async () => {
     const admin = await UserFactory.createAdminUser(testConfig);
@@ -31,21 +32,31 @@ const main = async () => {
 }
 
 async function deployContractToMainnet() {
-    const admin = await UserFactory.createAdminUser(TestConfig);
+    const admin = await UserFactory.createAdminUser();
     console.log(admin.evmWallet.wallet.privateKey);
     console.log(admin.evmAddress);
-    // const erc20 = new Erc20Token(admin, '0x711068BdAD9667100074693049d05c7D7cB02322');
-    // const tx = await erc20.transfer('0x92D54824d32221FF3aC12B8cEA62D3de3ac332B9', ethers.parseEther('1'));
-    // await tx.wait();
     const deployer = new TokenDeployer(admin);
-    const ercToken = await deployer.deployErc20();
-    // const tx = await erc20.mint(admin.evmAddress, ethers.parseEther('5').toString());
-    // const receipt = await tx.wait();
-    // console.log(receipt);
-    // const balance = await erc20.balanceOf(admin.evmAddress);
-    // console.log(balance);
-    // const balanceAfter = await ercToken.balanceOf(admin.evmAddress);
-    // console.log(balanceAfter);
+    /*const cwContract = await deployer.deployCw721('wasm_store/cw2981_royalties.wasm', {
+        name: 'WUF Collection',
+        symbol: 'Lightning',
+        minter: admin.seiAddress
+    }, 'WF');
+    // const cwContract = new Cw721Token(admin, 'sei1ltvlg9m4h0u8jf69xgeqjteshvt7urddwffxc9gkdz0jkwzfhglq4ew5wq');
+    const receipt = await cwContract.mintTx('Cane 200', 'sei1p6dxs2l7x6pqyl2h8h8dcqprpqwrz9cpcutsar');
+    console.log(await cwContract.ownerOf('Cane 200'));
+    // await cwContract.safeTransferFrom(admin.seiAddress, admin.evmAddress, '1');*/
+
+    const cw20Contract = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
+        "name": 'myCwTk',
+        "symbol": 'mycwTk',
+        "decimals": 18,
+        "mint": {
+            minter: admin.seiAddress,
+        },
+        "initial_balances": [],
+    }, 'myCw');
+    await cw20Contract.mint('sei1p6dxs2l7x6pqyl2h8h8dcqprpqwrz9cpcutsar', '100000000000');
+
 }
 
 async function convertAddress() {

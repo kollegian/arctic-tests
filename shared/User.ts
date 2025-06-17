@@ -13,6 +13,7 @@ import {waitFor} from "./utils/helpers";
 import {Funder} from "./Funder";
 import path from "path";
 import fs from "fs";
+import testConfig from "../config/testConfig.json";
 
 const exec = util.promisify(require('node:child_process').exec);
 
@@ -218,7 +219,7 @@ export class UserFactory {
     static testConfig: TestConfig;
     private static filePath = path.resolve(__dirname, '../config/mnemonics.json');
 
-    static async createAdminUser(testConfig: TestConfig): Promise<SeiUser> {
+    static async createAdminUser(): Promise<SeiUser> {
         this.testConfig = testConfig;
         const admin = new SeiUser(testConfig.seiRpcEndpoint, testConfig.evmRpcEndpoint, testConfig.restEndpoint);
         await admin.initialize(testConfig.adminMnemonic, 'admin', true);
@@ -243,7 +244,21 @@ export class UserFactory {
 
     static async createSeiUsers(admin: SeiUser, count: number, recordMnemonics = false): Promise<SeiUser[]> {
         if (recordMnemonics) {
-            try{
+            const users: SeiUser[] = [];
+            if (this.getNumberOfRecordedUsers() < count) {
+                for (let i = 0; i < count; i++) {
+                    users.push(new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint));
+                }
+                await Promise.all(users.map(u => u.initialize('', '', false)));
+                await UserFactory.fundAllUsers(users);
+                await UserFactory.associateAll(users);
+                console.log(`${count} Users created on Sei`);
+                users.push(...await this.returnUsersFromMnemonics());
+                const mnemonics = users.map(u => u.seiWallet.wallet.mnemonic);
+                fs.writeFileSync(path.resolve(this.filePath), JSON.stringify(mnemonics, null, 2), 'utf-8');
+                return users;
+            }
+            try {
                 return await this.returnUsersFromMnemonics();
             } catch (e: any){
                 console.warn('No mnemonics found, creating new ones');
@@ -265,17 +280,24 @@ export class UserFactory {
         return users;
     }
 
+    static getNumberOfRecordedUsers(){
+        const content = fs.readFileSync(path.resolve(this.filePath), 'utf-8');
+        return (JSON.parse(content).length);
+    }
+
     static async returnUsersFromMnemonics(): Promise<SeiUser[]> {
         const content = fs.readFileSync(path.resolve(this.filePath), 'utf-8');
         const mnemonics: string[] = JSON.parse(content);
         const users: SeiUser[] = [];
         console.log('Reading from config/mnemonics.json file to import users');
 
-        for (const phrase of mnemonics) {
+        for (const user of mnemonics) {
             const user = new SeiUser(this.testConfig.seiRpcEndpoint, this.testConfig.evmRpcEndpoint, this.testConfig.restEndpoint);
-            await user.initialize(phrase, '', false);
             users.push(user);
         }
+        await Promise.all(mnemonics.map(async (mnemonic, index) => {
+            await users[index].initialize(mnemonic, '', false);
+        }))
         return users;
     }
 

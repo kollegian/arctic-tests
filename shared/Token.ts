@@ -62,6 +62,7 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
     totalSupply() { return this.contract.totalSupply(); }
     balanceOf(address?: string) { return this.contract.balanceOf(address ?? this.user.evmAddress); }
     transfer(to: string, amount: BigNumberish) { return this.contract.transfer(to, amount); }
+    transferFrom(from: string, to: string, amount: BigNumberish) { return this.contract.transferFrom(from, to, amount); }
     approve(spender: string, amount: BigNumberish) { return this.contract.approve(spender, amount); }
     allowance(owner: string, spender: string) { return this.contract.allowance(owner, spender); }
     mint(to: string, amount: string){return this.contract.mint(to, amount)}
@@ -71,8 +72,7 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
             txs.push(this.contract.connect(user.evmWallet.wallet).mint(user.evmAddress, ethers.parseEther(amount)));
         }
         const txRequests = await Promise.all(txs);
-        await Promise.all(txRequests.map(tx => tx.wait()));
-        console.log('Finished');
+        return await Promise.all(txRequests.map(tx => tx.wait()));
     }
     async deployPointer(evmRpcEndpoint: string){
         console.info(`Deploying pointer for ${(this.contract.target)} on ${evmRpcEndpoint}`);
@@ -95,7 +95,7 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
 
 
 export class Cw20Token implements IFungibleToken {
-    constructor(private user: SeiUser, private address: string, private fee: StdFee = user.seiWallet.fee) {}
+    constructor(private user: SeiUser, private address: string, private fee: StdFee = calculateFee(450000, '0.25usei')) {}
 
     private query<T>(msg: object): Promise<T> {
         return this.user.seiWallet.cosmWasmSigningClient.queryContractSmart(this.address, msg) as Promise<T>;
@@ -111,7 +111,7 @@ export class Cw20Token implements IFungibleToken {
     }
 
     execMultiple(msgs: ExecuteInstruction[], memo = ""): Promise<ExecuteResult> {
-        const fee = calculateFee(500000, '0.25usei');
+        const fee = calculateFee(4500000, '0.25usei');
         return this.user.seiWallet.cosmWasmSigningClient.executeMultiple(
             this.user.seiAddress,
             msgs,
@@ -126,7 +126,18 @@ export class Cw20Token implements IFungibleToken {
     async decimals() { const res = await this.query<{ decimals: number }>({ decimals: {} }); return res.decimals; }
     async totalSupply() { const res = await this.query<{ total_supply: string }>({ total_supply: {} }); return res.total_supply; }
     async balanceOf(address?: string) { const res = await this.query<{ balance: string }>({ balance: { address: address ?? this.user.seiAddress } }); return res.balance; }
+    async tokenInfo() { const res = await this.query<{ token_info: { name: string, symbol: string, decimals: number, total_supply: string } }>({ token_info: {} }); return res.token_info;}
     transfer(to: string, amount: string | number) { return this.exec({ transfer: { recipient: to, amount: amount.toString() } }); }
+    transferFromSender(from: SeiUser, to: string, amount: string | number) {
+        const msg = {transfer: { recipient: to, amount: amount.toString()}};
+        return from.seiWallet.cosmWasmSigningClient.execute(
+            from.seiAddress,
+            this.address,
+            msg,
+            this.fee,
+            'memo'
+        );
+    }
     approve(spender: string, amount: string | number) { return this.exec({ increase_allowance: { spender, amount: amount.toString() } }); }
     allowance(owner: string, spender: string) { return this.query<{ allowance: string }>({ allowance: { owner, spender } }).then(r => r.allowance); }
     async mint(to: string, amount: string | number) {
@@ -298,6 +309,7 @@ export class Cw721Token implements INft721 {
     }
 
     private exec(msg: object, memo = ""): Promise<ExecuteResult> {
+        this.fee = calculateFee(300000, '0.25usei');
         return this.user.seiWallet.cosmWasmSigningClient.execute(
             this.user.seiAddress,
             this.address,
@@ -350,6 +362,18 @@ export class Cw721Token implements INft721 {
         const {stdout, stderror} = await exec(`seid q evm pointer CW721 ${this.address} --output json`);
         console.log(stdout);
         return (JSON.parse(stdout)).pointer;
+    }
+
+    async queryApprovals(nftId: number){
+        return await this.user.seiWallet.cosmWasmSigningClient.queryContractSmart(
+            this.address,
+            {
+                approvals: {
+                    token_id: nftId.toString(),
+                    include_expired: true
+                }
+            }
+        );
     }
 }
 

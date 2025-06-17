@@ -142,12 +142,7 @@ export class EvmRpcClient {
 
 
     // sei namespace
-    async sei_getFilterLogs(filter: {
-        fromBlock?: string;
-        toBlock?: string;
-        address?: string | string[];
-        topics?: any[];
-    }): Promise<any[]> {
+    async sei_getFilterLogs(filter: string): Promise<any[]> {
         return this.call('sei_getFilterLogs', [filter]);
     }
 
@@ -332,6 +327,13 @@ export class EvmRpcClient {
         return await this.call('sei_newFilter', [filter]);
     }
 
+    async eth_newFilter(filter: {}){
+        return await this.call('eth_newFilter', [filter]);
+    }
+
+    async eth_getFilterLogs(filterId: string){
+        return await this.call('eth_getFilterLogs', [filterId]);
+    }
 
     async checkAndReturnRpcCallResults(syntheticEvent: string,
                                        receipt: ExecuteResult | ContractTransactionReceipt | DeliverTxResponse,
