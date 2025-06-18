@@ -4,7 +4,7 @@ import * as TestConfig from "../../config/testConfig.json";
 import {Block, ContractTransactionReceipt, ethers, Log, LogDescription, TransactionReceipt} from "ethers";
 import {expect} from "chai";
 import {waitFor} from "../../shared/utils/helpers";
-
+import _ from "lodash";
 describe('Dynamic RPC queries', function (){
 
     this.timeout(10 * 60 * 1000);
@@ -13,15 +13,20 @@ describe('Dynamic RPC queries', function (){
     let blockNumber: string;
 
     before('Initializes clients', async () =>{
-        admin = await UserFactory.createAdminUser(TestConfig);
+        admin = await UserFactory.createAdminUser();
         rpcClient = new EvmRpcClient(TestConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
     });
 
     let currentBlock: Block;
     it('Gets current block', async () =>{
         currentBlock = await rpcClient.getBlockByNumber('latest', false);
-        // blockNumber = ethers.toQuantity(Number(currentBlock.number) - 1);
-        blockNumber = ethers.toQuantity(Number(94802250));
+        blockNumber = ethers.toQuantity(Number(currentBlock.number) - 1);
+        console.log('Selected block is ', blockNumber);
+        let blockData = await rpcClient.getBlockByNumber(blockNumber, true);
+        while(blockData.transactions.length === 0) {
+            blockNumber = ethers.toQuantity(Number(blockNumber) - 1);
+            blockData = await rpcClient.getBlockByNumber(blockNumber, true);
+        }
     });
 
     let txInfoFromGetBlockCall = new Map<string, ContractTransactionReceipt>();
@@ -42,8 +47,7 @@ describe('Dynamic RPC queries', function (){
             expect(txFromBlock.blockHash).to.be.eq(txFromReceipt.blockHash, 'block hash didnt match');
             expect(txFromBlock.blockNumber).to.be.eq(txFromReceipt.blockNumber, 'block number didnt match');
             expect(txFromBlock.from).to.be.eq(txFromReceipt.from, 'tx sent from didnt match');
-            // expect(txFromBlock.gas).to.be.eq(txFromReceipt.gasUsed, 'used gas didnt match');
-            // expect(txFromBlock.status).to.be.eq(txFromReceipt.status, 'status didnt match');
+            expect(Number(txFromBlock.gas)).to.be.gte(Number(txFromReceipt.gasUsed), 'used gas didnt match');
             expect(txFromBlock.to).to.be.eq(txFromReceipt.to, 'to didnt match');
             expect(txFromBlock.transactionIndex).to.be.eq(txFromReceipt.transactionIndex, 'tx hash didnt match');
             expect(txFromBlock.type).to.be.eq(txFromReceipt.type, 'type didnt match');
@@ -67,7 +71,7 @@ describe('Dynamic RPC queries', function (){
             expect(txFromBlock.to).to.be.eq(txFromReceipt.to, 'to didnt match');
             expect(txFromBlock.transactionIndex).to.be.eq(txFromReceipt.transactionIndex, 'tx indexes didnt match');
             expect(txFromBlock.type).to.be.eq(txFromReceipt.type, 'type didnt match');
-            // expect(txFromBlock.gas).to.be.eq(txFromReceipt.gasUsed, 'used gas didnt match');
+            expect(Number(txFromBlock.gas)).to.be.gt(Number(txFromReceipt.gasUsed), 'used gas didnt match');
         }
     });
 
@@ -80,7 +84,7 @@ describe('Dynamic RPC queries', function (){
             expect(individualreceipt.blockHash).to.be.eq(receiptFromBlock.blockHash, 'block hash didnt match');
             expect(individualreceipt.blockNumber).to.be.eq(receiptFromBlock.blockNumber, 'block number didnt match');
             expect(individualreceipt.from).to.be.eq(receiptFromBlock.from, 'tx sent from didnt match');
-            // expect(txFromBlock.status).to.be.eq(txFromReceipt.status, 'status didnt match');
+            expect(individualreceipt.status).to.be.eq(receiptFromBlock.status, 'status didnt match');
             expect(individualreceipt.to).to.be.eq(receiptFromBlock.to, 'to didnt match');
             expect(individualreceipt.transactionIndex).to.be.eq(receiptFromBlock.transactionIndex, 'tx hash didnt match');
             expect(individualreceipt.type).to.be.eq(receiptFromBlock.type, 'type didnt match');
@@ -128,7 +132,6 @@ describe('Dynamic RPC queries', function (){
             const singleTxInfo = txInfoFromSingleReceipt.get(tx);
             const receiptTxInfo = txInfoFromGetReceipts.get(tx);
             const traceResult = blockTraces.find(txInf => tx === txInf.txHash);
-
             expect(traceResult.result.from).to.be.eq(blockTxInfo.from, 'from didnt match');
             expect(traceResult.result.from).to.be.eq(singleTxInfo.from, 'from didnt match');
             expect(traceResult.result.from).to.be.eq(receiptTxInfo.from, 'from didnt match');
@@ -140,16 +143,15 @@ describe('Dynamic RPC queries', function (){
             expect(traceResult.result.gas).to.be.eq(blockTxInfo.gas, 'gas didnt match');
             expect(traceResult.result.gasUsed).to.be.eq(singleTxInfo.gasUsed, 'gas used didnt match');
             expect(traceResult.result.gasUsed).to.be.eq(receiptTxInfo.gasUsed, 'gas used didnt match');
+
+            expect(traceResult.result.input).to.be.eq(blockTxInfo.input, 'input didnt match');
+            expect(traceResult.result.value).to.be.eq(blockTxInfo.value, 'value didnt match');
         }
 
         for (let i = 0; i < txHashes.length; i++) {
             const hash = txHashes[i];
-
             const singleTrace = await rpcClient.debugTraceTransaction(hash, debugTraceConfig);
-            console.log(singleTrace);
-            console.log('-----');
-            console.log(blockTraces[i]);
-            expect(blockTraces[i]).to.deep.equal(singleTrace, `trace mismatch for tx ${hash}`);
+            expect(blockTraces[i].result).to.deep.equal(singleTrace, `trace mismatch for tx ${hash}`);
         }
     });
 
@@ -161,18 +163,21 @@ describe('Dynamic RPC queries', function (){
             const expected = (trace as any).returnValue as string;
 
             // 2) do the same call via eth_call at that block
-            const callObj = { to: tx.to, data: tx.input };
-            const actual = await rpcClient.callTx(callObj, blockNumber);
-            console.log(actual);
+            const callObj = {
+                to: tx.to,
+                data: tx.input,
+                from: tx.from,
+                value: tx.value,
+            };
 
-            // expect(actual).to.eq(expected, `eth_call result mismatched for tx ${tx.hash}`);
+            const actual = await rpcClient.callTx(callObj, ethers.toQuantity(Number(tx.blockNumber) - 1));
+            console.log(actual);
+            // expect(_.isEqual(actual, expected)).to.true;
         }
     });
 
     it('Dynamically checks gas estimates and log reproduction for each tx', async () => {
-
         for (const tx of txInfoFromGetBlockCall.keys()) {
-            // pull the receipt for actual gasUsed & logs
             const receipt = txInfoFromGetReceipts.get(tx)!;
             for (const log of receipt.logs) {
                 const filter = {
@@ -182,12 +187,16 @@ describe('Dynamic RPC queries', function (){
                     topics:    log.topics,
                 };
                 const logs = await rpcClient.getLogs(filter) as Log[];
-                const found = logs.find(l => l.topics[0] === log.topics[0]);
+                const found = logs.find(l => l.data === log.data);
                 expect(found, `log ${log.logIndex} missing for tx ${tx}`).to.deep.include({
                     address: log.address,
                     data:    log.data,
                     topics:  log.topics,
                 });
+                expect(found.transactionIndex).to.be.eq(receipt.transactionIndex, `log ${log.logIndex} has wrong tx index for tx ${tx}`);
+                expect(found.blockNumber).to.be.eq(receipt.blockNumber, `log ${log.logIndex} has wrong block number for tx ${tx}`);
+                expect(found.blockHash).to.be.eq(receipt.blockHash, `log ${log.logIndex} has wrong block hash for tx ${tx}`);
+                expect(found.transactionHash).to.be.eq(receipt.transactionHash, `log ${log.logIndex} has wrong tx hash for tx ${tx}`);
             }
         }
     });
@@ -195,14 +204,11 @@ describe('Dynamic RPC queries', function (){
     it('Block cumulative gas used is correct with each receipt', async () => {
         const totalUsed = Array.from(txInfoFromGetReceipts.values())
             .reduce((acc, tx) => acc + Number(tx.gasUsed), 0);
-        console.log(txInfoFromGetReceipts.keys());
-        console.log(totalUsed);
-        console.log(Number(currentBlock.gasUsed));
-
         const individualUsed = Array.from(txInfoFromSingleReceipt.values())
             .reduce((acc, tx) => acc + Number(tx.gasUsed), 0);
-        console.log(individualUsed);
-        console.log(currentBlock);
+
+        expect(totalUsed).to.be.eq(Number(currentBlock.gasUsed));
+        expect(totalUsed).to.be.eq(Number(individualUsed));
     });
 });
 

@@ -1,32 +1,25 @@
-import {SeiUser} from "../../modules/utils/User";
-import {ERC20Token} from "../shared/Token";
-import RPCClient from "../../tokens/utils/RPCClient";
-import testConfig from "../testConfig.json";
-import {returnExpect} from "../../modules/bank/utils";
-import {ethers} from "ethers";
-import ContractArtifacts from "../artifacts/contracts/TestERC20.sol/TestERC20.json";
-import {createUsersFromMnemonic} from "../shared/EvmUtils";
-import contractAddresses from "../contractAddresses.json";
 
+import {ethers} from "ethers";
+import {SeiUser, UserFactory} from "../../shared/User";
+import {Erc20Token} from "../../shared/Token";
+import {EvmRpcClient} from "../../shared/RpcClient";
+import contractAddresses from './contractAddresses.json'
+import {expect} from "chai";
 describe('Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
     let users: SeiUser[];
     let admin: SeiUser;
-    let expect: Chai.ExpectStatic;
-    let erc20: ERC20Token;
-    let rpcClient: RPCClient;
+    let erc20: Erc20Token;
+    let rpcClient: EvmRpcClient;
     let ercPointerAddress: string;
 
 
     before('Initializes', async () => {
-        admin = new SeiUser(testConfig.seiRpcEndpoint, testConfig.evmRpcEndpoint, testConfig.restEndpoint);
-        await admin.initialize(testConfig.mnemonic, 'admin', false);
-        expect = await returnExpect();
-        users = await createUsersFromMnemonic();
-        erc20 = new ERC20Token(admin, users, contractAddresses.erc20);
-        await erc20.initialize();
-        rpcClient = new RPCClient(admin.evmWallet.signingClient);
+        admin = await UserFactory.createAdminUser();
         ercPointerAddress = contractAddresses.cwPointerOnEvm;
+        users = await UserFactory.createSeiUsers(admin, 30, true);
+        erc20 = new Erc20Token(admin, contractAddresses.erc20);
+        rpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
     });
 
     it('should return the correct ERC20 balance using eth_call', async () => {
@@ -36,11 +29,11 @@ describe('Evm Rpc Tests', function () {
         const callData = erc20.contract.interface.encodeFunctionData('balanceOf', [user.evmAddress]);
         const callObject = {
             from: user.evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: callData,
         };
 
-        const response = await rpcClient.eth_call(callObject, 'latest');
+        const response = await rpcClient.callTx(callObject, 'latest');
         const decoded = erc20.contract.interface.decodeFunctionResult('balanceOf', response);
         const balanceFromCall = decoded[0];
         expect(balanceFromCall.toString()).to.be.eq(balanceFromContract.toString());
@@ -53,11 +46,11 @@ describe('Evm Rpc Tests', function () {
         const callData = erc20.contract.interface.encodeFunctionData('balanceOf', [user.evmAddress]);
         const callObject = {
             from: user.evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: callData,
         };
 
-        await rpcClient.eth_call(callObject, 'latest');
+        await rpcClient.callTx(callObject, 'latest');
 
         const balanceAfter = await erc20.contract.balanceOf(user.evmAddress);
         expect(balanceAfter.toString()).to.be.eq(balanceBefore.toString());
@@ -67,13 +60,14 @@ describe('Evm Rpc Tests', function () {
         const user = users[0];
         const invalidCallObject = {
             from: user.evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: '0x1234',
         };
         try{
-            const callObj = await rpcClient.eth_call(invalidCallObject, 'latest');
+            const callObj = await rpcClient.callTx(invalidCallObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
+            console.log(e);
             expect(e.info.error.code).to.be.eq(-32000);
             expect(e.info.error.message).to.be.eq('execution reverted');
         }
@@ -86,11 +80,11 @@ describe('Evm Rpc Tests', function () {
             const callData = erc20.contract.interface.encodeFunctionData('balanceOf', [admin.evmAddress]);
             const callObject = {
                 from: admin.evmAddress,
-                to: erc20.contractAddress,
+                to: erc20.getAddress(),
                 data: callData,
             };
 
-            await rpcClient.eth_call(callObject, 'latest');
+            await rpcClient.callTx(callObject, 'latest');
 
             const balanceAfter = await erc20.contract.balanceOf(admin.evmAddress);
             expect(balanceAfter.toString()).to.be.eq(balanceBefore.toString());
@@ -108,11 +102,11 @@ describe('Evm Rpc Tests', function () {
         const callData = erc20.contract.interface.encodeFunctionData('transfer', [receiver.evmAddress, transferAmount]);
         const callObject = {
             from: sender.evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: callData,
         };
 
-        await rpcClient.eth_call(callObject, 'latest');
+        await rpcClient.callTx(callObject, 'latest');
 
         const senderBalanceAfter = await erc20.contract.balanceOf(sender.evmAddress);
         const receiverBalanceAfter = await erc20.contract.balanceOf(receiver.evmAddress);
@@ -125,12 +119,12 @@ describe('Evm Rpc Tests', function () {
         const callData = erc20.contract.interface.encodeFunctionData('balanceOf', [user.evmAddress]);
         const callObject = {
             from: user.evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: callData,
             gas: '0x10',
         };
         try{
-            const rpcResult = await rpcClient.eth_call(callObject, 'latest');
+            const rpcResult = await rpcClient.callTx(callObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
             expect(e.info.error.code).to.be.eq(-32000);
@@ -144,12 +138,12 @@ describe('Evm Rpc Tests', function () {
         const callData = erc20.contract.interface.encodeFunctionData('balanceOf', [user.evmAddress]);
         const callObject = {
             from: user.evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: callData,
             value: '0x1',
         };
         try{
-            const rpcResult = await rpcClient.eth_call(callObject, 'latest');
+            const rpcResult = await rpcClient.callTx(callObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
             expect(e.info.error.code).to.be.eq(-32000);
@@ -165,7 +159,7 @@ describe('Evm Rpc Tests', function () {
             data: callData,
         };
         try{
-            const rpcResult = await rpcClient.eth_call(callObject, 'latest');
+            const rpcResult = await rpcClient.callTx(callObject, 'latest');
             console.log(rpcResult);
         } catch(e: any){
             console.log(e);
@@ -176,11 +170,11 @@ describe('Evm Rpc Tests', function () {
         const invalidCallData = '0xdeadbeef';
         const callObject = {
             from: users[0].evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: invalidCallData,
         };
         try{
-            const rpcResult = await rpcClient.eth_call(callObject, 'latest');
+            const rpcResult = await rpcClient.callTx(callObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
             expect(e.info.error.code).to.be.eq(-32000);
@@ -192,11 +186,11 @@ describe('Evm Rpc Tests', function () {
         const callData = erc20.contract.interface.encodeFunctionData('balanceOf', [users[0].evmAddress]);
         const callObject = {
             from: users[0].evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: callData,
         };
         try{
-            const rpcResult = await rpcClient.eth_call(callObject, 'invalidBlockTag');
+            const rpcResult = await rpcClient.callTx(callObject, 'invalidBlockTag');
             throw new Error('Should have thrown');
         } catch(e: any){
             expect(e.info.error.code).to.be.eq(-32602);
@@ -208,11 +202,11 @@ describe('Evm Rpc Tests', function () {
         const longData = '0x' + 'ff'.repeat(1000);
         const callObject = {
             from: users[0].evmAddress,
-            to: erc20.contractAddress,
+            to: erc20.getAddress(),
             data: longData,
         };
         try{
-            const rpcResult = await rpcClient.eth_call(callObject, 'latest');
+            const rpcResult = await rpcClient.callTx(callObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
             expect(e.info.error.code).to.be.eq(-32000);
@@ -221,16 +215,16 @@ describe('Evm Rpc Tests', function () {
     });
 
     it('Can call on pointers', async () =>{
-        const pointerContract = new ethers.Contract(ercPointerAddress, ContractArtifacts.abi, admin.evmWallet.wallet);
+        const pointerContract = new Erc20Token(admin, ercPointerAddress);
         const balanceFromBefore = await pointerContract.balanceOf(admin.evmAddress);
-        const callData = pointerContract.interface.encodeFunctionData('balanceOf', [admin.evmAddress]);
+        const callData = pointerContract.contract.interface.encodeFunctionData('balanceOf', [admin.evmAddress]);
         const callObject = {
             from: admin.evmAddress,
             to: ercPointerAddress,
             data: callData,
         };
-        const response = await rpcClient.eth_call(callObject, 'latest');
-        const decoded = pointerContract.interface.decodeFunctionResult('balanceOf', response);
+        const response = await rpcClient.callTx(callObject, 'latest');
+        const decoded = pointerContract.contract.interface.decodeFunctionResult('balanceOf', response);
         const balanceFromCall = decoded[0];
         expect(balanceFromCall.toString()).to.be.eq(balanceFromBefore.toString());
     });

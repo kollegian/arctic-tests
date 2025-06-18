@@ -26,14 +26,14 @@ describe('Deploys the contracts and records addresses', function () {
         console.log('Deploying contracts and funding users for tests...');
         admin = await UserFactory.createAdminUser();
         await UserFactory.fundAdminOnSei();
-        users = await UserFactory.createSeiUsers(admin, 2, true);
+        users = await UserFactory.createSeiUsers(admin, 30, true);
         const deployer = new TokenDeployer(admin);
         erc20 = await deployer.deployErc20();
-        // await erc20.mintToUsers(users);
+        await erc20.mintToUsers(users);
 
         console.info('All users are funded for erc20');
-        cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
-        console.log(cwPointerAddress);
+        // cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
+        // console.log(cwPointerAddress);
         const initialBalances = users.map(user =>{
             return {
                 address: user.seiAddress,

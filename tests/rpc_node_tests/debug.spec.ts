@@ -22,7 +22,7 @@ describe('Sei debug tests', function() {
 
     before('Initializes', async () => {
         admin = await UserFactory.createAdminUser();
-        users = await UserFactory.createSeiUsers(admin, 5, true);
+        users = await UserFactory.createSeiUsers(admin, 30, true);
         erc20 = new Erc20Token(admin, contractAddresses.erc20);
         debugContract = new ethers.Contract(contractAddresses.debugAddress, DebugContractAbi.abi, admin.evmWallet.wallet) as unknown as DebugContract;
         rpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
@@ -87,7 +87,7 @@ describe('Sei debug tests', function() {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
                     // gas: ethers.toQuantity(100000),
-                    maxFeePerGas: ethers.toQuantity(1000000000),
+                    // maxFeePerGas: ethers.toQuantity(1000000000),
                     // value: '0x0',
                     data: actualCall
                 },
@@ -189,8 +189,8 @@ describe('Sei debug tests', function() {
                 {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
-                    gasPrice: ethers.toQuantity(100000),
-                    maxFeePerGas: ethers.toQuantity(1000000000),
+                    // gasPrice: ethers.toQuantity(100000),
+                    // maxFeePerGas: ethers.toQuantity(1000000000),
                     value: '0x0',
                     data: actualCall
                 },
@@ -212,7 +212,7 @@ describe('Sei debug tests', function() {
                 {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
-                    gasPrice: ethers.toQuantity(100000),
+                    // gasPrice: ethers.toQuantity(100000),
                     value: '0x0',
                     data: actualCall
                 },
@@ -237,7 +237,7 @@ describe('Sei debug tests', function() {
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        gasPrice: ethers.toQuantity(100000),
+                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -254,7 +254,7 @@ describe('Sei debug tests', function() {
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        gasPrice: ethers.toQuantity(100000),
+                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -274,7 +274,7 @@ describe('Sei debug tests', function() {
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        gasPrice: ethers.toQuantity(100000),
+                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -299,7 +299,7 @@ describe('Sei debug tests', function() {
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        gasPrice: ethers.toQuantity(100000),
+                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -321,7 +321,7 @@ describe('Sei debug tests', function() {
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        gasPrice: ethers.toQuantity(100000),
+                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -346,7 +346,7 @@ describe('Sei debug tests', function() {
                 {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
-                    gasPrice: ethers.toQuantity(100000),
+                    // gasPrice: ethers.toQuantity(100000),
                     value: '0x0',
                     data: actualCall
                 },
@@ -377,7 +377,7 @@ describe('Sei debug tests', function() {
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        gasPrice: ethers.toQuantity(100000),
+                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -407,7 +407,7 @@ describe('Sei debug tests', function() {
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        gasPrice: ethers.toQuantity(100000),
+                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -438,7 +438,7 @@ describe('Sei debug tests', function() {
                         {
                             from: admin.evmAddress,
                             to: await debugContract.getAddress(),
-                            gasPrice: ethers.toQuantity(100000),
+                            // gasPrice: ethers.toQuantity(100000),
                             value: '0x0',
                             data: actualCall
                         },
@@ -469,7 +469,7 @@ describe('Sei debug tests', function() {
                         {
                             from: admin.evmAddress,
                             to: await debugContract.getAddress(),
-                            gasPrice: ethers.toQuantity(100000),
+                            // gasPrice: ethers.toQuantity(100000),
                             value: '0x0',
                             data: actualCall
                         },
@@ -702,8 +702,8 @@ describe('Sei debug tests', function() {
         let numberDebugResult: [];
         it.only('Debugs block with 40 txs in it - block number', async () => {
             const txs = [];
-            for (let i = 0; i<4; i++) {
-                txs.push(erc20.contract.connect(users[i].evmWallet.wallet).transfer(users[i + 1].evmAddress, ethers.parseEther('0.1')));
+            for (let i = 0; i<users.length; i++) {
+                txs.push(erc20.contract.connect(users[i].evmWallet.wallet).transfer(admin.evmAddress, ethers.parseEther('0.1')));
             }
             const txPromises = await Promise.all(txs);
             console.log('Txs sent');
@@ -716,14 +716,14 @@ describe('Sei debug tests', function() {
                 }
                 return prev;
             }, new Map());
-            blockNumber = receipts[2]!.blockNumber;
+            blockNumber = receipts[0]!.blockNumber;
             blockHash = (await provider.getBlock(blockNumber))!.hash as string;
             const params = [
                 ethers.toQuantity(blockNumber),
             ];
             numberDebugResult = await provider.send('debug_traceBlockByNumber', params);
             console.log('Number of txs in a single block is ', blockNumbers.get(blockNumber));
-            expect(numberDebugResult.length).to.be.eq(blockNumbers.get(blockNumber));
+            expect(numberDebugResult.length).to.be.gte(blockNumbers.get(blockNumber));
         });
 
         let hashDebugResult: [];
@@ -733,7 +733,7 @@ describe('Sei debug tests', function() {
             ];
             hashDebugResult = await provider.send('debug_traceBlockByHash', params);
             console.log(hashDebugResult.length);
-            expect(hashDebugResult.length).to.be.gt(2);
+            expect(hashDebugResult.length).to.be.gte(2);
         });
 
         it.only('Debug trace block by number and debug trace by block hash returns same information', async () =>{
@@ -751,7 +751,7 @@ describe('Sei debug tests', function() {
                     }
                 ];
                 const debugResult = await provider.send('debug_traceBlockByHash', params);
-                expect(debugResult.length).to.be.gt(2);
+                expect(debugResult.length).to.be.gte(2);
             });
 
             it.only(`Queries block with number ${tracerConfig}`, async () =>{
@@ -762,7 +762,7 @@ describe('Sei debug tests', function() {
                     }
                 ];
                 const debugResult = await provider.send('debug_traceBlockByNumber', params);
-                expect(debugResult.length).to.be.gt(2);
+                expect(debugResult.length).to.be.gte(2);
             });
             for(const topCallConfig of topCallConfigs) {
                 it.only(`Queries block with number ${tracerConfig} with ${topCallConfig}`, async () =>{

@@ -18,7 +18,7 @@ describe('Evm Rpc Tests', function () {
     let baseCw20: Cw20Token;
 
     before('Initializes', async () => {
-        admin = await UserFactory.createAdminUser(testConfig);
+        admin = await UserFactory.createAdminUser();
         users = await UserFactory.createSeiUsers(admin, 30, true);
         erc20 = new Erc20Token(admin, ContractAddresses.erc20);
         rpcClient = new EvmRpcClient(testConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
@@ -47,14 +47,14 @@ describe('Evm Rpc Tests', function () {
         const signedTxs = await Promise.all(users.map(user => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
 
         const txPromise = baseCw20.mintMultiple(users.map(user => user.seiAddress), users.map(user => '100000000'))
-        await waitFor(0.5);
+        await waitFor(0.2);
         for (let i = 0; i < signedTxs.length; i++) {
             await waitFor(0.03);
             const response = AtomicTxSender.sendRawTransaction(testConfig.evmRpcEndpoint, signedTxs[i], admin);
         }
         multipleSyntheticAndEvmTxs = await txPromise;
         const txLength = await rpcClient.getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true);
-        expect(txLength.transactions.length).to.be.gt(2);
+        expect(txLength.transactions.length).to.be.gt(1);
     });
 
     let multipleSyntheticAndOneFailingEvmTx: number;

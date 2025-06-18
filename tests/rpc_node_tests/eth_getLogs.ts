@@ -1,49 +1,34 @@
-import {SeiUser} from "../../modules/utils/User";
-import {ERC20Token} from "../shared/Token";
-import RPCClient from "../../tokens/utils/RPCClient";
-import {CW20Token} from "../../tokens/utils/Token20";
-import {Funder} from "../../modules/utils/Funder";
-import testConfig from "../testConfig.json";
-import {returnExpect} from "../../modules/bank/utils";
-import {Block, ContractTransactionReceipt, ethers, LogDescription} from "ethers";
-import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
-import {TestNFT__factory} from "../../tokens/typechain-types";
-import ContractArtifacts from '../artifacts/contracts/TestNFT.sol/TestNFT.json';
-import {waitFor} from "../../modules/tokenfactory/helpers";
-import {createUsersFromMnemonic} from "../shared/EvmUtils";
-import ContractAddresses from "../contractAddresses.json";
+import {SeiUser, UserFactory } from "../../shared/User";
+import {Cw20Token, Erc20Token} from "../../shared/Token";
+import contractAddresses from './contractAddresses.json'
+import { EvmRpcClient } from "../../shared/RpcClient";
+import {ContractTransactionReceipt} from "ethers";
+import {expect} from "chai";
 
 describe('Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
     let users: SeiUser[];
     let admin: SeiUser;
-    let expect: Chai.ExpectStatic;
-    let erc20: ERC20Token;
-    let rpcClient: RPCClient;
-    let cwPointerAddress: string;
-    let cwContractAddress: string;
-    let ercPointerAddress: string;
-    let pointerCw20: CW20Token;
-    let baseCw20: CW20Token;
-    let funder: Funder;
+    let erc20: Erc20Token;
+    let rpcClient: EvmRpcClient;
+    let pointerCw20: Cw20Token;
+    let baseCw20: Cw20Token;
 
     before('Initializes', async () => {
-        admin = new SeiUser(testConfig.seiRpcEndpoint, testConfig.evmRpcEndpoint, testConfig.restEndpoint);
-        await admin.initialize(testConfig.mnemonic, 'admin', false);
-        funder = new Funder(admin.seiAddress);
-        users = await createUsersFromMnemonic();
-        expect = await returnExpect();
-        erc20 = new ERC20Token(admin, users, ContractAddresses.erc20);
-        await erc20.initialize();
-        rpcClient = new RPCClient(admin.evmWallet.signingClient);
-        pointerCw20 = new CW20Token(ContractAddresses.ercPointerOnCosmos);
-        baseCw20 = new CW20Token(ContractAddresses.cw20)
+        const admin = await UserFactory.createAdminUser();
+        users = await UserFactory.createSeiUsers(admin, 30, true);
+        erc20 = new Erc20Token(admin, contractAddresses.erc20);
+        pointerCw20 = new Cw20Token(admin, contractAddresses.ercPointerOnCosmos);
+        baseCw20 = new Cw20Token(admin, contractAddresses.cw20);
+        rpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
+
+
     })
 
     let multipleTxReceipt: ContractTransactionReceipt;
     let txBlocks: Map<string, number> = new Map<string, number>();
     it('Sends multiple evm txs', async () => {
-        const responses = await erc20.sendMultipleTxFromUsers();
+        const responses = await erc20.sendMultipleTxs(users);
         multipleTxReceipt = responses[0];
         for (const response of responses) {
             expect(response.status).to.be.eq(1);

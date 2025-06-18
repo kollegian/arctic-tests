@@ -82,6 +82,7 @@ describe('CW721 Tests', function () {
             //@Todo This will fail on atlantic 2. Need to skip
             it(`Before pointer deployment, ${endpoint} wont return any info`, async () => {
                 const results = await rpcClient.checkAndReturnRpcResultsForBlock(startBlockHeight, endBlockHeight, endpoint, '', topic);
+                console.log(results)
                 expect(results.length).to.be.eq(0);
             });
         }
@@ -184,7 +185,7 @@ describe('CW721 Tests', function () {
             const signed2 = await AtomicTxSender.signEvmTransaction(admin, erc721PointerContract.target, encodedCall2);
             const results = await AtomicTxSender.sendMultipleEvmTxs([signed, signed2], admin.evmRpcEndpoint, admin);
             await waitFor(1);
-
+            console.log(results);
             expect(await cwContract.ownerOf('1')).to.be.eq(admin.seiAddress);
             expect(await cwContract.ownerOf('5')).to.be.eq(alice.seiAddress);
 
@@ -226,7 +227,6 @@ describe('CW721 Tests', function () {
                 const results = await rpcClient.checkAndReturnRpcResultsForBlock(evmAndCosmosBlockHeight - 2, evmAndCosmosBlockHeight, endpoint, erc721PointerContract.target, topic);
                 expect(results.length).to.be.eq(2);
                 if (endpoint.includes('Logs')) {
-                    console.log(results);
                     results.forEach(result => {
                         expect(result.address).to.be.eq(erc721PointerContract.target.toLowerCase());
                         expect(result.topics.length).to.be.eq(4);
@@ -294,8 +294,8 @@ describe('CW721 Tests', function () {
         evmBlockEndpoints.forEach(endpoint => {
             it(`Evm log information matches with evm block information with ${endpoint}`, async () => {
                 const blockResult = await rpcClient.checkAndReturnRpcResultsForBlock(evmAndCosmosBlockHeight - 2, evmAndCosmosBlockHeight, endpoint, '', topic);
-                console.log(blockResult);
-                blockResult.forEach(result => {
+                const filtered = blockResult.filter(result => result.to.toLowerCase() === erc721PointerContract.target.toLowerCase());
+                filtered.forEach(result => {
                     expect(result.blockNumber).to.be.eq(transactionIndexes[result.hash].blockNumber);
                     expect(result.transactionIndex).to.be.eq(transactionIndexes[result.hash].transactionIndex);
                     expect(result.blockHash).to.be.eq(transactionIndexes[result.hash].blockHash);

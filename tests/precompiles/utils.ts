@@ -16,7 +16,7 @@ import BANK_ABI from './abis/bank_abi.json';
 import DISTR_ABI from './abis/distr_abi.json';
 import GOV_ABI from './abis/gov_abi.json';
 import STAKING_ABI from './abis/staking_abi.json';
-import {execCommandAndReturnJson} from '../../utils/cliUtils';
+import {execCommandAndReturnJson} from "../../shared/utils/cliUtils";
 
 export async function mintTokens(minter: SeiUser, denom: string, amount: string){
   return await execCommandAndReturnJson(`seid tx tokenfactory mint ${amount}${denom} --from ${minter.seiAddress} --fees 24200usei -y --broadcast-mode block`);
@@ -81,4 +81,12 @@ export async function returnContracts(owner: SeiUser){
   const stakingContract = new ethers.Contract(STAKING_PRECOMPILE_ADDRESS, STAKING_ABI, owner.evmWallet.wallet);
   const distrContract = new ethers.Contract(DIST_PRECOMPILE_ADDRESS, DISTR_ABI, owner.evmWallet.wallet);
   return {bankContract, govContract, stakingContract, distrContract};
+}
+
+export function findValidator(validators: any, operatorPubkey: string){
+   return validators.validators.find(validator => {
+        const buf = Buffer.from(validator.consensusPubkey!.value, 'base64');
+        const pubkey = buf.slice(2);
+        return pubkey.toString('hex') === operatorPubkey;
+    });
 }
