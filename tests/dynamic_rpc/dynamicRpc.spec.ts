@@ -187,7 +187,7 @@ describe('Dynamic RPC queries', function (){
                     topics:    log.topics,
                 };
                 const logs = await rpcClient.getLogs(filter) as Log[];
-                const found = logs.find(l => l.data === log.data);
+                const found = logs.find(l => l.data === log.data && l.address === log.address);
                 expect(found, `log ${log.logIndex} missing for tx ${tx}`).to.deep.include({
                     address: log.address,
                     data:    log.data,
