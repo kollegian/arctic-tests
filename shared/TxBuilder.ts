@@ -3,11 +3,8 @@ import { DeliverTxResponse } from '@cosmjs/stargate';
 import { waitFor } from './utils/helpers';
 import { EvmRpcClient } from './RpcClient';
 import {SeiUser} from "./User";
+import {NonceManager} from "../tests/load_tests/NonceManager";
 
-/**
- * Sends paired EVM and Cosmos transactions atomically,
- * and provides low-level raw EVM tx submission.
- */
 export class AtomicTxSender {
 
     static async sendMultipleEvmTxs(evmCalls: string[], rpcUrl: string, sender: SeiUser) {
@@ -106,44 +103,7 @@ export class AtomicTxSender {
         return { evmReceipts, cosmosResponses };
     }
 
-    /**
-     * Send a raw, signed EVM transaction via JSON-RPC (no ethers.js)
-     * @param rpcUrl     JSON-RPC endpoint
-     * @param signedTx   Raw signed transaction hex
-     * @param sender
-     * @returns          Transaction hash
-     *
-     * Example:
-     * ```ts
-     * // Encode the transfer function call
-     * const iface = new ethers.utils.Interface(ERC20_ABI.abi);
-     * const data = iface.encodeFunctionData('transfer', [recipient, amount]);
-     *
-     * // Build the transaction object
-     * const nonce = await provider.getTransactionCount(wallet.address);
-     * const gasPrice = await provider.getGasPrice();
-     * const gasLimit = await provider.estimateGas({
-     *   to: tokenAddress,
-     *   data,
-     *   from: wallet.address
-     * });
-     * const tx = {
-     *   to: tokenAddress,
-     *   data,
-     *   nonce,
-     *   gasPrice,
-     *   gasLimit,
-     *   value: 0
-     * };
-     *
-     * // Sign and serialize the transaction
-     * const signedTx = await wallet.signTransaction(tx);
-     *
-     * // Send raw transaction (will propagate even on failure)
-     * const txHash = await AtomicTxSender.sendRawTransaction(rpcUrl, signedTx);
-     * console.log('Raw tx hash:', txHash);
-     * ```
-     */
+
     static async sendRawTransaction(
         rpcUrl: string,
         signedTx: string,
@@ -153,25 +113,45 @@ export class AtomicTxSender {
         return client.sendRawTransaction(signedTx);
     }
 
+    static async sendRawTransactionWithProvider(
+        provider: ethers.JsonRpcProvider,    // ◀ change
+        signedTx: string,
+    ) {
+        const { hash } = await provider.broadcastTransaction(signedTx);
+        return hash;
+    }
+
     static async signEvmTransaction(
         user: SeiUser,
         to: string | ethers.Addressable,
         data: string,
         increaseNonce = false,
-        value: BigNumberish = 0
+        nonceManager?: NonceManager,
+        noncePassed?: number,// <── new
+        value: BigNumberish = 0,
     ): Promise<string> {
         const provider = user.evmWallet.signingClient;
         const wallet = user.evmWallet.wallet;
         const from = await wallet.getAddress();
-        let nonce = await provider.getTransactionCount(from);
-        if (increaseNonce) {
-            nonce +=1;
+
+        // ── Nonce handling ─────────────────────────────────────────────────────────
+        let nonce: number;
+        if (noncePassed !== undefined) {
+            nonce = noncePassed;
+        } else if (nonceManager) {
+            nonce = await nonceManager.take(from);
+        } else {
+            nonce = await provider.getTransactionCount(from);
         }
-        const feeDataOnChain = (await provider.getFeeData()).gasPrice;
-        const gasLimit = 400000;
-        const network = await provider.getNetwork();
-        const chainId = network.chainId;
-        const tx = { to, data, value, nonce, gasPrice: feeDataOnChain, gasLimit, chainId };
+        if (increaseNonce) nonce += 1;
+
+        // ── Gas / fee ──────────────────────────────────────────────────────────────
+        const gasLimit = 2_000_000;                       // keep in sync with CONFIG
+        const feeData = await provider.getFeeData();
+        const gasPrice = feeData.gasPrice!;
+        const {chainId} = await provider.getNetwork();
+
+        const tx = {to, data, value, nonce, gasPrice, gasLimit, chainId};
         return wallet.signTransaction(tx);
     }
 }

@@ -246,6 +246,7 @@ export class UserFactory {
         if (recordMnemonics) {
             const users: SeiUser[] = [];
             if (this.getNumberOfRecordedUsers() < count) {
+                console.log('I am trying to add users here ');
                 for (let i = 0; i < count; i++) {
                     users.push(new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint));
                 }
@@ -256,11 +257,13 @@ export class UserFactory {
                 users.push(...await this.returnUsersFromMnemonics());
                 const mnemonics = users.map(u => u.seiWallet.wallet.mnemonic);
                 fs.writeFileSync(path.resolve(this.filePath), JSON.stringify(mnemonics, null, 2), 'utf-8');
+                console.log('Users added to config/mnemonics.json');
                 return users;
             }
             try {
                 return await this.returnUsersFromMnemonics();
             } catch (e: any){
+                console.warn(e.message);
                 console.warn('No mnemonics found, creating new ones');
             }
         }
@@ -290,7 +293,9 @@ export class UserFactory {
         const mnemonics: string[] = JSON.parse(content);
         const users: SeiUser[] = [];
         console.log('Reading from config/mnemonics.json file to import users');
-
+        if (mnemonics.length === 0) {
+            return [];
+        }
         for (const user of mnemonics) {
             const user = new SeiUser(this.testConfig.seiRpcEndpoint, this.testConfig.evmRpcEndpoint, this.testConfig.restEndpoint);
             users.push(user);

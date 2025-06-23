@@ -11,6 +11,9 @@ import {TestERC20, TestNFT} from "../typechain-types";
 import util from "node:util";
 import {waitFor} from "./utils/helpers";
 import {execCommandAndReturnJson} from "./utils/cliUtils";
+import {EncodeObject} from "@cosmjs/proto-signing";
+import {TxRaw} from "cosmjs-types/cosmos/tx/v1beta1/tx";
+import {BroadcastTxResponse} from "cosmjs-types/cosmos/tx/v1beta1/service";
 
 
 export interface IFungibleToken {
@@ -110,6 +113,31 @@ export class Cw20Token implements IFungibleToken {
         );
     }
 
+    sign(
+        signer: SeiUser,
+        msg: EncodeObject,
+        signerData? : {
+            readonly accountNumber: number
+            readonly sequence: number
+            readonly chainId: string
+        },
+    ): Promise<TxRaw> {
+
+        return signer.seiWallet.cosmWasmSigningClient.sign(
+            signer.seiAddress,
+            [msg],
+            this.fee,
+            "memo",
+            signerData,
+        );
+    }
+
+
+    broadcastTx(sender: SeiUser, tx: TxRaw): Promise<string> {
+        const txRawBinary: Uint8Array = TxRaw.encode(tx).finish();
+        return sender.seiWallet.cosmWasmSigningClient.broadcastTxSync(txRawBinary);
+    }
+
     execMultiple(msgs: ExecuteInstruction[], memo = ""): Promise<ExecuteResult> {
         const fee = calculateFee(4500000, '0.25usei');
         return this.user.seiWallet.cosmWasmSigningClient.executeMultiple(
@@ -138,6 +166,25 @@ export class Cw20Token implements IFungibleToken {
             'memo'
         );
     }
+    returnEncodedTransfer(sender: SeiUser, recipient: string, amount: string): EncodeObject {
+        const transferMsg = {
+            transfer: {
+                recipient: recipient,
+                amount: amount
+            }
+        };
+
+        return {
+            typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+            value: {
+                sender: sender.seiAddress,
+                contract: this.address,
+                msg: Buffer.from(JSON.stringify(transferMsg)),
+                funds: []
+            }
+        };
+    }
+
     approve(spender: string, amount: string | number) { return this.exec({ increase_allowance: { spender, amount: amount.toString() } }); }
     allowance(owner: string, spender: string) { return this.query<{ allowance: string }>({ allowance: { owner, spender } }).then(r => r.allowance); }
     async mint(to: string, amount: string | number) {
@@ -295,6 +342,10 @@ export class Erc721Token extends EvmTokenBase implements INft721 {
 
     setSigner(signer: SeiUser){
         this.user = signer;
+    }
+
+    getAddress(){
+        return this.contract.target;
     }
 }
 
