@@ -2,7 +2,6 @@ import contractAddresses from './contractAddresses.json';
 import {SeiUser, UserFactory} from "../../shared/User";
 import {Erc20Token} from "../../shared/Token";
 import { DebugContract } from '../../typechain-types';
-import * as testConfig from '../../config/testConfig.json';
 import DebugContractAbi from '../../artifacts/contracts/DebugContract.sol/DebugContract.json';
 import {EvmRpcClient} from "../../shared/RpcClient";
 import {Block, ethers} from "ethers";
@@ -121,15 +120,18 @@ describe('Sei debug tests', function() {
         })
 
         it.only('Debug trace call succeeds in gas price fluctuations with default setting', async () => {
+            const balance = await erc20.balanceOf(users[1].evmAddress);
+            console.log(balance);
             const receipts = await erc20.sendMultipleTxs(users);
             const block = receipts[0].blockNumber;
+            console.log('Block received');
             const callData = erc20.contract.interface.encodeFunctionData('mint', [admin.evmAddress, ethers.parseEther('10')]);
             const callParams = [
                 {
                     from: admin.evmAddress,
                     to: erc20.getAddress(),
                     gas: ethers.toQuantity(100000),
-                    maxFeePerGas: ethers.toQuantity(1000000000),
+                    maxFeePerGas: ethers.toQuantity(1300000000),
                     value: '0x0',
                     data: callData
                 },

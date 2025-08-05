@@ -39,3 +39,14 @@ export function getPayload(){
         'deposit': async (denom: string, depositAmount: string) => await exec(`seid q evm payload ./utils/abis/ct_abi.json deposit ${denom} ${depositAmount}`)
     }
 }
+
+export async function getSoloPayload(walletName: string, receiverEvmAddr: string, assetsType: string, contractAddress: string){
+    const {stdout} = await exec(`seid tx evm print-claim-specific ${receiverEvmAddr} ${assetsType} ${contractAddress} --from ${walletName} -y`);
+    return stdout;
+}
+
+export async function getSoloAllPayload(walletName: string, receiverEvmAddr: string){
+    const {stdout} = await exec(`seid tx evm print-claim ${receiverEvmAddr} --from ${walletName} -y`);
+    return stdout;
+}
+

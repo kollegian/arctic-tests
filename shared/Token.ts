@@ -89,7 +89,7 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
         const txs = [];
         for(const user of users){
             txs.push(this.contract
-                .connect(user.evmWallet.wallet).transfer(this.user.evmAddress, ethers.parseEther('0.1')));
+                .connect(user.evmWallet.wallet).transfer(this.user.evmAddress, ethers.parseEther('0.01')));
         }
         const txRequests = await Promise.all(txs);
         return await Promise.all(txRequests.map((request: { wait: () => any; }) => request.wait()));
@@ -347,6 +347,13 @@ export class Erc721Token extends EvmTokenBase implements INft721 {
     getAddress(){
         return this.contract.target;
     }
+
+    async registerPointer() {
+        const resp = await exec(`seid tx evm register-cw-pointer ERC721 ${this.contract.target} --from admin -y --fees 24200usei --broadcast-mode block`);
+        await waitFor(1);
+        const {stdout, stderr} = await exec(`seid q evm pointer ERC721 ${this.contract.target} --output json`);
+        return (JSON.parse(stdout)).pointer;
+    }
 }
 
 /**
@@ -426,6 +433,13 @@ export class Cw721Token implements INft721 {
             }
         );
     }
+    async queryRoyaltyInfo(tokenId: string, salePrice: string) {
+        return this.query<{ address: string, royalty_amount: string } >({
+            extension: {
+                msg: { royalty_info: { token_id: tokenId, sale_price: salePrice } }
+            }
+        });
+    }
 }
 
 
@@ -463,6 +477,7 @@ export class Cw1155Token implements INft1155 {
         );
     }
 
+    getAddress() { return this.address};
     uri(tokenId: string) { return this.query<{ uri: string }>({ nft_info: { token_id: tokenId } }).then(r => r.uri); }
     balanceOf(account: string, tokenId: string) { return this.query<{ balance: string }>({ balance: { owner: account, token_id: tokenId } }).then(r => r.balance); }
     balanceOfBatch(accounts: string[], tokenIds: string[]) { return this.query<{ balances: string[] }>({ batch_balance: { owner: accounts, token_ids: tokenIds } }).then(r => r.balances.map(b => b)); }
@@ -470,4 +485,35 @@ export class Cw1155Token implements INft1155 {
     isApprovedForAll(account: string, operator: string) { return this.query<{ approval: boolean }>({ approval: { owner: account, operator } }).then(r => r.approval); }
     safeTransferFrom(from: string, to: string, tokenId: string, amount: string) { return this.exec({ transfer: { recipient: to, token_id: tokenId, amount } }); }
     safeBatchTransferFrom(from: string, to: string, tokenIds: string[], amounts: string[]) { return this.exec({ batch_transfer: { recipient: to, token_ids: tokenIds, amounts } }); }
+    async mint(params: any): Promise<ExecuteResult> {
+        const {recipient, tokenId, amount, tokenUri} = params;
+
+        const mintMsg: any = {
+            mint: {
+                recipient: recipient,
+                msg: {
+                    token_id: tokenId,
+                    amount: amount.toString(),
+                },
+            },
+        };
+
+        if (tokenUri) {
+            mintMsg.mint.msg.token_uri = tokenUri;
+        }
+
+        try {
+            const tx = await this.user.seiWallet.cosmWasmSigningClient.execute(
+                this.user.seiAddress,
+                this.address,
+                mintMsg,
+                'auto'
+            );
+            console.log('Mint successful:', tx.transactionHash);
+            return tx;
+        } catch (error: any) {
+            console.error('Mint failed:', error.message);
+            throw error;
+        }
+    }
 }

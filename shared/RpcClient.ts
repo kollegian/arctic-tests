@@ -335,6 +335,21 @@ export class EvmRpcClient {
         return await this.call('eth_getFilterLogs', [filterId]);
     }
 
+    /**
+     * eth_feeHistory: Returns a collection of historical gas information.
+     * @param blockCount Number of blocks in the requested range.
+     * @param newestBlock Highest block number. Can be 'latest' or a hex string.
+     * @param rewardPercentiles (optional) Array of percentiles for rewards.
+     */
+    async feeHistory(blockCount: number, newestBlock: string | number = 'latest', rewardPercentiles?: number[]): Promise<any> {
+        const params: any[] = [
+            '0x' + blockCount.toString(16),
+            typeof newestBlock === 'number' ? '0x' + newestBlock.toString(16) : newestBlock
+        ];
+        if (rewardPercentiles) params.push(rewardPercentiles);
+        return this.call('eth_feeHistory', params);
+    }
+
     async checkAndReturnRpcCallResults(syntheticEvent: string,
                                        receipt: ExecuteResult | ContractTransactionReceipt | DeliverTxResponse,
                                        topic: string,

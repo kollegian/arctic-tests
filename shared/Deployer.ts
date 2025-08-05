@@ -100,13 +100,14 @@ export class TokenDeployer {
 
     async deployCw1155(
         wasmFilePath: string,
-        initMsg: { minter: string; collection_info?: any },
+        initMsg: { name: string, symbol: string, minter: string; collection_info?: any },
         label: string
     ): Promise<Cw1155Token> {
         const instantiateRes = await this.deployWasm(
             wasmFilePath,
             initMsg,
             label)
+        console.log('CW1155 contract deployed to ', instantiateRes.contractAddress);
         return new Cw1155Token(this.user, instantiateRes.contractAddress);
     }
 

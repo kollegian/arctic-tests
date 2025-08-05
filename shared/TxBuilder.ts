@@ -146,12 +146,15 @@ export class AtomicTxSender {
         if (increaseNonce) nonce += 1;
 
         // ── Gas / fee ──────────────────────────────────────────────────────────────
-        const gasLimit = 2_000_000;                       // keep in sync with CONFIG
+        const gasLimit = 2_000_000;
         const feeData = await provider.getFeeData();
         const gasPrice = feeData.gasPrice!;
         const {chainId} = await provider.getNetwork();
-
-        const tx = {to, data, value, nonce, gasPrice, gasLimit, chainId};
+        const type = '0x2';
+        const maxFeePerGas = feeData.maxFeePerGas!;
+        const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas!;
+        console.log(Number(maxFeePerGas), Number(maxPriorityFeePerGas));
+        const tx = {to, data, value, nonce, maxFeePerGas, maxPriorityFeePerGas, gasLimit, type, chainId};
         return wallet.signTransaction(tx);
     }
 }

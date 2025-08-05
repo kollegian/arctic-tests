@@ -1,6 +1,6 @@
 import util from "node:util";
 import {Tendermint34Client} from "@cosmjs/tendermint-rpc";
-import {QueryClient, setupBankExtension} from "@cosmjs/stargate";
+import {QueryClient, setupBankExtension, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
 import {Contract, ethers} from "ethers";
 import {SeiUser} from '../../shared/User';
 import fs from 'fs';
@@ -17,6 +17,7 @@ import DISTR_ABI from './abis/distr_abi.json';
 import GOV_ABI from './abis/gov_abi.json';
 import STAKING_ABI from './abis/staking_abi.json';
 import {execCommandAndReturnJson} from "../../shared/utils/cliUtils";
+import {parseEther} from "ethers";
 
 export async function mintTokens(minter: SeiUser, denom: string, amount: string){
   return await execCommandAndReturnJson(`seid tx tokenfactory mint ${amount}${denom} --from ${minter.seiAddress} --fees 24200usei -y --broadcast-mode block`);
@@ -89,4 +90,30 @@ export function findValidator(validators: any, operatorPubkey: string){
         const pubkey = buf.slice(2);
         return pubkey.toString('hex') === operatorPubkey;
     });
+}
+
+export async function getProposalID(govContract: Contract, proposalJSON: any){
+    const proposalId: bigint = await govContract
+        .submitProposal
+        .staticCall(proposalJSON, { value: parseEther("10") });
+    return Number(proposalId);
+}
+
+export async function queryAllStakes(user: SeiUser){
+    const stakingQueryClient = await returnQueryClient(setupStakingExtension) as QueryClient & StakingExtension;
+    const delegations = await stakingQueryClient.staking.delegatorDelegations(user.seiAddress);
+    console.log(delegations);
+    const totalStake = delegations.delegationResponses.reduce((total, resp) => {
+        return total += Number(resp.balance.amount);
+    }, 0);
+    console.log(totalStake);
+    return totalStake;
+}
+export function returnTextProposal(isExpedited = false, title="Test Text Proposal") {
+    return JSON.stringify({
+        "title": title,
+        "description": "This is a test text proposal for governance",
+        "type": "Text",
+        "is_expedited": isExpedited
+    })
 }

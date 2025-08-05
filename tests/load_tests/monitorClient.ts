@@ -9,6 +9,7 @@ export interface LatencyEntry {
     txBroadcastLatency: number;
     blockInclusionLatency: number;
     blockNumber: number;
+    gasUsed?: bigint;
 }
 
 export interface BlockStats {
@@ -50,19 +51,29 @@ export class MonitorClient {
         ackTime: number,
         txBroadcastLatency: number
     ) {
-        while (true) {
+        let totalTried = 0;
+        let isFound = false;
+        while (totalTried < 5000) {
             const receipt = await this.evm.getTransactionReceipt(txHash);
             if (receipt) {
+                console.log('Tx Hash: ', txHash);
                 this.queue.push({
                     chain: "evm",                      // ← add
                     txHash,
                     txBroadcastLatency,
                     blockInclusionLatency: Date.now() - ackTime,
                     blockNumber: receipt.blockNumber,
+                    gasUsed: BigInt(receipt.gasUsed.toString())
                 });
+                isFound = true;
                 break;
             }
+            totalTried++;
             await waitFor(CONFIG.POLL_INTERVAL_MS / 1000);
+        }
+        if (!isFound){
+            console.log('Tx Hash: ', txHash, 'isnt found');
+            throw new Error('Tx not found');
         }
     }
 

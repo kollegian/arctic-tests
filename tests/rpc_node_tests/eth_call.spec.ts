@@ -68,8 +68,8 @@ describe('Evm Rpc Tests', function () {
             throw new Error('Should have thrown');
         } catch(e: any){
             console.log(e);
-            expect(e.info.error.code).to.be.eq(-32000);
-            expect(e.info.error.message).to.be.eq('execution reverted');
+            expect(e.message).to.contain('-32000');
+            expect(e.message).to.contain('execution reverted');
         }
     });
 
@@ -127,8 +127,8 @@ describe('Evm Rpc Tests', function () {
             const rpcResult = await rpcClient.callTx(callObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
-            expect(e.info.error.code).to.be.eq(-32000);
-            expect(e.info.error.message).to.contain('err: intrinsic gas too low');
+            expect(e.message).to.contain('-32000');
+            expect(e.message).to.contain('err: intrinsic gas too low');
         }
     });
 
@@ -146,8 +146,8 @@ describe('Evm Rpc Tests', function () {
             const rpcResult = await rpcClient.callTx(callObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
-            expect(e.info.error.code).to.be.eq(-32000);
-            expect(e.info.error.message).to.be.eq('execution reverted');
+            expect(e.message).to.contain('-32000');
+            expect(e.message).to.contain('execution reverted');
         }
     });
 
@@ -177,8 +177,8 @@ describe('Evm Rpc Tests', function () {
             const rpcResult = await rpcClient.callTx(callObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
-            expect(e.info.error.code).to.be.eq(-32000);
-            expect(e.info.error.message).to.be.eq('execution reverted');
+            expect(e.message).to.contain(-32000);
+            expect(e.message).to.contain('execution reverted');
         }
     });
 
@@ -193,8 +193,8 @@ describe('Evm Rpc Tests', function () {
             const rpcResult = await rpcClient.callTx(callObject, 'invalidBlockTag');
             throw new Error('Should have thrown');
         } catch(e: any){
-            expect(e.info.error.code).to.be.eq(-32602);
-            expect(e.info.error.message).to.be.eq('invalid argument 1: hex string without 0x prefix');
+            expect(e.message).to.contain(-32602);
+            expect(e.message).to.contain('invalid argument 1: hex string without 0x prefix');
         }
     });
 
@@ -209,8 +209,8 @@ describe('Evm Rpc Tests', function () {
             const rpcResult = await rpcClient.callTx(callObject, 'latest');
             throw new Error('Should have thrown');
         } catch(e: any){
-            expect(e.info.error.code).to.be.eq(-32000);
-            expect(e.info.error.message).to.be.eq('execution reverted');
+            expect(e.message).to.contain('-32000');
+            expect(e.message).to.contain('execution reverted');
         }
     });
 

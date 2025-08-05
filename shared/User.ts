@@ -227,6 +227,13 @@ export class UserFactory {
         return admin;
     }
 
+    static async createSeiUser(admin: SeiUser, userName: string){
+        const user = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
+        await user.initialize('', userName, true);
+        await this.fundAddressOnSei(user.seiAddress);
+        return user;
+    }
+
     static async fundAdminOnSei(tokenName = 'usei') {
         await this.funder.fundAdminOnSei(tokenName);
     }
@@ -235,9 +242,9 @@ export class UserFactory {
         await this.funder.fundAddressOnSei(address, tokenName, amount);
     }
 
-    static async createUnassociatedUsers(admin: SeiUser){
+    static async createUnassociatedUsers(admin: SeiUser, userName='unassocUser', toBeAddedToCli=false): Promise<SeiUser> {
         const user = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
-        await user.initialize('', 'unassocUser', false);
+        await user.initialize('', userName, toBeAddedToCli);
         await this.fundAddressOnSei(user.seiAddress);
         return user;
     }
@@ -252,11 +259,14 @@ export class UserFactory {
                 }
                 await Promise.all(users.map(u => u.initialize('', '', false)));
                 await UserFactory.fundAllUsers(users);
+                await waitFor(5);
                 await UserFactory.associateAll(users);
                 console.log(`${count} Users created on Sei`);
                 users.push(...await this.returnUsersFromMnemonics());
                 const mnemonics = users.map(u => u.seiWallet.wallet.mnemonic);
                 fs.writeFileSync(path.resolve(this.filePath), JSON.stringify(mnemonics, null, 2), 'utf-8');
+                const privateKeys = users.map(u => u.evmWallet.wallet.privateKey);
+                fs.writeFileSync(path.resolve(path.resolve(__dirname, '../config/privKey.json')), JSON.stringify(privateKeys, null, 2), 'utf-8');
                 console.log('Users added to config/mnemonics.json');
                 return users;
             }

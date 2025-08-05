@@ -5,10 +5,13 @@
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@sei-js/confidential-transfers": "^0.0.0-internal-20250421183351",
     "@sei-js/cosmos": "^1.0.5",
+    "@types/express": "^5.0.3",
+    "@types/lodash": "^4.17.17",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.14.1",
     "ethers": "^6.13.5",
     "hardhat": "^2.23.0",
+    "lodash": "^4.17.21",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3"
@@ -18,10 +21,15 @@
     "@cosmjs/stargate": "^0.33.1",
     "@duneanalytics/client-sdk": "^0.2.5",
     "@openzeppelin/contracts-upgradeable": "^5.3.0",
+    "axios": "^1.10.0",
     "bech32": "^2.0.0",
+    "cosmjs-types": "^0.9.0",
+    "ed25519-supercop": "^2.0.1",
+    "express": "^5.1.0",
     "googleapis": "^149.0.0",
     "graphql-request": "^7.1.2",
     "mocha": "11.1.0",
-    "mochawesome": "^7.1.3"
+    "mochawesome": "^7.1.3",
+    "prom-client": "^15.1.3"
   }
 }

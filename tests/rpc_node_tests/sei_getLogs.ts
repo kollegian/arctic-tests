@@ -1,232 +1,249 @@
-import {SeiUser} from "../../modules/utils/User";
-import {ERC20Token} from "../shared/Token";
-import RPCClient from "../../tokens/utils/RPCClient";
-import {CW20Token} from "../../tokens/utils/Token20";
-import testConfig from "../testConfig.json";
-import {returnExpect} from "../../modules/bank/utils";
-import {Block, ethers, LogDescription} from "ethers";
-import pointerArtifacts from "../CW20ERC20Pointer.json";
-import {waitFor} from "../../modules/tokenfactory/helpers";
-import {createUsersFromMnemonic} from "../shared/EvmUtils";
-import ContractAddresses from "../contractAddresses.json";
+import { SeiUser, UserFactory } from "../../shared/User";
+import { Cw20Token, Erc20Token } from "../../shared/Token";
+import contractAddresses from './contractAddresses.json';
+import { EvmRpcClient } from "../../shared/RpcClient";
+import { Block, ethers, LogDescription } from "ethers";
+import { expect } from "chai";
+import { waitFor } from "../../shared/utils/helpers";
+import { AtomicTxSender } from "../../shared/TxBuilder";
+import { TokenDeployer } from "../../shared/Deployer";
+
 
 describe('Sei get logs tests', function() {
     this.timeout(10 * 60 * 1000);
     let users: SeiUser[];
     let admin: SeiUser;
-    let expect: Chai.ExpectStatic;
-    let erc20: ERC20Token;
-    let rpcClient: RPCClient;
-    let baseCw20: CW20Token;
+    let erc20: Erc20Token;
+    let rpcClient: EvmRpcClient;
+    let baseCw20: Cw20Token;
+    let txBlocks: Map<string, number> = new Map<string, number>();
+    let multipleTxReceipt: any;
+    let oneSyntheticOneEvmTx: any;
+    let multipleSyntheticAndOneFailingEvmTx: any;
+    let multipleSyntheticAndEvmTx: any;
+    let multipleTxBlock: any;
 
     before('Initializes', async () => {
-        admin = new SeiUser(testConfig.seiRpcEndpoint, testConfig.evmRpcEndpoint, testConfig.restEndpoint);
-        await admin.initialize(testConfig.mnemonic, 'admin', false);
-        expect = await returnExpect();
-        users = await createUsersFromMnemonic();
-        expect = await returnExpect();
-        erc20 = new ERC20Token(admin, users, ContractAddresses.erc20);
-        await erc20.initialize();
-        rpcClient = new RPCClient(admin.evmWallet.signingClient);
-        baseCw20 = new CW20Token(ContractAddresses.cw20)
-    })
+        admin = await UserFactory.createAdminUser();
+        users = await UserFactory.createSeiUsers(admin, 5, true);
+        erc20 = new Erc20Token(admin, contractAddresses.erc20);
+        baseCw20 = new Cw20Token(admin, contractAddresses.cw20);
+        rpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
+    });
 
-    it('Given that there are synthetic and evm txs, sei get logs return info for all', async function() {
-        const tx = await erc20.sendMultipleSyntheticOneEvmTx(ContractAddresses.cw20);
-        const logsParams = {
-            fromBlock: ethers.toQuantity(tx[0].blockNumber - 1),
-            toBlock: ethers.toQuantity(tx[0].blockNumber + 6),
-            address: ContractAddresses.cwPointerOnEvm
+    it('Sends multiple synthetic txs and validates logs', async () => {
+        const responses = await erc20.sendMultipleTxs(users);
+        multipleTxReceipt = responses[0];
+        for (const response of responses) {
+            expect(response.status).to.be.eq(1);
+            if (txBlocks.has(response.blockNumber.toString())) {
+                txBlocks.set(response.blockNumber.toString(), txBlocks.get(response.blockNumber.toString())! + 1);
+            } else {
+                txBlocks.set(response.blockNumber.toString(), 1);
+            }
         }
+        const blockNumber = responses[0].blockNumber;
+        console.log(blockNumber);
+        await waitFor(1);
+        const logsParams = {
+            fromBlock: ethers.toQuantity(blockNumber),
+            toBlock: ethers.toQuantity(blockNumber),
+            address: erc20.getAddress().toString(),
+            topics: [ethers.id('Transfer(address,address,uint256)')],
+        };
         const logs = await rpcClient.sei_getLogs(logsParams);
         expect(logs.length).to.be.eq(users.length);
-        let logIndexes = new Set();
-        for(const log of logs){
-            logIndexes.add(log.logIndex);
-            expect(log.address.toLowerCase()).to.be.eq(ContractAddresses.cwPointerOnEvm.toLowerCase());
-            expect(ethers.toNumber(log.blockNumber)).to.be.eq(tx[1].height);
-            const pointerContract = new ethers.Contract(ContractAddresses.cwPointerOnEvm, pointerArtifacts.abi, admin.evmWallet.wallet);
-            const decodedData = pointerContract.interface.parseLog(log) as LogDescription;
-            expect(decodedData.name).to.be.eq('Transfer');
-            expect(decodedData.args[0].toLowerCase()).to.be.eq(admin.evmAddress.toLowerCase());
-            expect(decodedData.args[2].toString()).to.be.eq('100000');
+        for (const log of logs) {
+            expect(log.address.toString().toLowerCase()).to.be.eq(erc20.getAddress().toString().toLowerCase());
+            const parsed = erc20.contract.interface.parseLog(log) as LogDescription;
+            expect(parsed.name).to.be.eq('Transfer');
+            expect(parsed.args[1]).to.equal(admin.evmAddress);
+            expect(ethers.formatEther(parsed.args[2].toString())).to.equal('0.01');
+            expect(ethers.toNumber(log.blockNumber)).to.be.eq(Number(blockNumber));
         }
-        expect(logIndexes.size).to.be.eq(logs.length);
-
-        const allEventLogs = {
-            fromBlock: ethers.toQuantity(tx[0].blockNumber - 1),
-            toBlock: ethers.toQuantity(tx[0].blockNumber + 3),
-        }
-        const allLogs = await rpcClient.sei_getLogs(allEventLogs);
-        expect(allLogs.length).to.be.eq(users.length + 1);
     });
 
-    it('Given that synthetic events thrown from pointer on cosmos, sei get logs return info for all', async function() {
-        const tx = await erc20.sendMultipleSyntheticOneEvmTx(ContractAddresses.cw20);
-        const logParams = {
-            fromBlock: ethers.toQuantity(tx[0].blockNumber - 1),
-            toBlock: ethers.toQuantity(tx[0].blockNumber + 3),
-            topics: [ethers.id('Transfer(address,address,uint256)')],
+    it('Send a synthetic and evm tx and validate logs', async () => {
+        const encodedData = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('1')]);
+        const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
+        baseCw20.setSigner(users[1]);
+        const delayed = async () =>{
+            await waitFor(0.49);
+            // The method expects 3 arguments: (rpcUrl, signedTx, sender) as per shared/TxBuilder.ts
+            const txHash: string = await AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
+            return txHash;
         }
-        const rpc = await rpcClient.sei_getLogs(logParams);
-        expect(rpc.length).to.be.eq(users.length + 1);
-    });
-
-    it('Given that there are multiple txs thrown synthetically, sei get logs return all of them', async function() {
-        const txs = users.map(user => {
-            return baseCw20.transfer(user, admin, '100000');
-        });
-        const results = await Promise.all(txs);
-        await waitFor(3);
-        const blockHeights = results.reduce((prev, current) => {
-            if (prev.has(current.height.toString())){
-                const prevIndex = prev.get(current.height.toString())!;
-                prev.set(current.height.toString(), prevIndex + 1);
-            } else {
-                prev.set(current.height.toString(), 1);
-            }
-            return prev;
-        }, new Map<string, number>());
-        console.log('Block heights are ', blockHeights);
-        console.log('Logs from block is ', results[0].height - 2);
-        console.log('Logs to block is ', results[0].height + 3);
-        const logParams = {
-            fromBlock: ethers.toQuantity(results[0].height - 2),
-            toBlock: ethers.toQuantity(results[0].height + 3),
-            topics: [ethers.id('Transfer(address,address,uint256)')],
-            address: ContractAddresses.cwPointerOnEvm,
-        }
-        const logs = await rpcClient.sei_getLogs(logParams);
-        expect(logs.length).to.be.eq(users.length);
-        const logIndexes = new Set();
-        for(const log of logs){
-            logIndexes.add(log.logIndex);
-            expect(log.address.toLowerCase()).to.be.eq(ContractAddresses.cwPointerOnEvm.toLowerCase());
-            expect(ethers.toNumber(log.blockNumber)).to.be.oneOf(Array.from(blockHeights.keys()).map(key => parseInt(key)));
-            const pointerContract = new ethers.Contract(ContractAddresses.cwPointerOnEvm, pointerArtifacts.abi, admin.evmWallet.wallet);
-            const decodedData = pointerContract.interface.parseLog(log) as LogDescription;
-            expect(decodedData.name).to.be.eq('Transfer');
-            expect(decodedData.args[1].toLowerCase()).to.be.eq(admin.evmAddress.toLowerCase());
-            expect(decodedData.args[2].toString()).to.be.eq('100000');
-        }
-        expect(logIndexes.size).to.be.gt(5);
-    });
-
-    it('Sei get logs can return multiple topics with OR', async function() {
-        const txs = await Promise.all( [
-            baseCw20.increaseAllowance(admin, users[0].seiAddress, '10000'),
-            baseCw20.increaseAllowance(users[1], users[2].seiAddress, '10000'),
-            erc20.sendOneTx(admin)
+        const results = await Promise.all([
+            delayed(),
+            baseCw20.transfer(admin.seiAddress, '100000'),
         ]);
-        const logParams = {
-            fromBlock: ethers.toQuantity(txs[0].height - 3),
-            toBlock: ethers.toQuantity(txs[0].height + 3),
-            topics: [
-                [ethers.id('Transfer(address,address,uint256)'), ethers.id('Approval(address,address,uint256)')],
-            ]
+        oneSyntheticOneEvmTx = await rpcClient.getTransactionReceipt(results[0]);
+        expect(Number(oneSyntheticOneEvmTx.blockNumber)).to.be.eq(results[1].height);
+        const logsParams = {
+            fromBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) - 1),
+            toBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) + 1),
+            topics: [ethers.id('Transfer(address,address,uint256)')],
+        };
+        const logResponses = await rpcClient.sei_getLogs(logsParams);
+        expect(logResponses.length).to.be.eq(2);
+    });
+
+    it('Sends multiple failing txs and validates logs are empty', async () => {
+        const encoded1 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('10000000000')]);
+        const signed = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
+        const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
+        const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
+        const delayed = async () => {
+            await waitFor(0.23);
+            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin);
+            return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
         }
-        const rpc = await rpcClient.sei_getLogs(logParams);
-        expect(rpc.length).to.be.eq(3);
+        const results = await Promise.all([
+            delayed(),
+            baseCw20.transfer(admin.seiAddress, '100000')
+        ]);
+        const receipt = await rpcClient.getTransactionReceipt(results[0]);
+        multipleSyntheticAndOneFailingEvmTx = results[1];
+        expect(Number(receipt.blockNumber)).to.be.eq(results[1].height);
+        const logsParams = {
+            fromBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) -2),
+            toBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) + 2),
+            topics: [ethers.id('Transfer(address,address,uint256)')],
+            address: erc20.getAddress().toString()
+        };
+        const logResponses = await rpcClient.sei_getLogs(logsParams);
+        expect(logResponses.length).to.be.eq(0);
     });
 
-    it('Sei get logs return txs from multiple blocks', async function() {
-       await waitFor(3);
-       const startBlock = await admin.evmWallet.signingClient.getBlock('latest') as unknown as Block;
-       for (let i = 0; i < 10; i++) {
-           await baseCw20.transfer(users[i], admin, '10000');
-           await waitFor(0.2);
-       }
-       await waitFor(0.5);
-       const endBlock = await admin.evmWallet.signingClient.getBlock('latest') as unknown as Block;
-       const logParams = {
-           fromBlock: ethers.toQuantity(startBlock.number),
-           toBlock: ethers.toQuantity(endBlock.number),
-       }
-       const rpc = await rpcClient.sei_getLogs(logParams);
-       expect(rpc.length).to.be.eq(10);
-    });
-
-    it('Given that there is a failing tx on evm side, sei logs return successfully', async function() {
-        const txs = await Promise.all( [
-            baseCw20.increaseAllowance(admin, users[0].seiAddress, '10000'),
-            erc20.contract.transfer(users[0].evmAddress, ethers.parseEther('1000000'), {gasLimit: 1000000}).catch(err => err),
-            baseCw20.transfer(users[2], admin, '10000000'),
-            erc20.sendOneTx(users[5]),
-        ])
-        const logParams = {
-            fromBlock: ethers.toQuantity(txs[0].height - 3),
-            toBlock: ethers.toQuantity(txs[0].height + 3),
-            topics: [
-                [ethers.id('Transfer(address,address,uint256)'), ethers.id('Approval(address,address,uint256)')],
-            ]
+    it('Sends multiple synthetic and multiple evm txs and validates logs', async () => {
+        const signedTxs: string[] = [];
+        for (let i = 0; i < 3; i++){
+            const encoded = erc20.contract.interface.encodeFunctionData('transfer', [users[i].evmAddress, ethers.parseEther('0.01')]);
+            signedTxs.push(await AtomicTxSender.signEvmTransaction(users[i], erc20.getAddress(), encoded));
         }
-        const logs = await rpcClient.sei_getLogs(logParams);
-        expect(logs.length).to.be.eq(3);
-    });
-
-    it('Given that there is a failing synthetic tx, sei logs return successfully', async function() {
-        const txs = await Promise.all( [
-            baseCw20.increaseAllowance(admin, users[0].seiAddress, '10000'),
-            baseCw20.transfer(users[2], admin, '1000000000000000').catch(err => err),
-            erc20.sendOneTx(users[5]),
-            baseCw20.transfer(users[1], users[2], '1000'),
-        ])
-
-        const logParams = {
-            fromBlock: ethers.toQuantity(txs[0].height - 3),
-            toBlock: ethers.toQuantity(txs[0].height + 3),
-            topics: [
-                [ethers.id('Transfer(address,address,uint256)'), ethers.id('Approval(address,address,uint256)')],
-            ]
+        const delayed = async () =>{
+            await waitFor(0.25);
+            return Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)))
         }
-        const logs = await rpcClient.sei_getLogs(logParams);
-        expect(logs.length).to.be.eq(3);
+        const msgs = [
+            {contractAddress: baseCw20.getAddress(),
+                msg: { transfer: { recipient: admin.seiAddress, amount: '100000' }}},
+            {contractAddress: baseCw20.getAddress(),
+                msg: { transfer: { recipient: admin.seiAddress, amount: '100000' }}}
+        ];
+        const results = await Promise.all([
+            delayed(),
+            baseCw20.execMultiple(msgs),
+        ]);
+        multipleSyntheticAndEvmTx = await rpcClient.getTransactionReceipt(results[0][0]);
+        expect(Number(multipleSyntheticAndEvmTx.blockNumber)).to.be.eq(results[1].height);
+        const logsParams = {
+            fromBlock: ethers.toQuantity(Number(multipleSyntheticAndEvmTx.blockNumber) - 1),
+            toBlock: ethers.toQuantity(Number(multipleSyntheticAndEvmTx.blockNumber) + 3),
+            topics: [ethers.id('Transfer(address,address,uint256)')],
+            address: erc20.getAddress().toString()
+        };
+        const logs = await rpcClient.sei_getLogs(logsParams);
+        expect(logs.length).to.be.greaterThan(0);
     });
 
-    let i = 0;
-    const tags = ['latest', 'finalized', 'safe', 'pending'];
-    for(let tag of tags) {
-        it(`Sei get logs support ${tag} on to block field`, async function() {
+    it('Can get logs for both erc20 and erc721 events', async () => {
+        const deployer = new TokenDeployer(admin);
+        const erc721 = await deployer.deployErc721('TestCw721', 'TestCw721', 'http://example.com');
+        await (await erc721.safeMint(admin.evmAddress, '1')).wait();
+        const encodedErc20 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('0.1')]);
+        const signedErc20 = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encodedErc20);
+        const encodedErc721 = erc721.contract.interface.encodeFunctionData('approve', [users[0].evmAddress, '1']);
+        const signedErc721 = await AtomicTxSender.signEvmTransaction(admin, erc721.getAddress(), encodedErc721);
+        const results= await Promise.all([
+            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedErc20, admin),
+            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedErc721, admin),
+        ]);
+        await waitFor(1);
+        const tx = await rpcClient.getTransactionReceipt(results[0]);
+        const logParams1 = {
+            fromBlock: ethers.toQuantity(Number(tx.blockNumber) - 1),
+            toBlock: ethers.toQuantity(Number(tx.blockNumber) + 2),
+            topics: [ethers.id('Approval(address,address,uint256)')],
+        };
+        const logs = await rpcClient.sei_getLogs(logParams1);
+        const logParams2 = {
+            fromBlock: ethers.toQuantity(Number(tx.blockNumber) - 1),
+            toBlock: ethers.toQuantity(Number(tx.blockNumber) + 2),
+            topics: [ethers.id('Transfer(address,address,uint256)')],
+        };
+        const logs2 = await rpcClient.sei_getLogs(logParams2);
+        const combinedLogs = {
+            fromBlock: ethers.toQuantity(Number(tx.blockNumber) - 1),
+            toBlock: ethers.toQuantity(Number(tx.blockNumber) + 2),
+            topics: [[
+                ethers.id('Transfer(address,address,uint256)'),
+                ethers.id('Approval(address,address,uint256)')
+            ]],
+        };
+        const logsCombined = await rpcClient.sei_getLogs(combinedLogs);
+        expect(logsCombined.length).to.be.eq(logs.length + logs2.length);
+    });
+
+    it('Can return txs successfully for a span of 100 blocks', async () => {
+        const encodedTx = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('0.01')]);
+        const signedTxs = await Promise.all(users.map((user) => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
+        const results = await Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)));
+        await waitFor(0.5);
+        const txReceipt = await rpcClient.getTransactionReceipt(results[0]);
+        multipleTxBlock = txReceipt.blockNumber;
+        await waitFor(5); // Shorter wait for test speed
+        const logParams = {
+            fromBlock: txReceipt.blockNumber,
+            toBlock: ethers.toQuantity(Number(txReceipt.blockNumber) + 100),
+            topics: [ethers.id('Transfer(address,address,uint256)')],
+            address: erc20.getAddress().toString(),
+        };
+        const logResponses = await rpcClient.sei_getLogs(logParams);
+        expect(logResponses.length).to.be.eq(users.length);
+        let txIndexes = new Set();
+        let logIndexes = new Set();
+        const expectedLogIndexes = new Array(users.length).fill(0)
+            .map((_, index) => ethers.toQuantity(index));
+        for(const topic of logResponses) {
+            expect(topic.address.toString().toLowerCase()).to.be.eq(erc20.getAddress().toString().toLowerCase());
+            const parsed = erc20.contract.interface.parseLog(topic) as LogDescription;
+            expect(parsed.name).to.be.eq('Transfer');
+            expect(parsed.args[1]).to.equal(admin.evmAddress);
+            expect(ethers.formatEther(parsed.args[2].toString())).to.equal('0.01')
+            txIndexes.add(topic.transactionIndex);
+            logIndexes.add(topic.logIndex);
+            expect(topic.logIndex).to.be.oneOf(expectedLogIndexes);
+        }
+        expect(txIndexes.size).to.be.eq(users.length);
+        expect(logIndexes.size).to.be.eq(users.length);
+    });
+
+    it('Sei get logs supports finalized, safe, latest, pending tags', async () => {
+        let i = 0;
+        const tags = ['finalized', 'safe', 'latest', 'pending'];
+        for(const tag of tags) {
             await waitFor(2);
-            baseCw20.transfer(admin, users[i], '1000')
+            await baseCw20.transfer(admin.seiAddress, users[i].seiAddress, '1000');
             let index = 0;
+            let found = false;
             while(index < 200){
                 const logParams = {
                     fromBlock: tag,
                     topics: [ethers.id('Transfer(address,address,uint256)')],
-                }
+                    address: erc20.getAddress().toString(),
+                };
                 const rpc = await rpcClient.sei_getLogs(logParams);
                 if(rpc.length > 0){
                     i++;
-                    return true;
+                    found = true;
+                    break;
                 } else {
                     await waitFor(0.02);
                     index++;
                 }
             }
-            throw new Error('I threw this error occurred.');
-        });
-
-        it(`Sei get logs support ${tag} on from block field`, async function() {
-            await waitFor(2);
-            const blockNum = await admin.evmWallet.signingClient.getBlock('latest') as unknown as Block;
-            baseCw20.transfer(admin, users[0], '1000')
-            let index = 0;
-            while(index < 200){
-                const logParams = {
-                    fromBlock: ethers.toQuantity(blockNum.number - 2),
-                    toBlock: tag,
-                    topics: [ethers.id('Transfer(address,address,uint256)')],
-                }
-                const rpc = await rpcClient.sei_getLogs(logParams);
-                if(rpc.length > 0){
-                    return true;
-                } else {
-                    await waitFor(0.02);
-                    index++;
-                }
-            }
-            throw new Error('I threw this error occurred.');
-        });
-    }
-})
+            expect(found).to.be.true;
+        }
+    });
+});

@@ -49,7 +49,7 @@ describe('Evm Rpc Tests', function () {
         const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
         baseCw20.setSigner(users[1]);
         const delayed = async () =>{
-            await waitFor(0.2);
+            await waitFor(0.49);
             return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
 
         }
@@ -58,6 +58,8 @@ describe('Evm Rpc Tests', function () {
             baseCw20.transfer(admin.seiAddress, '100000'),
         ]);
         oneSyntheticOneEvmTx = await rpcClient.getTransactionReceipt(results[0]);
+        console.log('evm block is ', Number(oneSyntheticOneEvmTx.blockNumber));
+        console.log('sei block is ', Number(results[1].height));
         expect(Number(oneSyntheticOneEvmTx.blockNumber)).to.be.eq(results[1].height);
     });
 
@@ -68,7 +70,7 @@ describe('Evm Rpc Tests', function () {
         const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
         const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
         const delayed = async () => {
-            await waitFor(0.3);
+            await waitFor(0.23);
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin)
             return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
         }
@@ -77,8 +79,11 @@ describe('Evm Rpc Tests', function () {
             baseCw20.transfer(admin.seiAddress, '100000')
         ]);
         const receipt = await rpcClient.getTransactionReceipt(results[0]);
-        expect(Number(receipt.blockNumber)).to.be.eq(results[1].height);
+        console.log('evm block is ', Number(receipt.blockNumber));
+        console.log('sei block is ', Number(results[1].height));
         multipleSyntheticAndOneFailingEvmTx = results[1];
+
+        expect(Number(receipt.blockNumber)).to.be.eq(results[1].height);
     });
 
     let multipleSyntheticAndEvmTx: ContractTransactionReceipt;
@@ -90,7 +95,7 @@ describe('Evm Rpc Tests', function () {
         }
 
         const delayed = async () =>{
-            await waitFor(0.3);
+            await waitFor(0.25);
             return Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)))
         }
         const msgs = [
@@ -104,10 +109,12 @@ describe('Evm Rpc Tests', function () {
             baseCw20.execMultiple(msgs),
         ]);
         multipleSyntheticAndEvmTx = await rpcClient.getTransactionReceipt(results[0][0]);
+        console.log('evm block is ', Number(multipleSyntheticAndEvmTx.blockNumber));
+        console.log('sei block is ', Number(results[1].height));
         expect(Number(multipleSyntheticAndEvmTx.blockNumber)).to.be.eq(results[1].height);
     });
 
-    it.only('Can read topics with multiple logs', async () => {
+    it.only('Can read topics with multiple logs and validate indexes', async () => {
         const provider = admin.evmWallet.signingClient;
         for (const blockNumber of txBlocks.keys()) {
             const blockHash = (await provider.send('eth_getBlockByNumber', [ethers.toQuantity(blockNumber), false])).hash;
@@ -120,26 +127,54 @@ describe('Evm Rpc Tests', function () {
                 fromBlock: ethers.toQuantity(blockNumber),
                 toBlock: ethers.toQuantity(blockNumber),
                 topics: [ethers.id('Transfer(address,address,uint256)')],
-                address: erc20.getAddress()
+                address: erc20.getAddress().toString()
             }
             blockRpc = await provider.send('eth_getLogs', [logParams]);
             expect(blockRpc.length).to.be.eq(txBlocks.get(blockNumber));
 
+            // Get block details for additional validation
+            const blockDetails = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(blockNumber), true]);
+            const blockReceipts = await provider.send('eth_getBlockReceipts', [ethers.toQuantity(blockNumber)]);
+
             for(const topic of blockRpc) {
-                expect(topic.address.toLowerCase()).to.be.eq(erc20.getAddress().toLowerCase());
+                expect(topic.address.toLowerCase()).to.be.eq(erc20.getAddress().toString().toLowerCase());
                 const parsed = erc20.contract.interface.parseLog(topic) as LogDescription;
                 expect(parsed.name).to.be.eq('Transfer');
                 expect(parsed.args[1]).to.equal(admin.evmAddress);
-                expect(ethers.formatEther(parsed.args[2].toString())).to.equal('0.1')
+                expect(ethers.formatEther(parsed.args[2].toString())).to.equal('0.01')
                 expect(ethers.toNumber(topic.blockNumber)).to.be.eq(Number(blockNumber));
                 expect(topic.blockHash).to.be.eq(blockHash);
+                
+                // Validate transaction index from multiple sources
                 const txIndexFromReceipt = await rpcClient.getTransactionReceipt(topic.transactionHash);
                 expect(txIndexFromReceipt.transactionIndex).to.be.eq(topic.transactionIndex);
+                
+                // Validate against block receipts
+                const blockReceipt = blockReceipts.find((receipt: any) => receipt.transactionHash === topic.transactionHash);
+                expect(blockReceipt).to.not.be.undefined;
+                expect(blockReceipt.transactionIndex).to.be.eq(topic.transactionIndex);
+                
+                // Validate against block details
+                const blockTx = blockDetails.transactions.find((tx: any) => tx.hash === topic.transactionHash);
+                expect(blockTx).to.not.be.undefined;
+                expect(blockTx.transactionIndex).to.be.eq(topic.transactionIndex);
+                
+                // Validate log index consistency
+                const receiptLogs = blockReceipt.logs.filter((log: any) => log.transactionHash === topic.transactionHash);
+                const matchingLog = receiptLogs.find((log: any) => log.logIndex === topic.logIndex);
+                expect(matchingLog).to.not.be.undefined;
+                expect(matchingLog.address.toLowerCase()).to.be.eq(topic.address.toString().toLowerCase());
+                expect(matchingLog.topics).to.deep.eq(topic.topics);
+                expect(matchingLog.data).to.be.eq(topic.data);
+                
                 txIndexes.add(topic.transactionIndex);
                 logIndexes.add(topic.logIndex);
+                
                 // Verify that log indexes start from 0
                 const found = expectedLogIndexes.find(index => index === topic.logIndex);
                 expect(found).to.not.be.undefined;
+                
+                console.log(`✅ Log validation passed for tx ${topic.transactionHash}: txIndex=${topic.transactionIndex}, logIndex=${topic.logIndex}`);
             }
             expect(txIndexes.size).to.be.eq(txBlocks.get(blockNumber));
             expect(logIndexes.size).to.be.eq(txBlocks.get(blockNumber));
@@ -235,14 +270,14 @@ describe('Evm Rpc Tests', function () {
         expect(logsCombined.length).to.be.eq(logs.length + logs2.length);
     });
 
+    let multipleTxBlock;
     it.only('Can return txs successfully for a span of 100 blocks', async () => {
         const encodedTx = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('0.01')]);
         const signedTxs = await Promise.all(users.map((user) => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
-        console.log(signedTxs);
         const results = await Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)));
-        console.log(results);
         await waitFor(0.5);
         const txReceipt = await rpcClient.getTransactionReceipt(results[0]);
+        multipleTxBlock = txReceipt.blockNumber;
         await waitFor(60);
         console.log('Current block number is ', Number(await admin.evmWallet.signingClient.getBlockNumber()));
         console.log('Sent block number is ', Number(txReceipt.blockNumber));
@@ -253,7 +288,7 @@ describe('Evm Rpc Tests', function () {
             address: erc20.getAddress(),
         };
         const logResponses = await rpcClient.getLogs(logParams);
-        expect(logResponses.length).to.be.eq(5);
+        expect(logResponses.length).to.be.eq(users.length);
         let txIndexes = new Set();
         let logIndexes = new Set();
         const expectedLogIndexes = new Array(users.length).fill(0)
@@ -269,7 +304,7 @@ describe('Evm Rpc Tests', function () {
             // Verify that log indexes start from 0
             expect(topic.logIndex).to.be.oneOf(expectedLogIndexes);
         }
-        expect(txIndexes.size).to.be.eq(3);
+        expect(txIndexes.size).to.be.eq(users.length);
         expect(logIndexes.size).to.be.eq(users.length);
     });
 
@@ -322,4 +357,25 @@ describe('Evm Rpc Tests', function () {
             throw new Error('I threw this error occurred.');
         });
     }
+
+    it.only('Eth get logs tx indexes alongside with log indexes return correct data', async () =>{
+        const blockTxs = await rpcClient.getBlockByNumber(multipleTxBlock, true);
+        const logParams = {
+            fromBlock: ethers.toQuantity(Number(multipleTxBlock) - 1),
+            toBlock: ethers.toQuantity(Number(multipleTxBlock) + 3),
+            topics: [ethers.id('Transfer(address,address,uint256)')],
+            address: erc20.getAddress()
+        }
+        const logs = await rpcClient.getLogs(logParams);
+
+        for (const tx of blockTxs.transactions) {
+            const txReceipt = await rpcClient.getTransactionReceipt(tx.hash);
+            // verify that the tx index matches
+            const logTxIndex = logs.find(log => log.transactionIndex === txReceipt.transactionIndex);
+
+            // verify that log index matches
+            console.log(logTxIndex);
+            console.log(txReceipt.logs);
+        }
+    });
 })

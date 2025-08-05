@@ -32,10 +32,14 @@ describe('Deploys the contracts and records addresses', function () {
         erc20 = await deployer.deployErc20();
         console.log('Deployed to the chain');
         await erc20.mintToUsers(users);
-
+        await waitFor(2);
         console.info('All users are funded for erc20');
-        // cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
-        // console.log(cwPointerAddress);
+        for (const user of users) {
+            const balance = await erc20.contract.balanceOf(user.evmAddress);
+            console.log(`User ${user.seiAddress} balance: ${balance}`);
+        }
+        cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
+        console.log(cwPointerAddress);
         const initialBalances = users.map(user =>{
             return {
                 address: user.seiAddress,

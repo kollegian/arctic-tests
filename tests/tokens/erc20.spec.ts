@@ -124,6 +124,7 @@ describe('Erc20 Tests', function () {
         it('Admin deploys pointer for the erc20 contract', async () => {
             const pointer = await erc20Contract.deployPointer(admin.evmRpcEndpoint);
             erc20PointerContract = new Cw20Token(admin, pointer);
+            console.log('Pointer address is ', pointer);
         });
 
         it('Admin balances are migrated correctly', async () => {

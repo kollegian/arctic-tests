@@ -48,4 +48,41 @@ export async function createCtUsers(admin: SeiUser){
     return {alice, bob};
 }
 
+export function hex2uint8(hex: string) {
+    const hex_chars = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
+    hex = hex.toUpperCase();
+    let uint8 = new Uint8Array(Math.floor(hex.length/2));
+    for (let i=0; i < Math.floor(hex.length/2); i++) {
+        uint8[i] = hex_chars.indexOf(hex[i*2])*16;
+        uint8[i] += hex_chars.indexOf(hex[i*2+1]);
+    }
+    return uint8;
+}
 
+export function calcNewBaseFee(
+    prevBaseFee: number,
+    blockGasUsed: number
+): number {
+    const blockGasLimit = 35_000_000;
+    const targetGasUsed = 250_000;
+    const maxUpwardAdjustment = 0.0189; // 1.89%
+    const maxDownwardAdjustment = 0.0039; // 0.39%
+
+    if (blockGasUsed > targetGasUsed) {
+        // Upward adjustment
+        const numerator = blockGasUsed - targetGasUsed;
+        const denominator = blockGasLimit - targetGasUsed;
+        const percentageFull = numerator / denominator;
+        const adjustmentFactor = maxUpwardAdjustment * percentageFull;
+        const newBaseFee = prevBaseFee * (1 + adjustmentFactor);
+        return Math.floor(newBaseFee);
+    } else {
+        // Downward adjustment
+        const numerator = targetGasUsed - blockGasUsed;
+        const denominator = targetGasUsed;
+        const percentageEmpty = numerator / denominator;
+        const adjustmentFactor = maxDownwardAdjustment * percentageEmpty;
+        const newBaseFee = prevBaseFee * (1 - adjustmentFactor);
+        return Math.floor(newBaseFee);
+    }
+}

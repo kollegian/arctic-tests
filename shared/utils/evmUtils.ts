@@ -1,4 +1,6 @@
 import {SeiUser} from "../User";
+import {Erc20Token} from "../Token";
+import {ethers} from "ethers";
 
 export async function broadcastTx(sender: SeiUser, payload: any, contractAddress: string){
     const nonce = await sender.evmWallet.wallet.getNonce();
@@ -28,4 +30,11 @@ export function decodeTxInput(input: string){
 
     // Convert buffer to UTF-8 string
     return JSON.parse(buffer.toString('utf8'));
+}
+
+export function returnEncodedErc20Data(erc20Contract: Erc20Token, bob: SeiUser){
+    return  erc20Contract.contract.interface.encodeFunctionData(
+        'transfer',
+        [bob.evmAddress, ethers.parseEther('10')]
+    );
 }

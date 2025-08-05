@@ -17,6 +17,7 @@ export class TxFormer {
         const data = erc20.contract.interface.encodeFunctionData(
             "transfer", [receiver.evmAddress, amount]
         );
+        console.log(data);
         const signed = await AtomicTxSender.signEvmTransaction(
             sender, erc20.getAddress(), data, false, nonceMgr
         );

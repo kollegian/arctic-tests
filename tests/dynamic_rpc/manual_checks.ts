@@ -4,7 +4,7 @@ import {EvmRpcClient} from "../../shared/RpcClient";
 const main = async () =>{
     const admin = await UserFactory.createAdminUser();
     const rpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
-    const blockNum = '0xab03fd1';
+    const blockNum = '0xab0a3e6';
     const block = await rpcClient.getBlockByNumber(blockNum, true);
     console.log(block);
     console.log('******');

@@ -1,13 +1,13 @@
 export const CONFIG = {
-  TOTAL_USERS : 1000,
-  EVM_USERS   : 500,
-  COSMOS_USERS: 500,
+  TOTAL_USERS : 750,
+  EVM_USERS   : 1000,
+  COSMOS_USERS: 100,
 
-  TOTAL_TXS         : 5000,
-  INTER_TX_DELAY_MS :   2,
+  TOTAL_TXS         : 1500,
+  INTER_TX_DELAY_MS :   1,
 
-  POLL_INTERVAL_MS  : 20,
-  MAX_CONCURRENCY   : 400,
+  POLL_INTERVAL_MS  : 2,
+  MAX_CONCURRENCY   : 750,
 
-  GAS_LIMIT         : 900_000n,
+  GAS_LIMIT         : 990_000n,
 } as const;
