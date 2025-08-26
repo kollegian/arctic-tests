@@ -33,6 +33,7 @@ export interface INft721 {
     balanceOf(owner?: string): Promise<BigNumberish>;
     ownerOf(tokenId: BigNumberish | string): Promise<string>;
     safeTransferFrom(from: string, to: string, tokenId: BigNumberish | string): Promise<any>;
+    transfer(from: string, to: string, tokenId: BigNumberish | string): Promise<any>;
     approve(to: string, tokenId: BigNumberish | string): Promise<any>;
     getApproved(tokenId: BigNumberish | string): Promise<string>;
     setApprovalForAll(operator: string, approved: boolean): Promise<any>;
@@ -304,6 +305,10 @@ export class Erc721Token extends EvmTokenBase implements INft721 {
         return this.contract.transferFrom(from, to, tokenId);
     }
 
+    transfer(from: string, to: string, tokenId: BigNumberish): Promise<any> {
+        return this.contract.transferFrom(from, to, tokenId);
+    }
+
     safeTransferFrom(from: string, to: string, tokenId: BigNumberish): Promise<any> {
         return this.contract['safeTransferFrom(address,address,uint256)'](from, to, tokenId);
     }
@@ -326,10 +331,6 @@ export class Erc721Token extends EvmTokenBase implements INft721 {
 
     isApprovedForAll(owner: string, operator: string): Promise<boolean> {
         return this.contract.isApprovedForAll(owner, operator);
-    }
-
-    tokenURI(tokenId: BigNumberish): Promise<string> {
-        return this.contract.tokenURI(tokenId);
     }
 
     getContract(): TestNFT {
@@ -378,7 +379,7 @@ export class Cw721Token implements INft721 {
     }
 
     private execMultiple(msgs: ExecuteInstruction[], memo = ""): Promise<ExecuteResult> {
-        const fee = calculateFee(500000, '0.25usei');
+        const fee = calculateFee(2500000, '0.25usei');
         return this.user.seiWallet.cosmWasmSigningClient.executeMultiple(
             this.user.seiAddress,
             msgs,
@@ -393,12 +394,18 @@ export class Cw721Token implements INft721 {
     async balanceOf(owner?: string) { const r = await this.query<{ balance: string }>({ tokens: { owner: owner ?? this.user.seiAddress, start_after: null, limit: 1 } }); return r.balance; }
     async ownerOf(tokenId: string) { const r = await this.query<{ owner: string }>({ owner_of: { token_id: tokenId } }); return r.owner; }
     safeTransferFrom(from: string, to: string, tokenId: string) { return this.exec({ transfer_nft: { recipient: to, token_id: tokenId } }); }
+    transfer(from: string, to: string, tokenId: string) { return this.exec({ transfer_nft: { recipient: to, token_id: tokenId } }); }
+    sendNft(to: string, tokenId: string, msg?: string) { return this.exec({ send_nft: { contract: to, token_id: tokenId, msg: msg || "" } }); }
     approve(to: string, tokenId: string) { return this.exec({ approve: { spender: to, token_id: tokenId } }); }
-    getApproved(tokenId: string, spender: string) { return this.query<{ approval: { spender: string, token_id: string, include_expired: boolean } }>({ approval: { token_id: tokenId, spender, include_expired: true } }).then(r => r.approval.spender); }
+    revokeApproval(spender: string, tokenId: string) { return this.exec({ revoke: { spender: spender, token_id: tokenId } }); }
+    getApproved(tokenId: string) { return this.query<{ approvals: { spender: string, expires: any }[] }>({ approvals: { token_id: tokenId, include_expired: true } }).then(r => r.approvals.length > 0 ? r.approvals[0].spender : ''); }
     setApprovalForAll(operator: string, approved: boolean) { return this.exec({ approve_all: { operator, expires: null } }); }
+    revokeAll(operator: string) { return this.exec({ revoke_all: { operator } }); }
     isApprovedForAll(owner: string, operator: string) { return this.query<{ approved: boolean }>({ approvals: { owner, operator } }).then(r => r.approved); }
     tokenUri(tokenId: string) { return this.query<{ token_uri: string }>({ nft_info: { token_id: tokenId } }).then(r => r.token_uri); }
     mintTx(nftId: string, receiverAddress: string) { return this.exec({ mint: { token_id: nftId, owner: receiverAddress, token_uri: `https://example.com/token${nftId}.json`, extension: {} } }); }
+    mint(tokenId: string, receiverAddress: string) { return this.exec({ mint: { token_id: tokenId, owner: receiverAddress, token_uri: `https://example.com/token${tokenId}.json`, extension: {} } }); }
+    burn(tokenId: string) { return this.exec({ burn: { token_id: tokenId } }); }
     mintMultiple(nftIds: string[], receiverAddresses: string[]) {
         const messages: ExecuteInstruction[] = nftIds.map((nftId, i) => ({
             contractAddress: this.address,
@@ -414,7 +421,9 @@ export class Cw721Token implements INft721 {
         return this.execMultiple(messages, '');}
     async deployPointer(evmEndpoint: string){
         const resp = await exec(`seid tx evm register-evm-pointer CW721 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --fees 24200usei --broadcast-mode block`);
-        console.log(resp);
+        await waitFor(1);
+        const {stdout, stderr} = await exec(`seid q evm pointer CW721 ${this.address} --output json`);
+        return (JSON.parse(stdout)).pointer;
     }
     async queryPointerAddress(){
         const {stdout, stderror} = await exec(`seid q evm pointer CW721 ${this.address} --output json`);
@@ -439,6 +448,128 @@ export class Cw721Token implements INft721 {
                 msg: { royalty_info: { token_id: tokenId, sale_price: salePrice } }
             }
         });
+    }
+
+    // Extension methods for royalties
+    async checkRoyalties() {
+        return this.query<{ royalty_payments: string }>({
+            extension: {
+                msg: { check_royalties: {} }
+            }
+        });
+    }
+
+    async getRoyaltyInfo(tokenId: string, salePrice: string) {
+        return this.query<{ address: string, royalty_amount: string }>({
+            extension: {
+                msg: { royalty_info: { token_id: tokenId, sale_price: salePrice } }
+            }
+        });
+    }
+
+    // Ownership management methods
+    async getContractOwner() {
+        return this.query<{ owner: string }>({ ownership: {} }).then(r => r.owner);
+    }
+
+    async updateOwnership(newOwner: string) {
+        return this.exec({ update_ownership: { new_owner: newOwner } });
+    }
+
+    // Withdrawal methods for royalties
+    async setWithdrawAddress(address: string) {
+        return this.exec({ set_withdraw_address: { address } });
+    }
+
+    async removeWithdrawAddress() {
+        return this.exec({ remove_withdraw_address: {} });
+    }
+
+    async withdrawFunds() {
+        return this.exec({ withdraw_funds: {} });
+    }
+
+    async getWithdrawAddress() {
+        return this.query<{ address: string }>({ withdraw_address: {} }).then(r => r.address);
+    }
+
+    // Helper methods for dynamic token management
+    async getTotalSupply(): Promise<number> {
+        const r = await this.query<{ count: string }>({ num_tokens: {} });
+        return parseInt(r.count);
+    }
+
+    async getAllTokensForOwner(owner: string): Promise<string[]> {
+        const tokens: string[] = [];
+        let startAfter: string | null = null;
+        const limit = 30; // reasonable limit per query
+        
+        while (true) {
+            const query: any = {
+                tokens: {
+                    owner,
+                    limit,
+                    start_after: startAfter
+                }
+            };
+            
+            const r = await this.query<{ tokens: string[] }>(query);
+            
+            if (r.tokens.length === 0) {
+                break;
+            }
+            
+            tokens.push(...r.tokens);
+            
+            if (r.tokens.length < limit) {
+                break;
+            }
+            
+            startAfter = r.tokens[r.tokens.length - 1];
+        }
+        
+        return tokens;
+    }
+
+    async getLatestMintedToken(owner?: string): Promise<string | null> {
+        const targetOwner = owner || this.user.seiAddress;
+        const tokens = await this.getAllTokensForOwner(targetOwner);
+        
+        if (tokens.length === 0) {
+            return null;
+        }
+        
+        // Sort tokens numerically to get the latest one
+        const sortedTokens = tokens.sort((a, b) => {
+            const numA = parseInt(a);
+            const numB = parseInt(b);
+            return numB - numA; // descending order
+        });
+        
+        return sortedTokens[0];
+    }
+
+    async mintAndGetTokenId(receiverAddress: string, tokenIdPrefix: string = 'test'): Promise<string> {
+        const timestamp = Date.now();
+        const randomSuffix = Math.floor(Math.random() * 10000);
+        const tokenId = `${tokenIdPrefix}_${timestamp}_${randomSuffix}`;
+        
+        await this.mintTx(tokenId, receiverAddress);
+        return tokenId;
+    }
+
+    async mintMultipleAndGetTokenIds(receiverAddresses: string[], tokenIdPrefix: string = 'test'): Promise<string[]> {
+        const tokenIds: string[] = [];
+        const timestamp = Date.now();
+        
+        for (let i = 0; i < receiverAddresses.length; i++) {
+            const randomSuffix = Math.floor(Math.random() * 10000);
+            const tokenId = `${tokenIdPrefix}_${timestamp}_${i}_${randomSuffix}`;
+            tokenIds.push(tokenId);
+        }
+        
+        await this.mintMultiple(tokenIds, receiverAddresses);
+        return tokenIds;
     }
 }
 

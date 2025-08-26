@@ -125,9 +125,11 @@ export class AtomicTxSender {
         user: SeiUser,
         to: string | ethers.Addressable,
         data: string,
+        maxPriorityFeePerGas: BigNumberish = 0,
+        maxFeePerGas: BigNumberish = 0,
         increaseNonce = false,
         nonceManager?: NonceManager,
-        noncePassed?: number,// <── new
+        noncePassed?: number,
         value: BigNumberish = 0,
     ): Promise<string> {
         const provider = user.evmWallet.signingClient;
@@ -151,10 +153,9 @@ export class AtomicTxSender {
         const gasPrice = feeData.gasPrice!;
         const {chainId} = await provider.getNetwork();
         const type = '0x2';
-        const maxFeePerGas = feeData.maxFeePerGas!;
-        const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas!;
-        console.log(Number(maxFeePerGas), Number(maxPriorityFeePerGas));
-        const tx = {to, data, value, nonce, maxFeePerGas, maxPriorityFeePerGas, gasLimit, type, chainId};
+        const maxFeePerGasToSend = maxFeePerGas || feeData.maxFeePerGas!;
+        const maxPriorityFeePerGasToSend = maxPriorityFeePerGas || feeData.maxPriorityFeePerGas!;
+        const tx = {to, data, value, nonce, maxFeePerGas: maxFeePerGasToSend, maxPriorityFeePerGas: maxPriorityFeePerGasToSend, gasLimit, type, chainId};
         return wallet.signTransaction(tx);
     }
 }

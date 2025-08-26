@@ -1,0 +1,97 @@
+name: Run Token Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      evmRpcEndpoint:
+        description: "EVM RPC endpoint (writes to config/testConfig.json)"
+        required: false
+        type: string
+      seiRpcEndpoint:
+        description: "SEI RPC endpoint (writes to config/testConfig.json)"
+        required: false
+        type: string
+      restEndpoint:
+        description: "REST endpoint (writes to config/testConfig.json)"
+        required: false
+        type: string
+
+jobs:
+  token-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable Corepack (Yarn)
+        run: |
+          corepack enable
+          corepack prepare yarn@4.6.0 --activate
+
+      - name: Install dependencies
+        run: |
+          yarn install --immutable || yarn install
+
+      - name: Install seid CLI
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          RELEASE_URL=$(curl -s https://api.github.com/repos/sei-protocol/sei-chain/releases/latest | jq -r '.assets[] | select(.name | test("linux.*amd64")) | .browser_download_url' | head -n 1)
+          if [ -z "$RELEASE_URL" ]; then echo "Failed to resolve seid release URL" && exit 1; fi
+          curl -L "$RELEASE_URL" -o seid
+          chmod +x seid
+          sudo mv seid /usr/local/bin/seid
+          seid version || true
+
+      - name: Configure seid (chain-id and node)
+        env:
+          INPUT_SEI_RPC: ${{ github.event.inputs.seiRpcEndpoint }}
+        run: |
+          # Set chain-id to atlantic-2 and keyring backend to test (non-interactive)
+          seid config chain-id atlantic-2
+          seid config keyring-backend test
+          if [ -n "${INPUT_SEI_RPC}" ]; then
+            seid config node ${INPUT_SEI_RPC}
+          fi
+
+      - name: Update config/testConfig.json with inputs
+        env:
+          INPUT_EVM_RPC: ${{ github.event.inputs.evmRpcEndpoint }}
+          INPUT_SEI_RPC: ${{ github.event.inputs.seiRpcEndpoint }}
+          INPUT_REST: ${{ github.event.inputs.restEndpoint }}
+        run: |
+          node -e '
+          const fs = require("fs");
+          const path = "config/testConfig.json";
+          const raw = fs.readFileSync(path, "utf8");
+          const cfg = JSON.parse(raw);
+          const { INPUT_EVM_RPC, INPUT_SEI_RPC, INPUT_REST } = process.env;
+          if (INPUT_EVM_RPC && INPUT_EVM_RPC.trim()) cfg.evmRpcEndpoint = INPUT_EVM_RPC.trim();
+          if (INPUT_SEI_RPC && INPUT_SEI_RPC.trim()) cfg.seiRpcEndpoint = INPUT_SEI_RPC.trim();
+          if (INPUT_REST && INPUT_REST.trim()) cfg.restEndpoint = INPUT_REST.trim();
+          fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n");
+          console.log("Updated config/testConfig.json:");
+          console.log(fs.readFileSync(path, "utf8"));
+          '
+
+      - name: Run token tests - startTests
+        run: yarn mocha -r tsx tests/tokens/startTests.ts
+
+      - name: Run token tests - erc20_refactored
+        run: yarn mocha -r tsx tests/tokens/erc20_refactored.spec.ts
+
+      - name: Run token tests - erc721_refactored
+        run: yarn mocha -r tsx tests/tokens/erc721_refactored.spec.ts
+
+      - name: Run token tests - cw20_refactored
+        run: yarn mocha -r tsx tests/tokens/cw20_refactored.spec.ts
+
+      - name: Run token tests - cw721_refactored
+        run: yarn mocha -r tsx tests/tokens/cw721_refactored.spec.ts
+
+

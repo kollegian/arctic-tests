@@ -1,0 +1,215 @@
+#!/usr/bin/env node
+
+import axios from 'axios';
+import { URL } from 'url';
+
+interface SeiProject {
+  slug: string;
+  name: string;
+  logo: string;
+  description?: string;
+  category: string;
+  subcategory?: string;
+  website?: string;
+  twitter?: string;
+  seiOnly: boolean;
+}
+
+interface LinkCheckResult {
+  project: SeiProject;
+  website: string;
+  isValid: boolean;
+  statusCode?: number;
+  error?: string;
+  responseTime?: number;
+}
+
+interface ApiResponse {
+  projects: SeiProject[];
+  trending: SeiProject[];
+}
+
+class SeiLinkChecker {
+  private apiUrl = 'https://app-api.seinetwork.io/apps/explore';
+  private timeout = 10000; // 10 seconds timeout
+  private maxConcurrent = 20; // Limit concurrent requests
+
+  async fetchProjects(): Promise<SeiProject[]> {
+    try {
+      console.log('🔍 Fetching projects from Sei Network API...');
+      const response = await axios.get<ApiResponse>(this.apiUrl, {
+        timeout: this.timeout,
+        headers: {
+          'User-Agent': 'Sei-Link-Checker/1.0'
+        }
+      });
+
+      const allProjects = [...response.data.projects, ...response.data.trending];
+      console.log(`✅ Fetched ${allProjects.length} projects (${response.data.projects.length} regular + ${response.data.trending.length} trending)`);
+      
+      return allProjects;
+    } catch (error) {
+      console.error('❌ Error fetching projects:', error);
+      throw error;
+    }
+  }
+
+  private isValidUrl(url: string): boolean {
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async checkSingleLink(project: SeiProject): Promise<LinkCheckResult> {
+    const result: LinkCheckResult = {
+      project,
+      website: project.website || 'N/A',
+      isValid: false
+    };
+
+    if (!project.website || project.website === 'N/A') {
+      result.error = 'No website URL provided';
+      return result;
+    }
+
+    if (!this.isValidUrl(project.website)) {
+      result.error = 'Invalid URL format';
+      return result;
+    }
+
+    try {
+      const startTime = Date.now();
+      const response = await axios.get(project.website, {
+        timeout: this.timeout,
+        maxRedirects: 5,
+        validateStatus: (status) => status < 399, 
+        headers: {
+          'User-Agent': 'Sei-Link-Checker/1.0'
+        }
+      });
+      
+      const endTime = Date.now();
+      result.isValid = true;
+      result.statusCode = response.status;
+      result.responseTime = endTime - startTime;
+    } catch (error: any) {
+      result.error = error.message || 'Unknown error';
+      if (error.response) {
+        result.statusCode = error.response.status;
+      }
+    }
+
+    return result;
+  }
+
+  private async checkLinksWithConcurrency(projects: SeiProject[]): Promise<LinkCheckResult[]> {
+    const projectsWithWebsites = projects.filter(p => p.website);
+    console.log(`🔗 Checking ${projectsWithWebsites.length} website links...`);
+
+    const results: LinkCheckResult[] = [];
+    const chunks = this.chunkArray(projectsWithWebsites, this.maxConcurrent);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      console.log(`📦 Processing batch ${i + 1}/${chunks.length} (${chunk.length} links)...`);
+      
+      const chunkPromises = chunk.map(project => this.checkSingleLink(project));
+      const chunkResults = await Promise.all(chunkPromises);
+      results.push(...chunkResults);
+
+      // Small delay between batches to be respectful
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    return results;
+  }
+
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  private generateReport(results: LinkCheckResult[]): void {
+    const validLinks = results.filter(r => r.isValid);
+    const invalidLinks = results.filter(r => !r.isValid);
+    const noWebsite = results.filter(r => !r.project.website);
+
+    console.log('\n📊 LINK CHECK REPORT');
+    console.log('='.repeat(50));
+    console.log(`Total projects: ${results.length}`);
+    console.log(`Valid links: ${validLinks.length}`);
+    console.log(`Invalid links: ${invalidLinks.length}`);
+    console.log(`No website: ${noWebsite.length}`);
+    console.log(`Success rate: ${((validLinks.length / (results.length - noWebsite.length)) * 100).toFixed(1)}%`);
+
+    if (invalidLinks.length > 0) {
+      console.log('\n❌ INVALID LINKS:');
+      console.log('-'.repeat(30));
+      invalidLinks.forEach(result => {
+        console.log(`\n🔗 ${result.project.name} (${result.project.slug})`);
+        console.log(`   Website: ${result.website}`);
+        console.log(`   Error: ${result.error}`);
+        if (result.statusCode) {
+          console.log(`   Status: ${result.statusCode}`);
+        }
+      });
+    }
+
+    if (validLinks.length > 0) {
+      console.log('\n✅ VALID LINKS:');
+      console.log('-'.repeat(30));
+      validLinks.forEach(result => {
+        console.log(`\n🔗 ${result.project.name} (${result.project.slug})`);
+        console.log(`   Website: ${result.website}`);
+        console.log(`   Status: ${result.statusCode}`);
+        if (result.responseTime) {
+          console.log(`   Response time: ${result.responseTime}ms`);
+        }
+      });
+    }
+
+    if (noWebsite.length > 0) {
+      console.log('\n⚠️  PROJECTS WITHOUT WEBSITES:');
+      console.log('-'.repeat(30));
+      noWebsite.forEach(result => {
+        console.log(`\n📱 ${result.project.name} (${result.project.slug})`);
+        console.log(`   Category: ${result.project.category}`);
+        if (result.project.twitter) {
+          console.log(`   Twitter: ${result.project.twitter}`);
+        }
+      });
+    }
+  }
+
+  async run(): Promise<void> {
+    try {
+      console.log('🚀 Starting Sei Network Link Checker...\n');
+      
+      const projects = await this.fetchProjects();
+      const results = await this.checkLinksWithConcurrency(projects);
+      
+      this.generateReport(results);
+      
+      console.log('\n✨ Link checking completed!');
+    } catch (error) {
+      console.error('💥 Fatal error:', error);
+      process.exit(1);
+    }
+  }
+}
+
+// Run the link checker
+if (require.main === module) {
+  const checker = new SeiLinkChecker();
+  checker.run().catch(console.error);
+}
+
+export default SeiLinkChecker;

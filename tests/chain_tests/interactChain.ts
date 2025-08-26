@@ -6,6 +6,10 @@ import {EvmRpcClient} from "../../shared/RpcClient";
 import {Cw20Token, Erc20Token} from "../../shared/Token";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {waitFor} from "../../shared/utils/helpers";
+import * as ercAbi from "../../artifacts/contracts/TestERC20.sol/TestERC20.json";
+import {myErc} from "../indexers/atlantic-2-usdc/generated/myErc/myErc";
+import {TestERC20} from "../../typechain-types";
+import {TokenDeployer} from "../../shared/Deployer";
 
 const main = async () => {
     const admin = await UserFactory.createAdminUser();
@@ -20,8 +24,8 @@ const main = async () => {
         data: data,
         value: 0n,
         gasLimit: 8000000n,
-        maxFeePerGas: 2550000000n,
-        maxPriorityFeePerGas: 1000000000n,
+        maxFeePerGas: 3550000000n,
+        maxPriorityFeePerGas: 3000000000n,
         nonce: await admin.evmWallet.wallet.getNonce('latest'),
         chainId: chainId,
         type: 2
@@ -29,7 +33,11 @@ const main = async () => {
     const signedTx = await admin.evmWallet.wallet.signTransaction(txRequest);
     const txHash = await admin.evmWallet.signingClient.broadcastTransaction(signedTx);
     console.log(txHash);
-
+    await waitFor(0.5);
+    const fee_history = await admin.evmWallet.signingClient.send('eth_feeHistory', ["0x4",
+        "latest",
+        [25, 100]]);
+    console.log(fee_history);
 }
 
 const bombChainWithTxs = async() => {
@@ -123,4 +131,28 @@ const checkBlockRpc = async () => {
     const printedLogs = receipts.map(r => console.log(r));
 }
 
-checkBlockRpc();
+const getSignedTx = async () => {
+    const rpc = 'https://evm-rpc.sei-apis.com';
+    const seiRpc = 'https://rpc.sei-apis.com';
+
+    const admin = await UserFactory.createAdminUser();
+    console.log(admin.evmWallet.wallet.privateKey);
+    /*console.log(await admin.evmWallet.queryBalance());
+
+    const erc20Contr = new ethers.Contract('0x3894085Ef7Ff0f0aeDf52E2A2704928d1Ec074F1', ercAbi.abi, admin.evmWallet.wallet) as unknown as TestERC20;
+    const approveTx = erc20Contr.interface.encodeFunctionData('approve', ['0x92D54824d32221FF3aC12B8cEA62D3de3ac332B9', ethers.parseEther('5.1')]);
+    const encodedTx = await AtomicTxSender.signEvmTransaction(admin, await erc20Contr.getAddress(), approveTx, '1500000000', '3900000000');
+    const txHash = await AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, encodedTx, admin);
+    console.log(txHash);
+    console.log('Admin address is ', admin.evmAddress);
+    console.log(admin.evmWallet.wallet.privateKey);*/
+}
+
+const deployErc20 = async () => {
+    const admin = await UserFactory.createAdminUser();
+    const tokenDeployer = new TokenDeployer(admin);
+    const erc20 = await tokenDeployer.deployErc20();
+    await erc20.mint(admin.evmAddress, ethers.parseEther('1000'));
+}
+
+main();

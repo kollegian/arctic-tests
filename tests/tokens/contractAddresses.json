@@ -1,0 +1,8 @@
+{
+  "cw20Address": "sei18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3quh5sau",
+  "cw721Address": "sei1yvgh8xeju5dyr0zxlkvq09htvhjj20fncp5g58np4u25g8rkpgjsf4g5jl",
+  "erc20Address": "0x0453C2dcADeF880A4917528B1e0CD7fD35E5e27b",
+  "erc721Address": "0x4296Ef1959f8A2c1Df2F2FfE053351Cc3e66e487",
+  "cw20MultiMintTx": 148,
+  "cw721MultiMintTx": 184
+}

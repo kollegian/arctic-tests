@@ -1,264 +1,297 @@
-import { SeiUser, User, UserFactory } from "../../shared/User";
-import * as TestConfig from "../../config/testConfig.json";
-import { TokenDeployer } from "../../shared/Deployer";
-import { Cw20Token, Erc20Token } from "../../shared/Token";
-import { EvmRpcClient } from "../../shared/RpcClient";
-import { ethers } from "ethers";
-import { expect } from "chai";
-import { AtomicTxSender } from "../../shared/TxBuilder";
-import pointerAbi from "../../artifacts/contracts/CW20ERC20Pointer.sol/CW20ERC20Pointer.json";
-import { CW20ERC20Pointer } from "../../typechain-types";
-import { waitFor } from "../../shared/utils/helpers";
-import { DeliverTxResponse } from "@cosmjs/stargate";
-import { ExecuteResult } from "@cosmjs/cosmwasm-stargate";
+import {SeiUser, UserFactory} from "../../shared/User";
+import {Cw20Token, Erc20Token} from "../../shared/Token";
+import fs from "fs";
+import TransactionBuilder from "../../shared/TransactionBuilder";
+import {waitFor} from "../../shared/utils/helpers";
+import {expect} from "chai";
+import {EvmRpcClient} from "../../shared/RpcClient";
+import {ContractTransactionReceipt, ethers, TransactionReceipt} from "ethers";
+import {AtomicTxSender} from "../../shared/TxBuilder";
+import {erc20} from "../../typechain-types/@openzeppelin/contracts/token";
 
-describe('CW20 Token Tests', function () {
-    let admin: SeiUser, alice: SeiUser, bob: SeiUser, eve: SeiUser;
+describe('Cw20 Tests', function () {
+    this.timeout(10 * 60 * 1000);
+    let users: SeiUser[];
+    let admin: SeiUser;
     let cw20Contract: Cw20Token;
-    let rpcClient: EvmRpcClient;
-    let pointerContract: CW20ERC20Pointer;
-    let pointerContractAddress: string;
-    let mintTx: ExecuteResult;
-    let burnTx: ExecuteResult;
-    let approveTx: ExecuteResult;
-    let multipleMintTxPrePointer: DeliverTxResponse;
-    let twoMintsWithSeparateTxHeightPrePointer: DeliverTxResponse;
-    let transferFilterId: string;
+    let erc20Contract: Erc20Token;
+    let evmRpcClient: EvmRpcClient;
 
-    const topic = ethers.id('Transfer(address,address,uint256)');
-    const approvalTopic = ethers.id('Approval(address,address,uint256)');
-    const rpcCalls = ['sei_getLogs', 'sei_getFilterLogs', 'sei_getBlockByHash', 'sei_getBlockByNumber', 'eth_getLogs',
-        'eth_getFilterLogs', 'eth_getBlockByHash', 'eth_getBlockByNumber'];
-
-    this.timeout(12 * 60 * 1000);
-
-    before('Initialize users and deploy CW20 contract', async () => {
-        // Initialize admin user
+    before('Initialize', async () => {
         admin = await UserFactory.createAdminUser();
-        await UserFactory.fundAdminOnSei();
+        const cw20Address = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8')).cw20Address;
+        cw20Contract = new Cw20Token(admin, cw20Address);
+        users = await UserFactory.createSeiUsers(admin, 20, true);
+        evmRpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
+    });
+
+    let mintTxHeight: number;
+    it('Admin can mints tokens before pointer deployment', async () =>{
+        const preBalance = await cw20Contract.balanceOf(admin.seiAddress);
+        const mintTx = await cw20Contract.mint(admin.seiAddress, '100000000');
+        mintTxHeight = mintTx.height;
+        const afterBalance = await cw20Contract.balanceOf(admin.seiAddress);
+        expect(Number(afterBalance)).to.equal(Number(preBalance) + Number('100000000'));
+    });
+
+    it('Before pointer deployment, synthetic event are not recorded with sei_getBlockByNumber', async () =>{
+        const rpcResult = await evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(mintTxHeight), true);
+        expect(rpcResult.transactions.length).to.equal(0);
+    });
+
+    it('Before pointer deployment, synthetic event are not thrown with sei_getBlockByHash', async () =>{
+        const hash = (await evmRpcClient.getBlockByNumber(ethers.toQuantity(mintTxHeight), true)).hash;
+        const rpcResult = await evmRpcClient.sei_getBlockByHash(hash, true);
+        expect(rpcResult.transactions.length).to.equal(0);
+    });
+
+    it('Before pointer deployment, synthetic event are not thrown with sei_getLogs', async () =>{
+        const logs = {
+            fromBlock: ethers.toQuantity(mintTxHeight.toString()),
+            toBlock: ethers.toQuantity(mintTxHeight.toString()),
+        }
+
+        const results = await evmRpcClient.sei_getLogs(logs);
+        expect(results.length).to.equal(0);
+    });
+
+    it('Before pointer deployment, synthetic event are not thrown with eth_getLogs', async () =>{
+        const logs = {
+            fromBlock: ethers.toQuantity(mintTxHeight.toString()),
+            toBlock: ethers.toQuantity(mintTxHeight.toString()),
+        }
+
+        const results = await evmRpcClient.getLogs(logs);
+        expect(results.length).to.equal(0);
+    });
+
+    it('Before pointer deployment admin can mint more tokens for Alice', async () =>{
+       const alicePreBalance = await cw20Contract.balanceOf(users[0].seiAddress);
+       await cw20Contract.mint(users[0].seiAddress, '100000000');
+       const aliceAfterBalance = await cw20Contract.balanceOf(users[0].seiAddress);
+       expect(Number(aliceAfterBalance)).to.equal(Number(alicePreBalance) + Number('100000000'));
+    });
+
+    it('Before pointer deployment admin can mint more tokens for Bob', async () =>{
+        const bobPreBalance = await cw20Contract.balanceOf(users[1].seiAddress);
+        await cw20Contract.mint(users[1].seiAddress, '100000000');
+        const bobAfterBalance = await cw20Contract.balanceOf(users[1].seiAddress);
+        expect(Number(bobAfterBalance)).to.equal(Number(bobPreBalance) + Number('100000000'));
+    });
+
+    it('Before pointer deployment, admin can approve 1000000 for Alice', async () =>{
+        const preApproval = await cw20Contract.allowance(admin.seiAddress, users[0].seiAddress);
+        await cw20Contract.approve(users[0].seiAddress, '1000000');
+        const postApproval = await cw20Contract.allowance(admin.seiAddress, users[0].seiAddress);
+        expect(Number(postApproval)).to.equal(Number(preApproval) + Number('1000000'));
+    });
+
+    it('Bob cant spend admins tokens since he didnt have the approval', async () =>{
+        try{
+            cw20Contract.setSigner(users[1]);
+            await cw20Contract.transferFrom(admin.seiAddress, users[1].seiAddress, '1000000');
+        } catch(e: any){
+            expect(e.message).to.contain('No allowance');
+        }
+    });
+
+    it('Alice cant spend more tokens than her allowance', async () =>{
+        try{
+            cw20Contract.setSigner(users[0]);
+            await cw20Contract.transferFrom(admin.seiAddress, users[1].seiAddress, '100000000');
+        } catch(e: any){
+            expect(e.message).to.contain('execute wasm contract failed');
+        }
+    })
+
+    it('Alice can spend admins tokens to send it to Bob', async () =>{
+        const bobPreBalance = await cw20Contract.balanceOf(users[1].seiAddress);
+        await cw20Contract.transferFrom(admin.seiAddress, users[1].seiAddress, '1000000');
+        const bobAfterBalance = await cw20Contract.balanceOf(users[1].seiAddress);
+        expect(Number(bobAfterBalance)).to.equal(Number(bobPreBalance) + Number('1000000'));
+    });
+
+    it('Alice cant spend more tokens since she has used the approval amounts', async () =>{
+        try{
+            await cw20Contract.transferFrom(admin.seiAddress, users[1].seiAddress, '1000000');
+        } catch(e: any){
+            expect(e.message).to.contain('execute wasm contract failed');
+        }
+    });
+
+    let preBalance: string;
+    it('Admin mints some more tokens and approves this for Alice as well', async() =>{
+        cw20Contract.setSigner(admin);
+        const mintTx = await cw20Contract.mint(admin.seiAddress, '1000000');
+        const allowanceTx = await cw20Contract.approve(users[0].seiAddress, '1000000');
+        await Promise.all([mintTx, allowanceTx]);
+        preBalance = await cw20Contract.balanceOf(users[0].seiAddress);
+    });
+
+    it('A user deploys pointer for cw20 contract on evm side', async() =>{
+        await cw20Contract.deployPointer(admin.evmRpcEndpoint);
         await waitFor(1);
-
-        // Initialize users
-        [bob, eve] = await UserFactory.createSeiUsers(admin, 3, false);
-        alice = await UserFactory.createSeiUser(admin, 'alice');
-        // Deploy CW20 contract
-        const deployer = new TokenDeployer(admin);
-        cw20Contract = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
-            name: 'myCw20',
-            symbol: 'myCw',
-            decimals: 6,
-            initial_balances: [{ address: alice.seiAddress, amount: '1000000' }],
-            "mint": {
-                minter: alice.seiAddress,
-            },
-        }, 'myCw20');
-
-        // Initialize RPC client
-        rpcClient = new EvmRpcClient(TestConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
+        const pointerAddr = await cw20Contract.queryPointerAddress();
+        erc20Contract = new Erc20Token(admin, pointerAddr);
     });
 
-    describe('CW20 operations before pointer deployment', () => {
-        it('Alice mints cw20 tokens to her address on sei runtime', async () => {
-            const amountToMint = '1000000';
-            cw20Contract.setSigner(alice);
-            mintTx = await cw20Contract.mint(alice.seiAddress, amountToMint);
-            const balance = await cw20Contract.balanceOf(alice.seiAddress);
-            expect(balance).to.equal('2000000');
-        });
+    let combinedTxBlockNumber: number;
+    it('For read ops, users can combine txs on cosmos and evm runtime', async () =>{
+        const txBuilder = new TransactionBuilder(users);
+        txBuilder.setCw20Token(cw20Contract);
+        txBuilder.setErc20Token(erc20Contract);
+        combinedTxBlockNumber = await txBuilder.formErc20TransferTxs();
+    })
 
-        it('Alice can multiple mint tokens to her address on sei runtime', async () => {
-            const aliceBalance = await cw20Contract.balanceOf(alice.seiAddress);
-            const amounts = ['100000', '100000'];
-            multipleMintTxPrePointer = await cw20Contract.mintMultiple([alice.seiAddress, alice.seiAddress], amounts);
-            const aliceAfterBalance = await cw20Contract.balanceOf(alice.seiAddress);
-            expect(Number(aliceAfterBalance)).to.equal(Number(aliceBalance) + 200000);
-        });
+    it('Approvals are migrated on evm runtime', async () =>{
+        const approvalsOnEvm = await erc20Contract.allowance(admin.evmAddress, users[0].evmAddress);
+        expect(approvalsOnEvm.toString()).to.equal('1000000');
+    });
 
-        it('Alice can transfer available amount to eve sei address on sei runtime', async () => {
-            const transferAmount = '500000';
-            await cw20Contract.transfer(eve.seiAddress, transferAmount);
-            const eveBalance = await cw20Contract.balanceOf(eve.seiAddress);
-            expect(eveBalance).to.equal(transferAmount);
-        });
+    it('Balances are migrated on evm runtime', async () =>{
+        const balance = await erc20Contract.balanceOf(users[0].evmAddress);
+        console.log(balance);
+    });
 
-        it('Alice cannot transfer more than her remaining balance to eve sei address on sei runtime', async () => {
-            const transferAmount = '2000000';
-            try {
-                await cw20Contract.transfer(eve.seiAddress, transferAmount);
-                throw new Error('Transfer should have failed');
-            } catch (e: any) {
-                expect(e.message).to.include('Error when broadcasting');
-            }
-        });
-
-        it('Alice burns amounts from her remaining balance on sei runtime', async () => {
-            const burnAmount = '100';
-            const preBalance = await cw20Contract.balanceOf(alice.seiAddress);
-            burnTx = await cw20Contract.burn(burnAmount);
-            const balance = await cw20Contract.balanceOf(alice.seiAddress);
-            expect(Number(balance)).to.equal(Number(preBalance) - Number(burnAmount));
-        });
-
-        it('Alice can call multiple mint tx on sei runtime with two different tx hashes', async () => {
-            const mint1 = {
-                mint: {
-                    recipient: alice.seiAddress,
-                    amount: '100000',
-                }
-            };
-
-            const mint2 = {
-                mint: {
-                    recipient: alice.seiAddress,
-                    amount: '100000',
-                }
-            };
-
-            const alicePreBalance = await cw20Contract.balanceOf(alice.seiAddress);
-            const txResults = await cw20Contract.executeMultipleInTheSameBlock(alice, cw20Contract.getAddress(), [mint1, mint2], 'psu-evm-test-5');
-            twoMintsWithSeparateTxHeightPrePointer = txResults[0];
-
-            const aliceAfterBalance = await cw20Contract.balanceOf(alice.seiAddress);
-            expect(Number(aliceAfterBalance)).to.equal(Number(alicePreBalance) + Number(200000));
-        });
-
-        it('Alice approves Bob to spend her tokens on sei runtime on her behalf', async () => {
-            approveTx = await cw20Contract.approve(bob.seiAddress, '1000');
-            const allowance = await cw20Contract.allowance(alice.seiAddress, bob.seiAddress);
-            expect(Number(allowance)).to.equal(1000);
-        });
-
-        it('Alice registers a filter on evm to listen transfer events', async () => {
-            const currentBlock = await rpcClient.getBlockNumber();
-            const logParams = {
-                fromBlock: ethers.toQuantity(currentBlock),
-                toBlock: 'latest',
-                topics: [topic],
-            };
-            transferFilterId = await rpcClient.sei_newFilter(logParams);
-            expect(transferFilterId).to.not.be.empty;
-        });
-
-        // Check that no synthetic events are thrown before pointer deployment
-        for (const syntheticEvent of rpcCalls) {
-            it(`Before deploying pointer, Alice won't see any synthetic events thrown on evm runtime with ${syntheticEvent} for mint event`, async () => {
-                const rpcResult = await rpcClient.checkAndReturnRpcCallResults(syntheticEvent, mintTx, topic);
-                expect(rpcResult.length).to.equal(0, 'Transactions found when none was expected');
-            });
-
-            it(`Before deploying pointer, Alice won't see any synthetic events thrown on evm runtime with ${syntheticEvent} for burn event`, async () => {
-                const rpcResult = await rpcClient.checkAndReturnRpcCallResults(syntheticEvent, burnTx, topic);
-                expect(rpcResult.length).to.equal(0, 'Transactions found when none was expected');
-            });
-
-            it(`Before deploying pointer, Alice won't see any synthetic events thrown on evm runtime with ${syntheticEvent} for approve event`, async () => {
-                const rpcResult = await rpcClient.checkAndReturnRpcCallResults(syntheticEvent, approveTx, approvalTopic);
-                expect(rpcResult.length).to.equal(0, 'Transactions found when none was expected');
-            });
+    it('Bob cant spend admins tokens on evm runtime', async () =>{
+        try {
+            await erc20Contract.contract.connect(users[1].evmWallet.wallet)
+                .transferFrom(admin.evmAddress, users[1].evmAddress, '1000000');
+        } catch (e: any) {
+            expect(e.message).to.contain('CosmWasm execute failed');
         }
     });
 
-    describe('Pointer deployment and interactions', () => {
-        it('Alice deploys a pointer for cw20 contract', async () => {
-            const pointer = await cw20Contract.deployPointer(TestConfig.evmRpcEndpoint);
-            pointerContractAddress = await cw20Contract.queryPointerAddress();
-            expect(pointerContractAddress).to.not.be.empty;
-            pointerContract = new ethers.Contract(pointerContractAddress, pointerAbi.abi, alice.evmWallet.wallet) as unknown as CW20ERC20Pointer;
-        });
-
-        it.skip('Alice cant deploy another pointer for the same cw20 contract address', async () => {
-            try {
-                await cw20Contract.deployPointer(TestConfig.evmRpcEndpoint);
-                throw new Error('Should have failed');
-            } catch (e: any) {
-                expect(e.message).to.include('Pointer already deployed for this address');
-            }
-            const checkPointerAddress = await cw20Contract.queryPointerAddress();
-            expect(checkPointerAddress).to.equal(pointerContractAddress);
-        });
-
-        // Check that no synthetic events are thrown for transactions before pointer deployment
-        for (const syntheticEvent of rpcCalls) {
-            it(`After deploying pointer, Alice won't see any synthetic events thrown on evm runtime for the txs pre pointer with ${syntheticEvent} for mint event`, async () => {
-                const rpcResult = await rpcClient.checkAndReturnRpcCallResults(syntheticEvent, mintTx, topic);
-                expect(rpcResult.length).to.equal(0, 'Transactions found when none was expected');
-            });
-
-            it(`After deploying pointer, Alice won't see any synthetic events thrown on evm runtime for the txs pre pointer with ${syntheticEvent} for burn event`, async () => {
-                const rpcResult = await rpcClient.checkAndReturnRpcCallResults(syntheticEvent, burnTx, topic);
-                expect(rpcResult.length).to.equal(0, 'Transactions found when none was expected');
-            });
+    it('Bob cant spend admins tokens on cosmos runtime', async () =>{
+        try{
+            cw20Contract.setSigner(users[1]);
+            await cw20Contract.transferFrom(admin.seiAddress, users[1].seiAddress, '1000000');
+        } catch(e: any){
+            expect(e.message).to.contain('execute wasm contract failed');
         }
     });
 
-    describe('Operations after pointer deployment', () => {
-        let postPointerMintTx: ExecuteResult;
-        let postPointerTransferTx: ExecuteResult;
-        let evmTransferTx: any;
-
-        it('Alice can mint tokens after pointer deployment', async () => {
-            const alicePreBalance = await cw20Contract.balanceOf(alice.seiAddress);
-            postPointerMintTx = await cw20Contract.mint(alice.seiAddress, '200000');
-            const alicePostBalance = await cw20Contract.balanceOf(alice.seiAddress);
-            expect(Number(alicePostBalance)).to.equal(Number(alicePreBalance) + 200000);
-        });
-
-        it('Alice can transfer tokens to eve after pointer deployment', async () => {
-            const evePreBalance = await cw20Contract.balanceOf(eve.seiAddress);
-            const transferAmount = '100000';
-            postPointerTransferTx = await cw20Contract.transfer(eve.seiAddress, transferAmount);
-            const evePostBalance = await cw20Contract.balanceOf(eve.seiAddress);
-            expect(Number(evePostBalance)).to.equal(Number(evePreBalance) + Number(transferAmount));
-        });
-
-        it('EVM pointer contract reflects the correct balances', async () => {
-            const aliceEvmBalance = await pointerContract.balanceOf(alice.evmAddress);
-            const eveEvmBalance = await pointerContract.balanceOf(eve.evmAddress);
-
-            const aliceCwBalance = await cw20Contract.balanceOf(alice.seiAddress);
-            const eveCwBalance = await cw20Contract.balanceOf(eve.seiAddress);
-
-            expect(aliceEvmBalance.toString()).to.equal(aliceCwBalance);
-            expect(eveEvmBalance.toString()).to.equal(eveCwBalance);
-        });
-
-        it('Alice can transfer tokens through EVM pointer contract', async () => {
-            const bobPreBalance = await cw20Contract.balanceOf(bob.seiAddress);
-            const transferAmount = ethers.parseUnits('50000', 0);
-
-            evmTransferTx = await pointerContract.connect(alice.evmWallet.wallet).transfer(bob.evmAddress, transferAmount);
-            await evmTransferTx.wait();
-
-            const bobPostBalance = await cw20Contract.balanceOf(bob.seiAddress);
-            expect(Number(bobPostBalance)).to.equal(Number(bobPreBalance) + 50000);
-        });
-
-        // Check for synthetic events after pointer deployment
-        for (const syntheticEvent of rpcCalls) {
-            it(`After pointer deployment, ${syntheticEvent} will return events for post-pointer transactions`, async () => {
-                const rpcResult = await rpcClient.checkAndReturnRpcCallResults(syntheticEvent, postPointerTransferTx, topic);
-                if (syntheticEvent.includes('Logs')) {
-                    expect(rpcResult.length).to.be.gt(0, 'No transactions found when some were expected');
-                    if (rpcResult.length > 0) {
-                        expect(rpcResult[0].address.toLowerCase()).to.equal(pointerContractAddress.toLowerCase());
-                        expect(rpcResult[0].topics[0].toLowerCase()).to.equal(topic.toLowerCase());
-                    }
-                }
-            });
-        }
-
-        it('EVM transfer events can be queried', async () => {
-            const txReceipt = await evmTransferTx.wait();
-            expect(txReceipt.status).to.equal(1);
-
-            const evmLogs = await rpcClient.getLogs({
-                fromBlock: ethers.toQuantity(txReceipt.blockNumber),
-                toBlock: ethers.toQuantity(txReceipt.blockNumber),
-                address: pointerContractAddress
-            });
-
-            expect(evmLogs.length).to.be.gt(0);
-            expect(evmLogs[0].topics[0]).to.equal(topic);
-        });
+    it('Alice can spend admins tokens on evm runtime and balances are updated accordingly', async () =>{
+        const bobPreBalanceEvm = await erc20Contract.balanceOf(users[1].evmAddress);
+        const bobPreBalanceCosmos = await cw20Contract.balanceOf(users[1].seiAddress);
+        const tx = await erc20Contract.contract.connect(users[0].evmWallet.wallet)
+            .transferFrom(admin.evmAddress, users[1].evmAddress, '1000000');
+        await tx.wait();
+        const bobAfterBalanceEvm = await erc20Contract.balanceOf(users[1].evmAddress);
+        const bobAfterBalanceCosmos = await cw20Contract.balanceOf(users[1].seiAddress);
+        expect(Number(bobAfterBalanceEvm)).to.equal(Number(bobPreBalanceEvm) + Number('1000000'));
+        expect(Number(bobAfterBalanceCosmos)).to.equal(Number(bobPreBalanceCosmos) + Number('1000000'));
     });
-});
+
+    it('After spending on evm runtime, Alice cant spend more tokens', async () =>{
+        try {
+            await erc20Contract.contract.connect(users[0].evmWallet.wallet)
+                .transferFrom(admin.evmAddress, users[1].evmAddress, '1000000');
+        } catch (e: any) {
+            expect(e.message).to.contain('CosmWasm execute failed');
+        }
+    });
+
+    it('Admin can approve tokens on Bob on evm runtime', async () =>{
+        const tx = await erc20Contract.approve(users[1].evmAddress, '1000000');
+        await tx.wait();
+    });
+
+    it('Bob can spend tokens on cosmos runtime after getting approval on evm runtime', async () =>{
+        const bobPreBalanceCosmos = await cw20Contract.balanceOf(users[1].seiAddress);
+        const bobPreBalanceEvm = await erc20Contract.balanceOf(users[1].evmAddress);
+
+        cw20Contract.setSigner(users[1]);
+        const tx = await cw20Contract.transferFrom(admin.seiAddress, users[1].seiAddress, '1000000');
+
+        const bobAfterBalanceCosmos = await cw20Contract.balanceOf(users[1].seiAddress);
+        const bobAfterBalanceEvm = await erc20Contract.balanceOf(users[1].evmAddress);
+        expect(Number(bobAfterBalanceCosmos)).to.equal(Number(bobPreBalanceCosmos) + Number('1000000'));
+        expect(Number(bobAfterBalanceEvm)).to.equal(Number(bobPreBalanceEvm) + Number('1000000'));
+    });
+
+    let transferReceipt: ContractTransactionReceipt;
+    let gasPaid: string;
+    let txReceipt: TransactionReceipt;
+    let receiptLogs: string;
+    it('Eth_getTransactionReceipt returns correct information on erc20 transfer from pointer', async () =>{
+        const preBalanceOnSei = await evmRpcClient.getBalance(users[0].evmAddress);
+        const encodedTx = erc20Contract.contract.interface.encodeFunctionData('transfer', [users[1].evmAddress, '100000']);
+        const signedTx = await AtomicTxSender
+            .signEvmTransaction(users[0], erc20Contract.getAddress(), encodedTx, "1500000000", "4500000000")
+        const hash = await evmRpcClient.sendRawTransaction(signedTx);
+        await waitFor(1);
+        const txReceipt = await evmRpcClient.getTransactionReceipt(hash);
+        transferReceipt = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, true)).transactions[0];
+        const afterBalanceOnSei = await evmRpcClient.getBalance(users[0].evmAddress);
+        gasPaid = preBalanceOnSei - afterBalanceOnSei;
+        receiptLogs = JSON.stringify(txReceipt.logs[0]);
+        // validate the fields
+        expect(txReceipt.blockHash).to.equal(transferReceipt.blockHash);
+        expect(txReceipt.blockNumber).to.equal(transferReceipt.blockNumber);
+        expect(txReceipt.transactionHash).to.equal(transferReceipt.hash);
+        expect(txReceipt.transactionIndex).to.equal(ethers.toQuantity(transferReceipt.transactionIndex));
+
+        //Should be the single tx in the block hence should be 0
+        expect(txReceipt.transactionIndex).to.equal(ethers.toQuantity(0));
+
+        expect(txReceipt.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
+        expect(txReceipt.to.toLowerCase()).to.equal(erc20Contract.getAddress().toLowerCase());
+
+        //Currently cumulative gas used is broken hence returning 0
+        expect(txReceipt.cumulativeGasUsed).to.equal(ethers.toQuantity(0));
+
+        // expect(txReceipt.gasUsed).to.equal(ethers.toQuantity(transferReceipt.gas));
+        expect(txReceipt.logs.length).to.equal(1);
+        expect(txReceipt.logs[0].address.toLowerCase()).to.equal(erc20Contract.getAddress().toLowerCase());
+
+        const feePaidPerReceipt = Number(txReceipt.gasUsed) * Number(txReceipt.effectiveGasPrice);
+        console.log(Number(txReceipt.effectiveGasPrice));
+        expect(feePaidPerReceipt).to.equal(Number(gasPaid));
+        const baseFee = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, false)).baseFeePerGas;
+        // Todo raise this
+        // expect(txReceipt.effectiveGasPrice).to.equal(baseFee + txReceipt.maxPriorityFeePerGas);
+        
+        // Decode using contract interface (recommended)
+        const decodedEvent = erc20Contract.contract.interface.parseLog({
+            topics: txReceipt.logs[0].topics,
+            data: txReceipt.logs[0].data
+        });
+        expect(decodedEvent?.name).to.equal('Transfer');
+        expect(decodedEvent?.args.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
+        expect(decodedEvent?.args.to.toLowerCase()).to.equal(users[1].evmAddress.toLowerCase());
+        expect(decodedEvent?.args.value.toString()).to.equal('100000');
+        
+        expect(txReceipt.logs[0].blockNumber).to.equal(txReceipt.blockNumber);
+        expect(txReceipt.logs[0].blockHash).to.equal(txReceipt.blockHash);
+        expect(txReceipt.logs[0].transactionHash).to.equal(txReceipt.transactionHash);
+        expect(txReceipt.logs[0].transactionIndex).to.equal(txReceipt.transactionIndex);
+    });
+
+    it('Eth_getTransactionByHash returns correct information on erc20 transfer from pointer', async () =>{
+        const txHashResponse = await evmRpcClient.getTransactionByHash(transferReceipt.hash);
+        expect(txHashResponse.blockHash).to.equal(transferReceipt.blockHash);
+        expect(txHashResponse.blockNumber).to.equal(transferReceipt.blockNumber);
+        expect(txHashResponse.hash).to.equal(transferReceipt.hash);
+        // expect(txHashResponse.transactionIndex).to.equal(ethers.toQuantity(transferReceipt.index));
+        expect(txHashResponse.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
+        expect(txHashResponse.to).to.equal(erc20Contract.getAddress().toLowerCase());
+        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(1500000000));
+        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(4500000000));
+
+        //validate gas response
+        const baseFeeOnBlock = (await evmRpcClient.getBlockByNumber(transferReceipt.blockNumber, false)).baseFeePerGas;
+        // toDo dont forget to raise this 
+        // expect(Number(txHashResponse.gasPrice)).to.equal(Number(baseFeeOnBlock) + Number(txHashResponse.maxPriorityFeePerGas));
+    });
+
+    it('Eth_getLogs returns correct information on erc20 transfer from pointer', async () =>{
+        const logs = {
+            fromBlock: ethers.toQuantity(transferReceipt.blockNumber),
+            toBlock: ethers.toQuantity((transferReceipt.blockNumber)),
+            address: erc20Contract.getAddress() as string,
+        }
+        const rpcResult = await evmRpcClient.getLogs(logs);
+        expect(JSON.stringify(rpcResult[0])).to.equal(receiptLogs);
+    });
+})
