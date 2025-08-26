@@ -35,20 +35,37 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: true
 
       - name: Install dependencies
         run: |
           npm i --legacy-peer-deps
 
+      - name: Cache seid binary
+        id: cache-seid
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/seid
+          key: seid-${{ runner.os }}-v6.1.4
+
       - name: Install seid CLI
+        if: steps.cache-seid.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -y
           sudo apt-get install -y git make gcc
           git clone https://github.com/sei-protocol/sei-chain.git /tmp/sei-chain
           cd /tmp/sei-chain
-          make install
+          git checkout v6.1.4
           make build
           sudo mv build/seid /usr/local/bin/seid
+          sudo chmod +x /usr/local/bin/seid
           seid version || true
 
       - name: Configure seid (chain-id and node)
@@ -82,7 +99,6 @@ jobs:
           console.log("Updated config/testConfig.json:");
           console.log(fs.readFileSync(path, "utf8"));
           '
-          npx hardhat compile
 
       - name: Run token tests - startTests
         run: npx mocha -r tsx tests/tokens/startTests.ts

@@ -1,0 +1,29 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IPicasso",
+  "sourceName": "contracts/IPicasso.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "uint32",
+          "name": "date",
+          "type": "uint32"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "predictions",
+          "type": "uint256[]"
+        }
+      ],
+      "name": "submitPrediction",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}
