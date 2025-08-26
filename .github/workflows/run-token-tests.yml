@@ -15,6 +15,10 @@ on:
         description: "REST endpoint (writes to config/testConfig.json)"
         required: false
         type: string
+      chainId:
+        description: "Sets chain id for seid"
+        required: false
+        type: string
 
 jobs:
   token-tests:
@@ -30,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci || npm install
+          npm i --legacy-peer-deps
 
       - name: Install seid CLI
         run: |
@@ -46,9 +50,10 @@ jobs:
       - name: Configure seid (chain-id and node)
         env:
           INPUT_SEI_RPC: ${{ github.event.inputs.seiRpcEndpoint }}
+          CHAIN_ID: ${{ github.event.inputs.chainId }}
         run: |
           # Set chain-id to atlantic-2 and keyring backend to test (non-interactive)
-          seid config chain-id atlantic-2
+          seid config chain-id ${CHAIN_ID}
           seid config keyring-backend test
           if [ -n "${INPUT_SEI_RPC}" ]; then
             seid config node ${INPUT_SEI_RPC}
