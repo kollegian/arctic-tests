@@ -7,14 +7,22 @@ on:
         description: "EVM RPC endpoint (writes to config/testConfig.json)"
         required: false
         type: string
+        default: "http://127.0.0.1:8545"
       seiRpcEndpoint:
         description: "SEI RPC endpoint (writes to config/testConfig.json)"
         required: false
         type: string
+        default: "http://127.0.0.1:26657"
       restEndpoint:
         description: "REST endpoint (writes to config/testConfig.json)"
         required: false
         type: string
+        default: "http://127.0.0.1:1317"
+      chainId:
+        description: "Sets chain id for seid"
+        required: false
+        type: string
+        default: "atlantic-2"
       chainId:
         description: "Sets chain id for seid"
         required: false
