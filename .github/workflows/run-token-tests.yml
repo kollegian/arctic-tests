@@ -28,14 +28,9 @@ jobs:
         with:
           node-version: 20
 
-      - name: Enable Corepack (Yarn)
-        run: |
-          corepack enable
-          corepack prepare yarn@4.6.0 --activate
-
       - name: Install dependencies
         run: |
-          yarn install --immutable || yarn install
+          npm ci || npm install
 
       - name: Install seid CLI
         run: |
@@ -80,18 +75,18 @@ jobs:
           '
 
       - name: Run token tests - startTests
-        run: yarn mocha -r tsx tests/tokens/startTests.ts
+        run: npx mocha -r tsx tests/tokens/startTests.ts
 
       - name: Run token tests - erc20_refactored
-        run: yarn mocha -r tsx tests/tokens/erc20_refactored.spec.ts
+        run: npx mocha -r tsx tests/tokens/erc20_refactored.spec.ts
 
       - name: Run token tests - erc721_refactored
-        run: yarn mocha -r tsx tests/tokens/erc721_refactored.spec.ts
+        run: npx mocha -r tsx tests/tokens/erc721_refactored.spec.ts
 
       - name: Run token tests - cw20_refactored
-        run: yarn mocha -r tsx tests/tokens/cw20_refactored.spec.ts
+        run: npx mocha -r tsx tests/tokens/cw20_refactored.spec.ts
 
       - name: Run token tests - cw721_refactored
-        run: yarn mocha -r tsx tests/tokens/cw721_refactored.spec.ts
+        run: npx mocha -r tsx tests/tokens/cw721_refactored.spec.ts
 
 
