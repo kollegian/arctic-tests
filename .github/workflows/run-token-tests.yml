@@ -47,6 +47,8 @@ jobs:
           git clone https://github.com/sei-protocol/sei-chain.git /tmp/sei-chain
           cd /tmp/sei-chain
           make install
+          make build
+          sudo mv build/seid /usr/local/bin/seid
           seid version || true
 
       - name: Configure seid (chain-id and node)
