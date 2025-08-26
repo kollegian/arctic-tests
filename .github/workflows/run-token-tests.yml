@@ -43,7 +43,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm i --legacy-peer-deps
+          npm i
 
       - name: Install seid CLI
         run: |
