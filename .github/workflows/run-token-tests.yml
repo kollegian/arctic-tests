@@ -43,12 +43,10 @@ jobs:
       - name: Install seid CLI
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y jq
-          RELEASE_URL=$(curl -s https://api.github.com/repos/sei-protocol/sei-chain/releases/latest | jq -r '.assets[] | select(.name | test("linux.*amd64")) | .browser_download_url' | head -n 1)
-          if [ -z "$RELEASE_URL" ]; then echo "Failed to resolve seid release URL" && exit 1; fi
-          curl -L "$RELEASE_URL" -o seid
-          chmod +x seid
-          sudo mv seid /usr/local/bin/seid
+          sudo apt-get install -y git make gcc
+          git clone https://github.com/sei-protocol/sei-chain.git /tmp/sei-chain
+          cd /tmp/sei-chain
+          make install
           seid version || true
 
       - name: Configure seid (chain-id and node)
