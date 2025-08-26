@@ -82,6 +82,7 @@ jobs:
           console.log("Updated config/testConfig.json:");
           console.log(fs.readFileSync(path, "utf8"));
           '
+          npx hardhat compile
 
       - name: Run token tests - startTests
         run: npx mocha -r tsx tests/tokens/startTests.ts
