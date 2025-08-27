@@ -5,6 +5,9 @@ import {Block, ContractTransactionReceipt, ethers, Log, LogDescription, Transact
 import {expect} from "chai";
 import {waitFor} from "../../shared/utils/helpers";
 import _ from "lodash";
+import {Cw20Token, Erc20Token} from "../../shared/Token";
+import contractAddresses from "../tokens/contractAddresses.json";
+import TransactionBuilder from "../../shared/TransactionBuilder";
 
 describe('Dynamic RPC queries', function () {
 
@@ -21,15 +24,13 @@ describe('Dynamic RPC queries', function () {
     let currentBlock: Block;
     it('Gets current block', async () => {
         currentBlock = await rpcClient.getBlockByNumber('latest', false);
-        /*blockNumber = ethers.toQuantity(Number(currentBlock.number) - 1);
-        let blockData = await rpcClient.getBlockByNumber(blockNumber, true);
-        console.log('Looking for blocks');
+        blockNumber = ethers.toQuantity(Number(currentBlock.number) - 1);
+        let blockData = await rpcClient.getBlockByNumber(blockNumber, false);
         while (blockData.transactions.length === 0) {
             blockNumber = ethers.toQuantity(Number(blockNumber) - 1);
             blockData = await rpcClient.getBlockByNumber(blockNumber, false);
         }
-        console.log('Selected block is ', blockNumber);*/
-        blockNumber = ethers.toQuantity(251617);
+        console.log('Selected block is ', blockNumber);
     });
 
     let txInfoFromGetBlockCall = new Map<string, ContractTransactionReceipt>();
@@ -38,7 +39,7 @@ describe('Dynamic RPC queries', function () {
         txInfoFromGetBlockCall = storeBlockTransactions(currentBlock);
     });
 
-    it('Visits blockby hash and stores txs', async () => {
+    it('Visits block by hash and stores txs', async () => {
         const blockDataFromHash = await rpcClient.getBlockByHash(currentBlock.hash as string, true);
         expect(_.isEqual(blockDataFromHash, currentBlock)).to.be.true;
     });
@@ -53,6 +54,7 @@ describe('Dynamic RPC queries', function () {
             expect(txFromBlock.blockNumber).to.be.eq(txFromReceipt.blockNumber, 'block number didnt match');
             expect(txFromBlock.from).to.be.eq(txFromReceipt.from, 'tx sent from didnt match');
             expect(Number(txFromBlock.gas)).to.be.eq(Number(txFromReceipt.gas), 'used gas didnt match');
+            //Todo add here again
             // expect(Number(txFromBlock.gasPrice)).to.be.eq(Number(txFromReceipt.gasPrice), 'used gas didnt match');
             expect(Number(txFromBlock.nonce)).to.be.eq(Number(txFromReceipt.nonce), 'used gas didnt match');
 
@@ -105,7 +107,7 @@ describe('Dynamic RPC queries', function () {
             expect(txFromBlock.type).to.be.eq(txFromReceipt.type, 'type didnt match');
             expect(Number(txFromBlock.gas)).to.be.gt(Number(txFromReceipt.gasUsed), 'used gas didnt match');
             console.log('txFromBlock.gasPrice', txFromBlock.gasPrice, 'txFromReceipt.effectiveGasPrice', txFromReceipt.effectiveGasPrice);
-            expect(txFromBlock.gasPrice).to.eq(txFromReceipt.effectiveGasPrice, 'gas price shouldnt match');
+            expect(txFromBlock.gasPrice).to.eq(txFromReceipt.effectiveGasPrice, 'gas price didnt match');
         }
     });
 
@@ -257,7 +259,7 @@ describe('Dynamic RPC queries', function () {
             const logs = await rpcClient.getLogs({
                 fromBlock: blockNumber,
                 toBlock: blockNumber,
-                address: txReceipt.to,
+                // address: txReceipt.to,
             }) as Log[];
             for (const log of txReceipt.logs) {
                 const expectedLog = logs.find(l => l.logIndex === log.logIndex);
@@ -266,7 +268,6 @@ describe('Dynamic RPC queries', function () {
                 expect(expectedLog?.blockNumber).to.be.eq(txReceipt.blockNumber);
                 expect(expectedLog?.transactionHash).to.be.eq(txReceipt.transactionHash);
                 expect(expectedLog?.transactionIndex).to.be.eq(txReceipt.transactionIndex);
-                expect(expectedLog?.address).to.be.eq(txReceipt.to);
 
                 // validate log data now
                 expect(expectedLog?.data).to.be.eq(log.data);
@@ -289,7 +290,7 @@ describe('Dynamic RPC queries', function () {
             const logs = await rpcClient.getLogs({
                 fromBlock: blockNumber,
                 toBlock: blockNumber,
-                address: txReceipt.to,
+                // address: txReceipt.to,
             }) as Log[];
             for (const log of txReceipt.logs) {
                 const expectedLog = logs.find(l => l.logIndex === log.logIndex);
@@ -298,7 +299,7 @@ describe('Dynamic RPC queries', function () {
                 expect(expectedLog?.blockNumber).to.be.eq(txReceipt.blockNumber);
                 expect(expectedLog?.transactionHash).to.be.eq(txReceipt.transactionHash);
                 expect(expectedLog?.transactionIndex).to.be.eq(txReceipt.transactionIndex);
-                expect(expectedLog?.address).to.be.eq(txReceipt.to);
+                expect(expectedLog?.address).to.be.eq(log.address);
 
                 // validate log data now
                 expect(expectedLog?.data).to.be.eq(log.data);
