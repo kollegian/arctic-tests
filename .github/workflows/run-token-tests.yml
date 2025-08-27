@@ -108,4 +108,8 @@ jobs:
         continue-on-error: true
         run: npx mocha -r tsx tests/tokens/cw721_refactored.spec.ts
 
+      - name: Run token tests - dynamic rpc tests
+        continue-on-error: true
+        run: npx mocha -r tsx tests/dynamic_rpc/dynamicRpc.spec.ts
+
 
