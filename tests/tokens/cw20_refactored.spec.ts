@@ -53,7 +53,7 @@ describe('Cw20 Tests', function () {
             toBlock: ethers.toQuantity(mintTxHeight.toString()),
         }
         const results = await evmRpcClient.sei_getLogs(logs);
-        const tx = results.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
+        const tx = results.find(tx => tx.address.toLowerCase() === erc20Contract.getAddress().toLowerCase());
         expect(tx).to.be.undefined;
     });
 
@@ -64,7 +64,7 @@ describe('Cw20 Tests', function () {
         }
 
         const results = await evmRpcClient.getLogs(logs);
-        const tx = results.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
+        const tx = results.find(tx => tx.address.toLowerCase() === erc20Contract.getAddress().toLowerCase());
         expect(tx).to.be.undefined;
     });
 
