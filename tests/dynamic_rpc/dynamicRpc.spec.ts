@@ -5,9 +5,6 @@ import {Block, ContractTransactionReceipt, ethers, Log, LogDescription, Transact
 import {expect} from "chai";
 import {waitFor} from "../../shared/utils/helpers";
 import _ from "lodash";
-import {Cw20Token, Erc20Token} from "../../shared/Token";
-import contractAddresses from "../tokens/contractAddresses.json";
-import TransactionBuilder from "../../shared/TransactionBuilder";
 
 describe('Dynamic RPC queries', function () {
 
@@ -26,7 +23,7 @@ describe('Dynamic RPC queries', function () {
         currentBlock = await rpcClient.getBlockByNumber('latest', false);
         blockNumber = ethers.toQuantity(Number(currentBlock.number) - 1);
         let blockData = await rpcClient.getBlockByNumber(blockNumber, false);
-        while (blockData.transactions.length === 0) {
+        while (blockData.transactions.length < 1) {
             blockNumber = ethers.toQuantity(Number(blockNumber) - 1);
             blockData = await rpcClient.getBlockByNumber(blockNumber, false);
         }
@@ -223,6 +220,7 @@ describe('Dynamic RPC queries', function () {
                     topics: log.topics,
                 };
                 const logs = await rpcClient.getLogs(filter) as Log[];
+                console.log(logs.length);
                 const found = logs.find(l => l.data === log.data && l.address === log.address);
                 expect(found, `log ${log.logIndex} missing for tx ${tx}`).to.deep.include({
                     address: log.address,

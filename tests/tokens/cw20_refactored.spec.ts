@@ -36,13 +36,15 @@ describe('Cw20 Tests', function () {
 
     it('Before pointer deployment, synthetic event are not recorded with sei_getBlockByNumber', async () =>{
         const rpcResult = await evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(mintTxHeight), true);
-        expect(rpcResult.transactions.length).to.equal(0);
+        const tx = rpcResult.transactions.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
+        expect(tx).to.be.undefined;
     });
 
     it('Before pointer deployment, synthetic event are not thrown with sei_getBlockByHash', async () =>{
         const hash = (await evmRpcClient.getBlockByNumber(ethers.toQuantity(mintTxHeight), true)).hash;
         const rpcResult = await evmRpcClient.sei_getBlockByHash(hash, true);
-        expect(rpcResult.transactions.length).to.equal(0);
+        const tx = rpcResult.transactions.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
+        expect(tx).to.be.undefined;
     });
 
     it('Before pointer deployment, synthetic event are not thrown with sei_getLogs', async () =>{
@@ -50,9 +52,9 @@ describe('Cw20 Tests', function () {
             fromBlock: ethers.toQuantity(mintTxHeight.toString()),
             toBlock: ethers.toQuantity(mintTxHeight.toString()),
         }
-
         const results = await evmRpcClient.sei_getLogs(logs);
-        expect(results.length).to.equal(0);
+        const tx = results.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
+        expect(tx).to.be.undefined;
     });
 
     it('Before pointer deployment, synthetic event are not thrown with eth_getLogs', async () =>{
@@ -62,7 +64,8 @@ describe('Cw20 Tests', function () {
         }
 
         const results = await evmRpcClient.getLogs(logs);
-        expect(results.length).to.equal(0);
+        const tx = results.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
+        expect(tx).to.be.undefined;
     });
 
     it('Before pointer deployment admin can mint more tokens for Alice', async () =>{

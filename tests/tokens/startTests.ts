@@ -6,7 +6,10 @@ describe('Deploy contracts and fund users here', function(){
     this.timeout(2 * 60 * 1000);
     let admin: SeiUser;
     let users: SeiUser[];
-    before('Clears the mnemonic file', () => fs.writeFileSync('./config/mnemonics.json', '[]'));
+    before('Clears the mnemonic file', () =>{
+        fs.writeFileSync('./config/mnemonics.json', '[]');
+        fs.writeFileSync('./tests/tokens/contractAddresses.json', '{}');
+    }) ;
 
     it('Deploy contracts and fund users', async () => {
         admin = await UserFactory.createAdminUser();
