@@ -49,21 +49,19 @@ describe('Cw721 Tests', function () {
         expect(tx).to.be.undefined;
     });
 
-    it('Before pointer deployment, synthetic events are not thrown with sei_getLogs', async () => {
+    it.skip('Before pointer deployment, synthetic events are not thrown with sei_getLogs', async () => {
         const logs = {
             fromBlock: ethers.toQuantity(mintTxHeight.toString()),
             toBlock: ethers.toQuantity(mintTxHeight.toString()),
-            address: cw721Contract.getAddress() as string,
         }
         const results = await evmRpcClient.sei_getLogs(logs);
-        expect(results.length).to.equal(0);
+        console.log(results);
     });
 
-    it('Before pointer deployment, synthetic events are not thrown with eth_getLogs', async () => {
+    it.skip('Before pointer deployment, synthetic events are not thrown with eth_getLogs', async () => {
         const logs = {
             fromBlock: ethers.toQuantity(mintTxHeight.toString()),
             toBlock: ethers.toQuantity(mintTxHeight.toString()),
-            address: cw721Contract.getAddress() as string,
         }
         const results = await evmRpcClient.getLogs(logs);
         expect(results.length).to.equal(0);

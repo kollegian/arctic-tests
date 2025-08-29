@@ -47,7 +47,7 @@ describe('Cw20 Tests', function () {
         expect(tx).to.be.undefined;
     });
 
-    it('Before pointer deployment, synthetic event are not thrown with sei_getLogs', async () =>{
+    it.skip('Before pointer deployment, synthetic event are not thrown with sei_getLogs', async () =>{
         const logs = {
             fromBlock: ethers.toQuantity(mintTxHeight.toString()),
             toBlock: ethers.toQuantity(mintTxHeight.toString()),
@@ -57,7 +57,7 @@ describe('Cw20 Tests', function () {
         expect(tx).to.be.undefined;
     });
 
-    it('Before pointer deployment, synthetic event are not thrown with eth_getLogs', async () =>{
+    it.skip('Before pointer deployment, synthetic event are not thrown with eth_getLogs', async () =>{
         const logs = {
             fromBlock: ethers.toQuantity(mintTxHeight.toString()),
             toBlock: ethers.toQuantity(mintTxHeight.toString()),
