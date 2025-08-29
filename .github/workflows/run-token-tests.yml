@@ -112,4 +112,7 @@ jobs:
         continue-on-error: true
         run: npx mocha -r tsx tests/dynamic_rpc/dynamicRpc.spec.ts
 
+      - name: Run chain gas tests
+        continue-on-error: true
+        run: npx mocha -r tsx tests/chain_tests/gasTests.ts
 
