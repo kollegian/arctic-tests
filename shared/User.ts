@@ -229,7 +229,7 @@ export class UserFactory {
 
     static async createSeiUser(admin: SeiUser, userName: string){
         const user = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
-        await user.initialize('', userName, true);
+        await user.initialize('', userName, false);
         await this.fundAddressOnSei(user.seiAddress);
         return user;
     }

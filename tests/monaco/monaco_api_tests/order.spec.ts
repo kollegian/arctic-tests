@@ -93,7 +93,7 @@ describe('Monaco Api Order Tests', function (){
 
     it.only('Users can deposit funds to the vaults', async () =>{
         const usdcDepositAmount = '500000000';
-        await approveAndMint(usdcContract, testUser, tenantConfig.yasinDex2.vaultAddress, usdcDepositAmount);
+        await approveAndMint(usdcContract, testUser, vaultAddress, usdcDepositAmount);
         const depositSeedInfo = await depositClient.requestDepositSignature(authState.access_token, usdcDepositAmount);
         const depositTxReceipt = await vaultClient
             .depositFundsIntoVault(vaultContract, depositSeedInfo, tenantConfig.MOCK_USDC_ADDRESS, usdcDepositAmount);
