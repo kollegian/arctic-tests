@@ -1,0 +1,13 @@
+{
+  "yasinDex":{
+    "clientId": "d551b47f8848497e908ad8f0df60966b",
+    "vaultAddress": "0x7921ddd1F1cC6D4526B705cE5DAED8d548d57188"
+  },
+  "yasinDex2": {
+    "clientId": "6fe0da813f1a4adcbe675d52ca530a43",
+    "vaultAddress": "0x82Cb338FD1840C4d7e1c8E7269e4C875633EF31E"
+  },
+  "baseUrl": "https://dev.api-monaco.xyz",
+  "MOCK_USDC_ADDRESS": "0x6A86dA986797D59A839D136dB490292Cd560C131",
+  "MTK_ADDRESS": "0x428F82f1ECa4AA6f6c75D77cBd2a9ceB94cde343"
+}
