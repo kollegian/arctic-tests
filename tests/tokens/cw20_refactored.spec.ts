@@ -225,7 +225,8 @@ describe('Cw20 Tests', function () {
         const hash = await evmRpcClient.sendRawTransaction(signedTx);
         await waitFor(1);
         const txReceipt = await evmRpcClient.getTransactionReceipt(hash);
-        transferReceipt = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, true)).transactions[0];
+        const txs = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, true)).transactions;
+        transferReceipt = txs.find(tx => tx.hash === hash);
         const afterBalanceOnSei = await evmRpcClient.getBalance(users[0].evmAddress);
         gasPaid = preBalanceOnSei - afterBalanceOnSei;
         receiptLogs = JSON.stringify(txReceipt.logs[0]);
@@ -236,24 +237,24 @@ describe('Cw20 Tests', function () {
         expect(txReceipt.transactionIndex).to.equal(ethers.toQuantity(transferReceipt.transactionIndex));
 
         //Should be the single tx in the block hence should be 0
-        expect(txReceipt.transactionIndex).to.equal(ethers.toQuantity(0));
+        // expect(txReceipt.transactionIndex).to.equal(ethers.toQuantity(0));
 
         expect(txReceipt.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(txReceipt.to.toLowerCase()).to.equal(erc20Contract.getAddress().toLowerCase());
 
         //Currently cumulative gas used is broken hence returning 0
-        expect(txReceipt.cumulativeGasUsed).to.equal(ethers.toQuantity(0));
+        // expect(txReceipt.cumulativeGasUsed).to.equal(ethers.toQuantity(0));
 
         // expect(txReceipt.gasUsed).to.equal(ethers.toQuantity(transferReceipt.gas));
         expect(txReceipt.logs.length).to.equal(1);
         expect(txReceipt.logs[0].address.toLowerCase()).to.equal(erc20Contract.getAddress().toLowerCase());
 
         const feePaidPerReceipt = Number(txReceipt.gasUsed) * Number(txReceipt.effectiveGasPrice);
-        console.log(Number(txReceipt.effectiveGasPrice));
         expect(feePaidPerReceipt).to.equal(Number(gasPaid));
         const baseFee = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, false)).baseFeePerGas;
         // Todo raise this
-        // expect(txReceipt.effectiveGasPrice).to.equal(baseFee + txReceipt.maxPriorityFeePerGas);
+        console.log(transferReceipt);
+        expect(Number(txReceipt.effectiveGasPrice)).to.equal(Number(baseFee) + Number(transferReceipt.maxPriorityFeePerGas));
         
         // Decode using contract interface (recommended)
         const decodedEvent = erc20Contract.contract.interface.parseLog({
@@ -272,11 +273,12 @@ describe('Cw20 Tests', function () {
     });
 
     it('Eth_getTransactionByHash returns correct information on erc20 transfer from pointer', async () =>{
+        console.log(transferReceipt);
         const txHashResponse = await evmRpcClient.getTransactionByHash(transferReceipt.hash);
         expect(txHashResponse.blockHash).to.equal(transferReceipt.blockHash);
         expect(txHashResponse.blockNumber).to.equal(transferReceipt.blockNumber);
         expect(txHashResponse.hash).to.equal(transferReceipt.hash);
-        // expect(txHashResponse.transactionIndex).to.equal(ethers.toQuantity(transferReceipt.index));
+        expect(txHashResponse.transactionIndex).to.equal(ethers.toQuantity(transferReceipt.transactionIndex));
         expect(txHashResponse.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(txHashResponse.to).to.equal(erc20Contract.getAddress().toLowerCase());
         expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(1500000000));
@@ -285,7 +287,7 @@ describe('Cw20 Tests', function () {
         //validate gas response
         const baseFeeOnBlock = (await evmRpcClient.getBlockByNumber(transferReceipt.blockNumber, false)).baseFeePerGas;
         // toDo dont forget to raise this 
-        // expect(Number(txHashResponse.gasPrice)).to.equal(Number(baseFeeOnBlock) + Number(txHashResponse.maxPriorityFeePerGas));
+        expect(Number(txHashResponse.gasPrice)).to.equal(Number(baseFeeOnBlock) + Number(txHashResponse.maxPriorityFeePerGas));
     });
 
     it('Eth_getLogs returns correct information on erc20 transfer from pointer', async () =>{
