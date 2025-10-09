@@ -10,10 +10,10 @@ const SEI_EVM_TESTNET = {
   rpcUrls: { default: { http: [RPC_URL] } },
 } as const;
 const API_BASE_URL = 'https://dev.api-monaco.xyz';
-const CLIENT_ID = '6fe0da813f1a4adcbe675d52ca530a43';
-const VAULT_ADDRESS: Address = '0x82Cb338FD1840C4d7e1c8E7269e4C875633EF31E';
+const CLIENT_ID = 'd551b47f8848497e908ad8f0df60966b';
+const VAULT_ADDRESS: Address = '0x7921ddd1F1cC6D4526B705cE5DAED8d548d57188';
 const USDC_ADDRESS: Address = '0x6A86dA986797D59A839D136dB490292Cd560C131';
-const PRIVATE_KEY = '0x78a025414769c627b6417294d8c5858103e63f2459c9baf81f6853aa6dfed50d';
+const PRIVATE_KEY = '0xaad24d317b40cf3a30672456ea20d0e911885f5ba5deb945e5d9df6f944fd135';
 
 // Use vault ABI from the package; define minimal ERC20 ABI locally
 const ERC20_ABI = parseAbi([
@@ -79,7 +79,7 @@ async function main() {
     console.error('Usage: tsx src/order-poc.ts <PRIVATE_KEY> [DEPOSIT_AMOUNT]');
     process.exit(1);
   }
-  const depositAmountArg = '1000000';
+  const depositAmountArg = '100000000000';
 
   const account = privateKeyToAccount(`0x${privKey.replace(/^0x/, '')}`);
   const publicClient = createPublicClient({ chain: SEI_EVM_TESTNET, transport: http(RPC_URL) });
@@ -186,6 +186,7 @@ async function main() {
 }
 
 main().catch((err) => {
+    console.log('Starting');
   console.error(err);
   process.exit(1);
 });

@@ -9,7 +9,7 @@ import {expect} from "chai";
 import {approveAndMint} from "./utils/utils";
 import {DepositClient} from "./clients/DepositClient";
 import {waitFor} from "../../../shared/utils/helpers";
-import {Contract} from "ethers";
+import {Contract, ethers} from "ethers";
 import {CONTRACT_ABIS} from "@0xmonaco/contracts";
 import {AccountsClient} from "./clients/AccountsClient";
 import MarketClient from "./clients/MarketClient";
@@ -34,7 +34,6 @@ describe('Monaco Api Order Tests', function (){
     before('Initializes clients', async () => {
         let admin = await UserFactory.createAdminUser();
         testUser = await UserFactory.createSeiUser(admin, 'alice');
-        await UserFactory.fundAddressOnSei(testUser.seiAddress, 'usei', '1000000');
         orderClient = new TradingClient(tenantConfig.baseUrl, clientId);
         authClient = new AuthClient(tenantConfig.baseUrl, clientId);
 
@@ -93,12 +92,17 @@ describe('Monaco Api Order Tests', function (){
 
     it.only('Users can deposit funds to the vaults', async () =>{
         const usdcDepositAmount = '500000000';
+        const mtkDepositAmount = ethers.parseEther('5000');
         await approveAndMint(usdcContract, testUser, vaultAddress, usdcDepositAmount);
+        await approveAndMint(mtkContract, testUser, vaultAddress, mtkDepositAmount.toString());
         const depositSeedInfo = await depositClient.requestDepositSignature(authState.access_token, usdcDepositAmount);
         const depositTxReceipt = await vaultClient
             .depositFundsIntoVault(vaultContract, depositSeedInfo, tenantConfig.MOCK_USDC_ADDRESS, usdcDepositAmount);
         console.log(depositTxReceipt);
-        await waitFor(50);
+
+        const depositInfo2 = await depositClient.requestDepositSignature(authState.access_token, mtkDepositAmount.toString());
+        const depositTxReceipt2 = await vaultClient.depositFundsIntoVault(vaultContract, depositInfo2, tenantConfig.MTK_ADDRESS, mtkDepositAmount.toString());
+        await waitFor(10);
         const userDataRaw = await accountClient.queryAccountData(authState.access_token);
         const userData = await userDataRaw.json();
         console.log(userData);
@@ -199,7 +203,7 @@ describe('Monaco Api Order Tests', function (){
                 })
             }
 
-            //@ToDo add ticks for invalid prices 
+            //@ToDo add ticks for invalid prices
             const invalidPrices = ['', '0', '-500', '5,12', 'price']
             for (const invalidPrice of invalidPrices) {
                 it(`Users cant place a ${type} order with invalid price on ${side}`, async () => {
