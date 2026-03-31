@@ -1,0 +1,574 @@
+{
+  "timestamp": "2026-03-16T20:45:20.669Z",
+  "transactionCount": 7,
+  "totalOpcodes": 22693,
+  "uniqueOpcodeCount": 61,
+  "opcodes": {
+    "ADD": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 658,
+      "samples": [
+        3
+      ]
+    },
+    "ADDRESS": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 2,
+      "samples": [
+        2
+      ]
+    },
+    "AND": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 119,
+      "samples": [
+        3
+      ]
+    },
+    "CALLDATALOAD": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 9,
+      "samples": [
+        3
+      ]
+    },
+    "CALLDATASIZE": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 8,
+      "samples": [
+        2
+      ]
+    },
+    "CALLER": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 68,
+      "samples": [
+        2
+      ]
+    },
+    "CALLVALUE": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 4,
+      "samples": [
+        2
+      ]
+    },
+    "CHAINID": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 2,
+      "samples": [
+        2
+      ]
+    },
+    "CODECOPY": {
+      "min": 33,
+      "max": 1906,
+      "avg": 969.5,
+      "count": 2,
+      "samples": [
+        33,
+        1906
+      ]
+    },
+    "CODESIZE": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 1,
+      "samples": [
+        2
+      ]
+    },
+    "DIV": {
+      "min": 5,
+      "max": 5,
+      "avg": 5,
+      "count": 6,
+      "samples": [
+        5
+      ]
+    },
+    "DUP1": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 390,
+      "samples": [
+        3
+      ]
+    },
+    "DUP2": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 1131,
+      "samples": [
+        3
+      ]
+    },
+    "DUP3": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 1408,
+      "samples": [
+        3
+      ]
+    },
+    "DUP4": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 129,
+      "samples": [
+        3
+      ]
+    },
+    "DUP5": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 80,
+      "samples": [
+        3
+      ]
+    },
+    "DUP6": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 155,
+      "samples": [
+        3
+      ]
+    },
+    "DUP7": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 77,
+      "samples": [
+        3
+      ]
+    },
+    "DUP8": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 69,
+      "samples": [
+        3
+      ]
+    },
+    "DUP9": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 67,
+      "samples": [
+        3
+      ]
+    },
+    "EQ": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 18,
+      "samples": [
+        3
+      ]
+    },
+    "EXP": {
+      "min": 10,
+      "max": 60,
+      "avg": 30,
+      "count": 5,
+      "samples": [
+        10,
+        60
+      ]
+    },
+    "GAS": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 1,
+      "samples": [
+        2
+      ]
+    },
+    "GT": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 12,
+      "samples": [
+        3
+      ]
+    },
+    "ISZERO": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 97,
+      "samples": [
+        3
+      ]
+    },
+    "JUMP": {
+      "min": 8,
+      "max": 8,
+      "avg": 8,
+      "count": 2394,
+      "samples": [
+        8
+      ]
+    },
+    "JUMPDEST": {
+      "min": 1,
+      "max": 1,
+      "avg": 1,
+      "count": 2444,
+      "samples": [
+        1
+      ]
+    },
+    "JUMPI": {
+      "min": 10,
+      "max": 10,
+      "avg": 10,
+      "count": 131,
+      "samples": [
+        10
+      ]
+    },
+    "KECCAK256": {
+      "min": 36,
+      "max": 60,
+      "avg": 47.7,
+      "count": 140,
+      "samples": [
+        36,
+        42,
+        54,
+        60
+      ]
+    },
+    "LOG1": {
+      "min": 1262,
+      "max": 1262,
+      "avg": 1262,
+      "count": 1,
+      "samples": [
+        1262
+      ]
+    },
+    "LOG3": {
+      "min": 1500,
+      "max": 1756,
+      "avg": 1628,
+      "count": 2,
+      "samples": [
+        1500,
+        1756
+      ]
+    },
+    "LT": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 79,
+      "samples": [
+        3
+      ]
+    },
+    "MLOAD": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 242,
+      "samples": [
+        3
+      ]
+    },
+    "MSTORE": {
+      "min": 3,
+      "max": 12,
+      "avg": 5.1,
+      "count": 585,
+      "samples": [
+        3,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ]
+    },
+    "MUL": {
+      "min": 5,
+      "max": 5,
+      "avg": 5,
+      "count": 8,
+      "samples": [
+        5
+      ]
+    },
+    "NOT": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 5,
+      "samples": [
+        3
+      ]
+    },
+    "NUMBER": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 66,
+      "samples": [
+        2
+      ]
+    },
+    "OR": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 5,
+      "samples": [
+        3
+      ]
+    },
+    "POP": {
+      "min": 2,
+      "max": 2,
+      "avg": 2,
+      "count": 3161,
+      "samples": [
+        2
+      ]
+    },
+    "PUSH1": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 2202,
+      "samples": [
+        3
+      ]
+    },
+    "PUSH2": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 2555,
+      "samples": [
+        3
+      ]
+    },
+    "PUSH20": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 108,
+      "samples": [
+        3
+      ]
+    },
+    "PUSH32": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 11,
+      "samples": [
+        3
+      ]
+    },
+    "PUSH4": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 12,
+      "samples": [
+        3
+      ]
+    },
+    "PUSH8": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 2,
+      "samples": [
+        3
+      ]
+    },
+    "RETURN": {
+      "min": 0,
+      "max": 0,
+      "avg": 0,
+      "count": 2,
+      "samples": [
+        0
+      ]
+    },
+    "REVERT": {
+      "min": 0,
+      "max": 0,
+      "avg": 0,
+      "count": 1,
+      "samples": [
+        0
+      ]
+    },
+    "SHL": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 76,
+      "samples": [
+        3
+      ]
+    },
+    "SHR": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 79,
+      "samples": [
+        3
+      ]
+    },
+    "SLOAD": {
+      "min": 100,
+      "max": 2100,
+      "avg": 1900,
+      "count": 10,
+      "samples": [
+        100,
+        2100
+      ]
+    },
+    "SLT": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 4,
+      "samples": [
+        3
+      ]
+    },
+    "SSTORE": {
+      "min": 2200,
+      "max": 22100,
+      "avg": 21190.14,
+      "count": 71,
+      "samples": [
+        2200,
+        2900,
+        20000,
+        22100
+      ]
+    },
+    "STOP": {
+      "min": 0,
+      "max": 0,
+      "avg": 0,
+      "count": 2,
+      "samples": [
+        0
+      ]
+    },
+    "SUB": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 160,
+      "samples": [
+        3
+      ]
+    },
+    "SWAP1": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 2023,
+      "samples": [
+        3
+      ]
+    },
+    "SWAP2": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 1216,
+      "samples": [
+        3
+      ]
+    },
+    "SWAP3": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 105,
+      "samples": [
+        3
+      ]
+    },
+    "SWAP4": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 70,
+      "samples": [
+        3
+      ]
+    },
+    "SWAP5": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 134,
+      "samples": [
+        3
+      ]
+    },
+    "SWAP6": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 68,
+      "samples": [
+        3
+      ]
+    },
+    "SWAP7": {
+      "min": 3,
+      "max": 3,
+      "avg": 3,
+      "count": 1,
+      "samples": [
+        3
+      ]
+    }
+  }
+}
