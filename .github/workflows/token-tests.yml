@@ -1,4 +1,4 @@
-name: Token Tests
+name: Release Tests
 
 on:
   workflow_dispatch:
@@ -85,6 +85,29 @@ jobs:
             "adminMnemonic": "${{ inputs.adminMnemonic }}"
           }
           EOF
+
+      - name: "Run token tests - startTests"
+        run: npx mocha -r tsx tests/tokens/startTests.ts
+
+      - name: "Run token tests - erc20_refactored"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/tokens/erc20_refactored.spec.ts
+
+      - name: "Run token tests - erc721_refactored"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/tokens/erc721_refactored.spec.ts
+
+      - name: "Run token tests - cw20_refactored"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/tokens/cw20_refactored.spec.ts
+
+      - name: "Run token tests - cw721_refactored"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/tokens/cw721_refactored.spec.ts
+
+      - name: "Run token tests - dynamic rpc tests"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/dynamic_rpc/dynamicRpc.spec.ts
 
       - name: "State: eth_getBalance"
         continue-on-error: true
