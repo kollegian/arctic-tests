@@ -1,13 +1,14 @@
 {
-  "yasinDex":{
-    "clientId": "d551b47f8848497e908ad8f0df60966b",
-    "vaultAddress": "0x7921ddd1F1cC6D4526B705cE5DAED8d548d57188"
+  "monaco":{
+    "clientId": "60eb377aab9f4ea18dcdf4747204c792",
+    "vaultAddress": "0xA393B04EA77354570Ace35869F5EbB1e380DC232"
   },
   "yasinDex2": {
     "clientId": "6fe0da813f1a4adcbe675d52ca530a43",
-    "vaultAddress": "0x82Cb338FD1840C4d7e1c8E7269e4C875633EF31E"
+    "vaultAddress": "0x069496054517edA68C86546B587Cd36De30F7459"
   },
-  "baseUrl": "https://dev.api-monaco.xyz",
+  "baseUrl": "https://staging.apimonaco.xyz",
   "MOCK_USDC_ADDRESS": "0x6A86dA986797D59A839D136dB490292Cd560C131",
-  "MTK_ADDRESS": "0x428F82f1ECa4AA6f6c75D77cBd2a9ceB94cde343"
+  "MTK_ADDRESS": "0x6057bbe1e1ac41bb0f8ccb166e2537441dcc1bcc",
+  "TEST_PAIR_ID": "d7a22f47-d179-4ccd-944e-d7a22f47d179"
 }

@@ -1,6 +1,7 @@
 import {SeiUser, UserFactory} from "../../shared/User";
 import {TokenDeployer} from "../../shared/Deployer";
 import fs from "fs";
+import {waitFor} from "../../shared/utils/helpers";
 
 describe('Deploy contracts and fund users here', function(){
     this.timeout(2 * 60 * 1000);
@@ -13,12 +14,12 @@ describe('Deploy contracts and fund users here', function(){
 
     it('Deploy contracts and fund users', async () => {
         admin = await UserFactory.createAdminUser();
-        await UserFactory.fundAdminOnSei();
-        users = await UserFactory.createSeiUsers(admin, 20, true);
+        // await UserFactory.fundAdminOnSei();
+        users = await UserFactory.createSeiUsers(admin, 2, true);
 
         const deployer = new TokenDeployer(admin);
         const initialBalances = users.map(user => ({address: user.seiAddress, amount: '100000000'}));
-        const cw20 = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
+        const cw20 = await deployer.deployCw20('wasm_store/cw20_base_1.wasm', {
             "name": 'myCwSolo',
             "symbol": 'mycwSolo',
             "decimals": 6,
@@ -38,7 +39,8 @@ describe('Deploy contracts and fund users here', function(){
 
         const erc20 = await deployer.deployErc20();
         await erc20.mintToUsers(users);
-
+        console.log('Erc20 minted');
+        await waitFor(2);
         const erc721 = await deployer.deployErc721("TestNFT", "TNFT", "https://example.com/");
         users.forEach(async (user, index) => {
             const nftId = index.toString();

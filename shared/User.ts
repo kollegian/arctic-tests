@@ -129,7 +129,7 @@ export class SeiWallet extends User<DirectSecp256k1HdWallet> {
 
     private async createSigningClient(rpcEndpoint: string, wallet: DirectSecp256k1HdWallet): Promise<SigningStargateClient> {
         const registry = new Registry(seiProtoRegistry);
-        return await SigningStargateClient.connectWithSigner(rpcEndpoint, wallet, { registry });
+        return await SigningStargateClient.connectWithSigner(rpcEndpoint, wallet, {registry});
     }
 }
 
@@ -229,8 +229,16 @@ export class UserFactory {
 
     static async createSeiUser(admin: SeiUser, userName: string){
         const user = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
-        await user.initialize('', userName, false);
-        await this.fundAddressOnSei(user.seiAddress);
+        await user.initialize('', userName, true);
+        const result = await this.fundAddressOnSei(user.seiAddress);
+        const balance = await user.seiWallet.queryBalance();
+        const output = await user.seiWallet.associate();
+        return user;
+    }
+
+    static async createSeiUserFromMnemonic(admin: SeiUser, mnemonic: string, userName: string){
+        const user = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
+        await user.initialize(mnemonic, userName, false);
         return user;
     }
 
@@ -238,14 +246,14 @@ export class UserFactory {
         await this.funder.fundAdminOnSei(tokenName);
     }
 
-    static async fundAddressOnSei(address: string, tokenName = 'usei', amount = '75000000') {
-        await this.funder.fundAddressOnSei(address, tokenName, amount);
+    static async fundAddressOnSei(address: string, tokenName = 'usei', amount = '5000000') {
+        return await this.funder.fundAddressOnSei(address, tokenName, amount);
     }
 
     static async createUnassociatedUsers(admin: SeiUser, userName='unassocUser', toBeAddedToCli=false): Promise<SeiUser> {
         const user = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
         await user.initialize('', userName, toBeAddedToCli);
-        await this.fundAddressOnSei(user.seiAddress);
+        // await this.fundAddressOnSei(user.seiAddress);
         return user;
     }
 
@@ -281,6 +289,7 @@ export class UserFactory {
         for (let i = 0; i < count; i++) {
             users.push(new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint));
         }
+        console.log('Creating new users');
         await Promise.all(users.map(u => u.initialize('', '', false)));
         await UserFactory.fundAllUsers(users);
         await UserFactory.associateAll(users);

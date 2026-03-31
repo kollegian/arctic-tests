@@ -150,7 +150,7 @@ export class AtomicTxSender {
         // ── Gas / fee ──────────────────────────────────────────────────────────────
         const gasLimit = 2_000_000;
         const feeData = await provider.getFeeData();
-        const gasPrice = feeData.gasPrice!;
+        const gasPrice = feeData.gasPrice;
         const {chainId} = await provider.getNetwork();
         const type = '0x2';
         const maxFeePerGasToSend = maxFeePerGas || feeData.maxFeePerGas!;

@@ -117,3 +117,53 @@ export function returnTextProposal(isExpedited = false, title="Test Text Proposa
         "is_expedited": isExpedited
     })
 }
+
+export function parseRewardsResponse(rewards: any) {
+    return {
+        rewards: rewards.rewards.map((r: any) => ({
+            coins: r.coins.map((c: any) => ({
+                amount: c.amount.toString(),
+                decimals: Number(c.decimals),
+                denom: c.denom
+            })),
+            validator_address: r.validator_address
+        })),
+        total: rewards.total.map((t: any) => ({
+            amount: t.amount.toString(),
+            decimals: Number(t.decimals),
+            denom: t.denom
+        }))
+    };
+}
+
+export function calculateTotalRewardsAmount(parsedRewards: { total: Array<{ amount: string; decimals: number; denom: string }> }): bigint {
+    let total = BigInt(0);
+    for (const coin of parsedRewards.total) {
+        if (coin.denom === 'usei') {
+            total += BigInt(coin.amount);
+        }
+    }
+    return total;
+}
+
+export function findEvent(receipt: any, contract: any, eventName: string) {
+    return receipt.logs.find((l: any) => {
+        try { return contract.interface.parseLog(l)?.name === eventName; }
+        catch { return false; }
+    });
+}
+
+export async function waitForRewards(distrContract: any, delegatorAddress: string, maxWaitSeconds = 120): Promise<bigint> {
+    const pollInterval = 5;
+    let elapsed = 0;
+    const { waitFor } = await import('../../shared/utils/helpers');
+    while (elapsed < maxWaitSeconds) {
+        const rewards = await distrContract.rewards(delegatorAddress);
+        const parsed = parseRewardsResponse(rewards);
+        const total = calculateTotalRewardsAmount(parsed);
+        if (total > BigInt(0)) return total;
+        await waitFor(pollInterval);
+        elapsed += pollInterval;
+    }
+    throw new Error(`No rewards accumulated after ${maxWaitSeconds}s`);
+}

@@ -120,7 +120,6 @@ export default class MarketClient extends BaseApiClient {
     ): Promise<TradingPairResponse> {
         this.validateRequired({ symbol }, ['symbol']);
         const encodedSymbol = encodeURIComponent(symbol);
-        console.log(encodedSymbol);
         return this.get<TradingPairResponse>(
             `/api/v1/market/pairs/${encodedSymbol}`,
             accessToken

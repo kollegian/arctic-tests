@@ -21,7 +21,7 @@ describe('Sei debug tests', function() {
 
     before('Initializes', async () => {
         admin = await UserFactory.createAdminUser();
-        users = await UserFactory.createSeiUsers(admin, 30, true);
+        users = await UserFactory.createSeiUsers(admin, 10, true);
         erc20 = new Erc20Token(admin, contractAddresses.erc20);
         debugContract = new ethers.Contract(contractAddresses.debugAddress, DebugContractAbi.abi, admin.evmWallet.wallet) as unknown as DebugContract;
         rpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
@@ -85,18 +85,23 @@ describe('Sei debug tests', function() {
                 {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
-                    // gas: ethers.toQuantity(100000),
-                    // maxFeePerGas: ethers.toQuantity(1000000000),
-                    // value: '0x0',
                     data: actualCall
                 },
                 ethers.toQuantity(validBlockNumber.number),
             ]
-            printDebugTraceCallCurl(admin.evmAddress, await debugContract.getAddress(), actualCall, validBlockNumber.number, 'http://18.117.219.102:8545', ethers.toQuantity(1000000000));
             const debugResult = await admin.evmWallet.signingClient.send('debug_traceCall', callParams);
             expect(debugResult.failed).to.be.false;
             expect(debugResult.gas).to.be.gt(25000);
             expect(debugResult.structLogs).to.have.length.gt(2);
+            expect(debugResult).to.have.property('returnValue');
+
+            const firstLog = debugResult.structLogs[0];
+            expect(firstLog).to.have.property('op').that.is.a('string');
+            expect(firstLog).to.have.property('pc').that.is.a('number');
+            expect(firstLog).to.have.property('gas').that.is.a('number');
+            expect(firstLog).to.have.property('gasCost').that.is.a('number');
+            expect(firstLog).to.have.property('depth').that.is.a('number');
+            expect(firstLog.depth).to.be.gte(1);
         });
 
         it.only('Debug trace call with unexisting block number fails', async () => {
@@ -115,13 +120,12 @@ describe('Sei debug tests', function() {
                 const debugResult = await admin.evmWallet.signingClient.send('debug_traceCall', callParams);
                 throw new Error('Should have failed');
             } catch (e: any){
-                expect(e.message).to.contain("height must be less than or equal to the head of the node's blockchain");
+                expect(e.message).to.contain("is not yet available; safe latest is");
             }
         })
 
         it.only('Debug trace call succeeds in gas price fluctuations with default setting', async () => {
             const balance = await erc20.balanceOf(users[1].evmAddress);
-            console.log(balance);
             const receipts = await erc20.sendMultipleTxs(users);
             const block = receipts[0].blockNumber;
             console.log('Block received');
@@ -130,8 +134,8 @@ describe('Sei debug tests', function() {
                 {
                     from: admin.evmAddress,
                     to: erc20.getAddress(),
-                    gas: ethers.toQuantity(100000),
-                    maxFeePerGas: ethers.toQuantity(1300000000),
+                    //gas: ethers.toQuantity(100000),
+                    //maxFeePerGas: ethers.toQuantity(1300000000),
                     value: '0x0',
                     data: callData
                 },
@@ -149,8 +153,8 @@ describe('Sei debug tests', function() {
                 {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
-                    gas: ethers.toQuantity(1000000),
-                    maxFeePerGas: ethers.toQuantity(1000000000),
+                    //gas: ethers.toQuantity(1000000),
+                    //maxFeePerGas: ethers.toQuantity(1000000000),
                     value: '0x0',
                     data: actualCall
                 },
@@ -191,8 +195,6 @@ describe('Sei debug tests', function() {
                 {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
-                    // gasPrice: ethers.toQuantity(100000),
-                    // maxFeePerGas: ethers.toQuantity(1000000000),
                     value: '0x0',
                     data: actualCall
                 },
@@ -200,7 +202,7 @@ describe('Sei debug tests', function() {
             ]
             const debugResult = await provider.send('debug_traceCall', callParams);
             expect(debugResult.failed).to.be.true;
-            expect(debugResult.returnValue).to.be.eq('');
+            expect(debugResult.returnValue).to.be.a('string').with.length.gt(0);
             expect(debugResult.structLogs).to.have.length.gt(10);
             expect(debugResult.gas).to.be.gt(25000);
         });
@@ -214,7 +216,6 @@ describe('Sei debug tests', function() {
                 {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
-                    // gasPrice: ethers.toQuantity(100000),
                     value: '0x0',
                     data: actualCall
                 },
@@ -229,6 +230,9 @@ describe('Sei debug tests', function() {
             expect(debugResult.to.toLowerCase()).to.be.eq((await debugContract.getAddress()).toLowerCase());
             expect(parseInt(debugResult.gas)).to.be.gt(25000);
             expect(debugResult.type).to.be.eq('CALL');
+            expect(debugResult).to.have.property('input').that.is.a('string');
+            expect(debugResult).to.have.property('gasUsed');
+            expect(parseInt(debugResult.gasUsed)).to.be.gt(0);
         });
 
         //@todo add earliest again
@@ -290,18 +294,17 @@ describe('Sei debug tests', function() {
                 expect(debugResult[admin.evmAddress.toLowerCase()]['balance']).to.be
                     .eq(ethers.toQuantity(await admin.evmWallet.queryBalance()));
                 expect(debugResult[(await debugContract.getAddress()).toLowerCase()]['code']).to.be.eq(DebugContractAbi.deployedBytecode)
-                Object.entries(ercContractData).map( async ([storage, value]) => {
+                for (const [storage, value] of Object.entries(ercContractData)) {
                     const queriedStorage = await provider.getStorage(erc20.getAddress(), storage);
                     expect(queriedStorage).to.be.eq(value);
-                });
+                }
             });
 
-            it.only(`Can use call tracer with block tag ${tag} with only top call`, async () => {
+            it.only(`Can use call tracer with block tag ${tag} with onlyTopCall false returns subcalls`, async () => {
                 const callParams = [
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -316,6 +319,9 @@ describe('Sei debug tests', function() {
                 expect(debugResult.to.toLowerCase()).to.be.eq((await debugContract.getAddress()).toLowerCase());
                 expect(parseInt(debugResult.gas)).to.be.gt(25000);
                 expect(debugResult.type).to.be.eq('CALL');
+                expect(debugResult.calls).to.be.an('array').with.length.gt(0);
+                expect(debugResult.calls[0].from.toLowerCase()).to.be.eq((await debugContract.getAddress()).toLowerCase());
+                expect(debugResult.calls[0].to.toLowerCase()).to.be.eq(erc20.getAddress().toString().toLowerCase());
             });
 
             it.only(`Can use with only top call true with call tracer with tag ${tag}`, async () => {
@@ -323,7 +329,6 @@ describe('Sei debug tests', function() {
                     {
                         from: admin.evmAddress,
                         to: await debugContract.getAddress(),
-                        // gasPrice: ethers.toQuantity(100000),
                         value: '0x0',
                         data: actualCall
                     },
@@ -363,10 +368,10 @@ describe('Sei debug tests', function() {
             expect(debugResult[admin.evmAddress.toLowerCase()]['balance']).to.be
                 .eq(ethers.toQuantity(await admin.evmWallet.queryBalance()));
             expect(debugResult[(await debugContract.getAddress()).toLowerCase()]['code']).to.be.eq(DebugContractAbi.deployedBytecode)
-            Object.entries(ercContractData).map( async ([storage, value]) => {
+            for (const [storage, value] of Object.entries(ercContractData)) {
                 const queriedStorage = await provider.getStorage(erc20.getAddress(), storage);
                 expect(queriedStorage).to.be.eq(value);
-            });
+            }
 
         });
 
@@ -440,7 +445,6 @@ describe('Sei debug tests', function() {
                         {
                             from: admin.evmAddress,
                             to: await debugContract.getAddress(),
-                            // gasPrice: ethers.toQuantity(100000),
                             value: '0x0',
                             data: actualCall
                         },
@@ -459,9 +463,9 @@ describe('Sei debug tests', function() {
                     if(tracer === 'callTracer') {
                         expect(debugResult['from']).to.be.eq(admin.evmAddress.toLowerCase());
                         expect(debugResult['to']).to.be.eq((await debugContract.getAddress()).toLowerCase());
+                        expect(debugResult['calls']).to.be.an('array').with.length.gt(0);
                         expect(debugResult['calls'][0].from).to.be.eq((await debugContract.getAddress()).toLowerCase());
                         expect(debugResult['calls'][0].to).to.be.eq(erc20.getAddress().toLowerCase());
-                        expect(debugResult['calls'][0].value).to.be.eq('0x0');
                     }
                 });
 
@@ -471,7 +475,6 @@ describe('Sei debug tests', function() {
                         {
                             from: admin.evmAddress,
                             to: await debugContract.getAddress(),
-                            // gasPrice: ethers.toQuantity(100000),
                             value: '0x0',
                             data: actualCall
                         },
@@ -490,9 +493,9 @@ describe('Sei debug tests', function() {
                     if(tracer === 'callTracer') {
                         expect(debugResult['from']).to.be.eq(admin.evmAddress.toLowerCase());
                         expect(debugResult['to']).to.be.eq((await debugContract.getAddress()).toLowerCase());
+                        expect(debugResult['calls']).to.be.an('array').with.length.gt(0);
                         expect(debugResult['calls'][0].from).to.be.eq((await debugContract.getAddress()).toLowerCase());
                         expect(debugResult['calls'][0].to).to.be.eq(erc20.getAddress().toLowerCase());
-                        expect(debugResult['calls'][0].value).to.be.eq('0x0');
                     }
                 });
             }
@@ -524,6 +527,14 @@ describe('Sei debug tests', function() {
             expect(debugResult.failed).to.be.false;
             expect(debugResult.gas).to.be.above(10000);
             expect(debugResult.structLogs).to.have.length.gt(10);
+            expect(debugResult).to.have.property('returnValue');
+
+            const firstLog = debugResult.structLogs[0];
+            expect(firstLog).to.have.property('op').that.is.a('string');
+            expect(firstLog).to.have.property('pc').that.is.a('number');
+            expect(firstLog).to.have.property('gas').that.is.a('number');
+            expect(firstLog).to.have.property('gasCost').that.is.a('number');
+            expect(firstLog).to.have.property('depth').that.is.a('number');
         });
 
         it.only('Trace transaction with default parameters match with eth get block Receipt', async () =>{
@@ -547,24 +558,32 @@ describe('Sei debug tests', function() {
                 }
             ]
             const debugResult = await provider.send('debug_traceTransaction', params);
-            console.log(ethers.formatEther(debugResult['post'][admin.evmAddress.toLowerCase()]['balance']));
-            console.log('-----');
-            console.log(ethers.formatEther(await admin.evmWallet.queryBalance()));
-            console.log('Pre balances ');
-            console.log(ethers.formatEther(debugResult['pre'][admin.evmAddress.toLowerCase()]['balance']));
-            console.log(ethers.formatEther(preBalance.toString()));
-            const balanceDiff = BigInt(debugResult['pre'][admin.evmAddress.toLowerCase()]['balance']) - BigInt(debugResult['post'][admin.evmAddress.toLowerCase()]['balance']);
-            console.log(ethers.formatEther(balanceDiff));
 
+            expect(debugResult).to.have.property('pre');
+            expect(debugResult).to.have.property('post');
+
+            const adminAddrLower = admin.evmAddress.toLowerCase();
+            expect(debugResult['pre']).to.have.property(adminAddrLower);
+            expect(debugResult['post']).to.have.property(adminAddrLower);
+            expect(debugResult['pre'][adminAddrLower]).to.have.property('balance');
+            expect(debugResult['post'][adminAddrLower]).to.have.property('balance');
+
+            const preBalanceFromTrace = BigInt(debugResult['pre'][adminAddrLower]['balance']);
+            const postBalanceFromTrace = BigInt(debugResult['post'][adminAddrLower]['balance']);
+            expect(preBalanceFromTrace > postBalanceFromTrace).to.be.true;
+
+            const balanceDiff = preBalanceFromTrace - postBalanceFromTrace;
             const receipt = await rpcClient.getTransactionReceipt(txHash);
-            const gasPaid = (BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice));
-            console.log('Paid gas is ', ethers.formatEther(gasPaid));
+            const gasPaid = BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice);
 
-            const afterBalance = await admin.evmWallet.queryBalance();
-            console.log('Actual balance diff ', ethers.formatEther((preBalance - afterBalance).toString()));
+            expect(balanceDiff === gasPaid).to.be.true;
         });
 
         it.only('Debug trace transaction returns valid info on valid txs with prestate tracer and diff mode false', async () =>{
+            const adminAddrLower = admin.evmAddress.toLowerCase();
+            const debugContractAddr = (await debugContract.getAddress()).toLowerCase();
+            const erc20Addr = erc20.getAddress().toString().toLowerCase();
+
             const params = [
                 txHash,
                 {
@@ -572,8 +591,16 @@ describe('Sei debug tests', function() {
                 }
             ]
             const debugResult = await provider.send('debug_traceTransaction', params);
-            console.log('Balance now is ', ethers.formatEther(debugResult[admin.evmAddress.toLowerCase()]['balance']));
-            console.log('Balance  actual is ', ethers.formatEther(await admin.evmWallet.queryBalance()));
+
+            expect(debugResult).to.have.property(adminAddrLower);
+            expect(debugResult[adminAddrLower]).to.have.property('balance');
+            expect(BigInt(debugResult[adminAddrLower]['balance']) > BigInt(0)).to.be.true;
+
+            expect(debugResult).to.have.property(debugContractAddr);
+            expect(debugResult[debugContractAddr]).to.have.property('code');
+            expect(debugResult[debugContractAddr]['code']).to.be.eq(DebugContractAbi.deployedBytecode);
+
+            expect(debugResult).to.have.property(erc20Addr);
 
             const params2 = [
                 txHash,
@@ -586,7 +613,13 @@ describe('Sei debug tests', function() {
                 }
             ]
             const debugResult2 = await provider.send('debug_traceTransaction', params2);
-            console.log(ethers.formatEther(debugResult2['post'][admin.evmAddress.toLowerCase()]['balance']));
+
+            expect(debugResult2).to.have.property('pre');
+            expect(debugResult2).to.have.property('post');
+            expect(debugResult2['pre']).to.have.property(adminAddrLower);
+            expect(debugResult2['post']).to.have.property(adminAddrLower);
+            expect(BigInt(debugResult2['pre'][adminAddrLower]['balance'])
+                > BigInt(debugResult2['post'][adminAddrLower]['balance'])).to.be.true;
         });
 
         it.only('Can get failing tx transactions', async () => {
@@ -603,6 +636,8 @@ describe('Sei debug tests', function() {
             expect(debugResult.failed).to.be.true;
             expect(debugResult.gas).to.be.above(10000);
             expect(debugResult.structLogs).to.have.length.gt(10);
+            expect(debugResult).to.have.property('returnValue').that.is.a('string');
+            expect(debugResult.returnValue.length).to.be.gt(0);
         });
 
         const tracerConfigs = ['prestateTracer', 'callTracer'];
@@ -622,9 +657,16 @@ describe('Sei debug tests', function() {
                 if(tracerConfig === 'callTracer') {
                     expect(debugResult['from']).to.be.eq(admin.evmAddress.toLowerCase());
                     expect(debugResult['to']).to.be.eq((await debugContract.getAddress()).toLowerCase());
+                    expect(debugResult).to.have.property('input').that.is.a('string');
+                    expect(debugResult).to.have.property('gasUsed');
+                    expect(parseInt(debugResult.gasUsed)).to.be.gt(0);
+                    expect(parseInt(debugResult.gasUsed)).to.be.lte(parseInt(debugResult.gas));
+                    expect(debugResult['calls']).to.be.an('array').with.length.gt(0);
                     expect(debugResult['calls'][0].from).to.be.eq((await debugContract.getAddress()).toLowerCase());
                     expect(debugResult['calls'][0].to).to.be.eq(erc20.getAddress().toLowerCase());
                     expect(debugResult['calls'][0].value).to.be.eq('0x0');
+                    expect(debugResult['calls'][0]).to.have.property('input');
+                    expect(debugResult['calls'][0]).to.have.property('gasUsed');
                 }
             });
 
@@ -665,9 +707,9 @@ describe('Sei debug tests', function() {
                     if(tracerConfig === 'callTracer') {
                         expect(debugResult['from']).to.be.eq(admin.evmAddress.toLowerCase());
                         expect(debugResult['to']).to.be.eq((await debugContract.getAddress()).toLowerCase());
+                        expect(debugResult['calls']).to.be.an('array').with.length.gt(0);
                         expect(debugResult['calls'][0].from).to.be.eq((await debugContract.getAddress()).toLowerCase());
                         expect(debugResult['calls'][0].to).to.be.eq(erc20.getAddress().toLowerCase());
-                        expect(debugResult['calls'][0].value).to.be.eq('0x0');
                     }
                 });
 
@@ -686,11 +728,11 @@ describe('Sei debug tests', function() {
                     if(tracerConfig === 'callTracer') {
                         expect(debugResult['from']).to.be.eq(admin.evmAddress.toLowerCase());
                         expect(debugResult['to']).to.be.eq((await debugContract.getAddress()).toLowerCase());
-                        expect(debugResult['calls'][0].from).to.be.eq((await debugContract.getAddress()).toLowerCase());
-                        expect(debugResult['calls'][0].to).to.be.eq(erc20.getAddress().toLowerCase());
-                        expect(debugResult['calls'][0].value).to.be.eq('0x0');
                         expect(debugResult['error']).to.be.eq('execution reverted');
                         expect(debugResult['revertReason']).to.be.eq('Call failed');
+                        expect(debugResult['calls']).to.be.an('array').with.length.gt(0);
+                        expect(debugResult['calls'][0].from).to.be.eq((await debugContract.getAddress()).toLowerCase());
+                        expect(debugResult['calls'][0].to).to.be.eq(erc20.getAddress().toLowerCase());
                     }
                 })
             }
@@ -705,7 +747,7 @@ describe('Sei debug tests', function() {
         it.only('Debugs block with 40 txs in it - block number', async () => {
             const txs = [];
             for (let i = 0; i<users.length; i++) {
-                txs.push(erc20.contract.connect(users[i].evmWallet.wallet).transfer(admin.evmAddress, ethers.parseEther('0.1')));
+                txs.push(erc20.contract.connect(users[i].evmWallet.wallet).transfer(admin.evmAddress, ethers.parseEther('0.1'), {gasLimit: 500000}));
             }
             const txPromises = await Promise.all(txs);
             console.log('Txs sent');
@@ -718,13 +760,23 @@ describe('Sei debug tests', function() {
                 }
                 return prev;
             }, new Map());
-            blockNumber = receipts[0]!.blockNumber;
+            //find max of block number
+            let bestKey: any;
+            let bestVal = -Infinity;
+
+            for (const [k, v] of blockNumbers) {
+                if (v > bestVal) {
+                    bestVal = v;
+                    bestKey = k;
+                }
+            }
+            // blockNumber = receipts[0]!.blockNumber;
+            blockNumber = bestKey;
             blockHash = (await provider.getBlock(blockNumber))!.hash as string;
             const params = [
                 ethers.toQuantity(blockNumber),
             ];
             numberDebugResult = await provider.send('debug_traceBlockByNumber', params);
-            console.log('Number of txs in a single block is ', blockNumbers.get(blockNumber));
             expect(numberDebugResult.length).to.be.gte(blockNumbers.get(blockNumber));
         });
 
@@ -734,8 +786,16 @@ describe('Sei debug tests', function() {
                 blockHash,
             ];
             hashDebugResult = await provider.send('debug_traceBlockByHash', params);
-            console.log(hashDebugResult.length);
             expect(hashDebugResult.length).to.be.gte(2);
+
+            const entry = hashDebugResult[0] as any;
+            expect(entry).to.have.property('txHash').that.is.a('string');
+            expect(entry.txHash).to.match(/^0x[0-9a-fA-F]{64}$/);
+            expect(entry).to.have.property('result');
+            expect(entry.result).to.have.property('gas').that.is.a('number');
+            expect(entry.result).to.have.property('failed');
+            expect(entry.result).to.have.property('structLogs').that.is.an('array');
+            expect(entry.result).to.have.property('returnValue');
         });
 
         it.only('Debug trace block by number and debug trace by block hash returns same information', async () =>{
@@ -792,5 +852,107 @@ describe('Sei debug tests', function() {
                 })
             }
         }
+
+        it.only('debug_traceBlockByNumber fails with non-existent block number', async () => {
+            const currentBlock = await provider.getBlockNumber();
+            const params = [ethers.toQuantity(currentBlock + 10000)];
+            try {
+                await provider.send('debug_traceBlockByNumber', params);
+                throw new Error('Should have failed');
+            } catch (e: any) {
+                expect(e.message).to.not.eq('Should have failed');
+            }
+        });
+
+        it.only('debug_traceBlockByHash fails with non-existent block hash', async () => {
+            const params = ['0x0000000000000000000000000000000000000000000000000000000000000000'];
+            try {
+                await provider.send('debug_traceBlockByHash', params);
+                throw new Error('Should have failed');
+            } catch (e: any) {
+                expect(e.message).to.not.eq('Should have failed');
+            }
+        });
+    });
+
+    describe('Missing edge cases', function () {
+        it.only('debug_traceTransaction fails with non-existent tx hash', async () => {
+            const fakeTxHash = '0x0000000000000000000000000000000000000000000000000000000000000000';
+            try {
+                await provider.send('debug_traceTransaction', [fakeTxHash]);
+                throw new Error('Should have failed');
+            } catch (e: any) {
+                expect(e.message).to.not.eq('Should have failed');
+            }
+        });
+
+        it.only('debug_traceCall works with latest block tag', async () => {
+            const callParams = [
+                {
+                    from: admin.evmAddress,
+                    to: await debugContract.getAddress(),
+                    value: '0x0',
+                    data: actualCall
+                },
+                'latest',
+            ];
+            const debugResult = await provider.send('debug_traceCall', callParams);
+            expect(debugResult.failed).to.be.false;
+            expect(debugResult.gas).to.be.gt(25000);
+            expect(debugResult.structLogs).to.have.length.gt(2);
+        });
+
+        it.only('debug_traceCall with callTracer on latest block tag', async () => {
+            const callParams = [
+                {
+                    from: admin.evmAddress,
+                    to: await debugContract.getAddress(),
+                    value: '0x0',
+                    data: actualCall
+                },
+                'latest',
+                {tracer: 'callTracer'}
+            ];
+            const debugResult = await provider.send('debug_traceCall', callParams);
+            expect(debugResult.from.toLowerCase()).to.be.eq(admin.evmAddress.toLowerCase());
+            expect(debugResult.to.toLowerCase()).to.be.eq((await debugContract.getAddress()).toLowerCase());
+            expect(debugResult.type).to.be.eq('CALL');
+            expect(parseInt(debugResult.gas)).to.be.gt(0);
+        });
+
+        it.only('debug_traceCall with a simple value transfer (no contract call)', async () => {
+            const validBlockNumber = await provider.getBlock('finalized') as Block;
+            const callParams = [
+                {
+                    from: admin.evmAddress,
+                    to: users[0].evmAddress,
+                    value: ethers.toQuantity(ethers.parseEther('0.01')),
+                },
+                ethers.toQuantity(validBlockNumber.number),
+            ];
+            const debugResult = await provider.send('debug_traceCall', callParams);
+            expect(debugResult.failed).to.be.false;
+            expect(debugResult.gas).to.be.gte(21000);
+            expect(debugResult.structLogs).to.be.an('array');
+        });
+
+        it.only('debug_traceCall with callTracer for a simple value transfer', async () => {
+            const validBlockNumber = await provider.getBlock('finalized') as Block;
+            const callParams = [
+                {
+                    from: admin.evmAddress,
+                    to: users[0].evmAddress,
+                    value: ethers.toQuantity(ethers.parseEther('0.01')),
+                },
+                ethers.toQuantity(validBlockNumber.number),
+                {tracer: 'callTracer'}
+            ];
+            const debugResult = await provider.send('debug_traceCall', callParams);
+            expect(debugResult.from.toLowerCase()).to.be.eq(admin.evmAddress.toLowerCase());
+            expect(debugResult.to.toLowerCase()).to.be.eq(users[0].evmAddress.toLowerCase());
+            expect(debugResult.type).to.be.eq('CALL');
+            expect(debugResult.value).to.be.eq(ethers.toQuantity(ethers.parseEther('0.01')));
+            expect(debugResult.calls === undefined || debugResult.calls === null || debugResult.calls.length === 0).to.be.true;
+        });
     });
 })

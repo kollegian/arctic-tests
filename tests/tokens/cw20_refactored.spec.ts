@@ -21,7 +21,7 @@ describe('Cw20 Tests', function () {
         admin = await UserFactory.createAdminUser();
         const cw20Address = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8')).cw20Address;
         cw20Contract = new Cw20Token(admin, cw20Address);
-        users = await UserFactory.createSeiUsers(admin, 20, true);
+        users = await UserFactory.createSeiUsers(admin, 3, true);
         evmRpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
     });
 
@@ -221,9 +221,9 @@ describe('Cw20 Tests', function () {
         const preBalanceOnSei = await evmRpcClient.getBalance(users[0].evmAddress);
         const encodedTx = erc20Contract.contract.interface.encodeFunctionData('transfer', [users[1].evmAddress, '100000']);
         const signedTx = await AtomicTxSender
-            .signEvmTransaction(users[0], erc20Contract.getAddress(), encodedTx, "1500000000", "4500000000")
+            .signEvmTransaction(users[0], erc20Contract.getAddress(), encodedTx, "15000000000", "29000000000")
         const hash = await evmRpcClient.sendRawTransaction(signedTx);
-        await waitFor(1);
+        await waitFor(2);
         const txReceipt = await evmRpcClient.getTransactionReceipt(hash);
         const txs = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, true)).transactions;
         transferReceipt = txs.find(tx => tx.hash === hash);
@@ -250,12 +250,14 @@ describe('Cw20 Tests', function () {
         expect(txReceipt.logs[0].address.toLowerCase()).to.equal(erc20Contract.getAddress().toLowerCase());
 
         const feePaidPerReceipt = Number(txReceipt.gasUsed) * Number(txReceipt.effectiveGasPrice);
+        console.log(txReceipt);
         expect(feePaidPerReceipt).to.equal(Number(gasPaid));
         const baseFee = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, false)).baseFeePerGas;
         // Todo raise this
         console.log(transferReceipt);
+        console.log(baseFee);
         expect(Number(txReceipt.effectiveGasPrice)).to.equal(Number(baseFee) + Number(transferReceipt.maxPriorityFeePerGas));
-        
+
         // Decode using contract interface (recommended)
         const decodedEvent = erc20Contract.contract.interface.parseLog({
             topics: txReceipt.logs[0].topics,
@@ -265,7 +267,7 @@ describe('Cw20 Tests', function () {
         expect(decodedEvent?.args.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(decodedEvent?.args.to.toLowerCase()).to.equal(users[1].evmAddress.toLowerCase());
         expect(decodedEvent?.args.value.toString()).to.equal('100000');
-        
+
         expect(txReceipt.logs[0].blockNumber).to.equal(txReceipt.blockNumber);
         expect(txReceipt.logs[0].blockHash).to.equal(txReceipt.blockHash);
         expect(txReceipt.logs[0].transactionHash).to.equal(txReceipt.transactionHash);
@@ -281,12 +283,13 @@ describe('Cw20 Tests', function () {
         expect(txHashResponse.transactionIndex).to.equal(ethers.toQuantity(transferReceipt.transactionIndex));
         expect(txHashResponse.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(txHashResponse.to).to.equal(erc20Contract.getAddress().toLowerCase());
-        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(1500000000));
-        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(4500000000));
+        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(15000000000));
+        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(29000000000));
 
         //validate gas response
         const baseFeeOnBlock = (await evmRpcClient.getBlockByNumber(transferReceipt.blockNumber, false)).baseFeePerGas;
-        // toDo dont forget to raise this 
+        // toDo dont forget to raise this
+        console.log(txHashResponse.gasPrice);
         expect(Number(txHashResponse.gasPrice)).to.equal(Number(baseFeeOnBlock) + Number(txHashResponse.maxPriorityFeePerGas));
     });
 
