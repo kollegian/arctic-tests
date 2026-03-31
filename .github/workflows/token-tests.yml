@@ -1,0 +1,127 @@
+name: Token Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      evmRpcEndpoint:
+        description: "EVM RPC endpoint"
+        required: true
+        type: string
+      seiRpcEndpoint:
+        description: "Sei RPC endpoint"
+        required: true
+        type: string
+      adminMnemonic:
+        description: "Admin wallet mnemonic"
+        required: true
+        type: string
+      seidVersion:
+        description: "Branch name in sei-chain repo to checkout and build seid from"
+        required: true
+        type: string
+        default: "main"
+      restEndpoint:
+        description: "REST endpoint (defaults to seiRpcEndpoint if not provided)"
+        required: false
+        type: string
+      chainId:
+        description: "Chain ID for seid config"
+        required: false
+        type: string
+        default: "atlantic-2"
+
+jobs:
+  solo-evm-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: tests/solo-evm
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
+      - name: Install dependencies
+        run: npm i
+
+      - name: Install seid CLI
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y git make gcc
+          git clone https://github.com/sei-protocol/sei-chain.git /tmp/sei-chain
+          cd /tmp/sei-chain
+          git checkout ${{ inputs.seidVersion }}
+          make build
+          sudo mv build/seid /usr/local/bin/seid
+          sudo chmod +x /usr/local/bin/seid
+          seid version || true
+
+      - name: Configure seid
+        run: |
+          seid config chain-id ${{ inputs.chainId }}
+          seid config keyring-backend test
+          seid config node ${{ inputs.seiRpcEndpoint }}
+
+      - name: Write test config
+        run: |
+          REST="${{ inputs.restEndpoint }}"
+          if [ -z "$REST" ]; then
+            REST="${{ inputs.seiRpcEndpoint }}"
+          fi
+
+          cat > config/testConfig.json << EOF
+          {
+            "evmRpcEndpoint": "${{ inputs.evmRpcEndpoint }}",
+            "seiRpcEndpoint": "${{ inputs.seiRpcEndpoint }}",
+            "restEndpoint": "${REST}",
+            "adminMnemonic": "${{ inputs.adminMnemonic }}"
+          }
+          EOF
+
+      - name: "State: eth_getBalance"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/state_endpoints/eth_getBalance.spec.ts
+
+      - name: "State: eth_call"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/state_endpoints/eth_call.spec.ts
+
+      - name: "State: eth_getCode"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/state_endpoints/eth_getCode.spec.ts
+
+      - name: "State: eth_getStorageAt"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/state_endpoints/eth_getStorageAt.spec.ts
+
+      - name: "State: eth_getTransactionCount"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/state_endpoints/eth_getTransactionCount.spec.ts
+
+      - name: "State: eth_estimateGas"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/state_endpoints/eth_estimateGas.spec.ts
+
+      - name: "Debug: debug_traceCall"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/debug_endpoints/debug_traceCall.spec.ts
+
+      - name: "Debug: debug_traceTransaction"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/debug_endpoints/debug_traceTx.spec.ts
+
+      - name: "Debug: debug_traceBlockByNumber"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/debug_endpoints/debug_traceBlockByNumber.spec.ts
+
+      - name: "Load: RPC load tests"
+        continue-on-error: true
+        run: npx mocha -r tsx tests/solo_evm/rpc_tests/load_tests/rpc_load.spec.ts
