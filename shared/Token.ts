@@ -90,7 +90,7 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
         const txs = [];
         for(const user of users){
             txs.push(this.contract
-                .connect(user.evmWallet.wallet).transfer(this.user.evmAddress, ethers.parseEther('0.01')));
+                .connect(user.evmWallet.wallet).transfer(this.user.evmAddress, ethers.parseEther('0.01'), {gasLimit: 500000, gasPrice: ('1500000000000')}));
         }
         const txRequests = await Promise.all(txs);
         return await Promise.all(txRequests.map((request: { wait: () => any; }) => request.wait()));
@@ -140,7 +140,7 @@ export class Cw20Token implements IFungibleToken {
     }
 
     execMultiple(msgs: ExecuteInstruction[], memo = ""): Promise<ExecuteResult> {
-        const fee = calculateFee(4500000, '0.25usei');
+        const fee = calculateFee(4500000, '1usei');
         return this.user.seiWallet.cosmWasmSigningClient.executeMultiple(
             this.user.seiAddress,
             msgs,
@@ -218,12 +218,13 @@ export class Cw20Token implements IFungibleToken {
     }
 
     async deployPointer(evmEndpoint: string){
-        const resp = await exec(`seid tx evm register-evm-pointer CW20 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --fees 24200usei --broadcast-mode block`);
+        const resp = await exec(`seid tx evm register-evm-pointer CW20 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4900000 --broadcast-mode block`);
         console.log(resp);
     }
     async queryPointerAddress(){
         const {stdout, stderror} = await exec(`seid q evm pointer CW20 ${this.address} --output json`);
         console.log(stdout);
+        console.log(stderror);
         return (JSON.parse(stdout)).pointer;
     }
 
@@ -379,7 +380,7 @@ export class Cw721Token implements INft721 {
     }
 
     private execMultiple(msgs: ExecuteInstruction[], memo = ""): Promise<ExecuteResult> {
-        const fee = calculateFee(2500000, '0.25usei');
+        const fee = calculateFee(3000000, '0.25usei');
         return this.user.seiWallet.cosmWasmSigningClient.executeMultiple(
             this.user.seiAddress,
             msgs,
@@ -403,8 +404,8 @@ export class Cw721Token implements INft721 {
     revokeAll(operator: string) { return this.exec({ revoke_all: { operator } }); }
     isApprovedForAll(owner: string, operator: string) { return this.query<{ approved: boolean }>({ approvals: { owner, operator } }).then(r => r.approved); }
     tokenUri(tokenId: string) { return this.query<{ token_uri: string }>({ nft_info: { token_id: tokenId } }).then(r => r.token_uri); }
-    mintTx(nftId: string, receiverAddress: string) { return this.exec({ mint: { token_id: nftId, owner: receiverAddress, token_uri: `https://example.com/token${nftId}.json`, extension: {} } }); }
-    mint(tokenId: string, receiverAddress: string) { return this.exec({ mint: { token_id: tokenId, owner: receiverAddress, token_uri: `https://example.com/token${tokenId}.json`, extension: {} } }); }
+    mintTx(nftId: string, receiverAddress: string) { return this.exec({ mint: { token_id: nftId, owner: receiverAddress, token_uri: `https://example.com/token${nftId}.json`, extension: { royalty_percentage: 10, royalty_payment_address: this.user.seiAddress } } }); }
+    mint(tokenId: string, receiverAddress: string) { return this.exec({ mint: { token_id: tokenId, owner: receiverAddress, token_uri: `https://example.com/token${tokenId}.json`, extension: { royalty_percentage: 10, royalty_payment_address: this.user.seiAddress } } }); }
     burn(tokenId: string) { return this.exec({ burn: { token_id: tokenId } }); }
     mintMultiple(nftIds: string[], receiverAddresses: string[]) {
         const messages: ExecuteInstruction[] = nftIds.map((nftId, i) => ({
@@ -414,13 +415,13 @@ export class Cw721Token implements INft721 {
                     token_id: nftId,
                     owner: receiverAddresses[i],
                     token_uri: `https://example.com/token${nftId}.json`,
-                    extension: {}
+                    extension: { royalty_percentage: 10, royalty_payment_address: this.user.seiAddress }
                 }
             }
         }));
         return this.execMultiple(messages, '');}
     async deployPointer(evmEndpoint: string){
-        const resp = await exec(`seid tx evm register-evm-pointer CW721 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --fees 24200usei --broadcast-mode block`);
+        const resp = await exec(`seid tx evm register-evm-pointer CW721 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4500000 --broadcast-mode block`);
         await waitFor(1);
         const {stdout, stderr} = await exec(`seid q evm pointer CW721 ${this.address} --output json`);
         return (JSON.parse(stdout)).pointer;
@@ -503,7 +504,7 @@ export class Cw721Token implements INft721 {
         const tokens: string[] = [];
         let startAfter: string | null = null;
         const limit = 30; // reasonable limit per query
-        
+
         while (true) {
             const query: any = {
                 tokens: {
@@ -512,40 +513,40 @@ export class Cw721Token implements INft721 {
                     start_after: startAfter
                 }
             };
-            
+
             const r = await this.query<{ tokens: string[] }>(query);
-            
+
             if (r.tokens.length === 0) {
                 break;
             }
-            
+
             tokens.push(...r.tokens);
-            
+
             if (r.tokens.length < limit) {
                 break;
             }
-            
+
             startAfter = r.tokens[r.tokens.length - 1];
         }
-        
+
         return tokens;
     }
 
     async getLatestMintedToken(owner?: string): Promise<string | null> {
         const targetOwner = owner || this.user.seiAddress;
         const tokens = await this.getAllTokensForOwner(targetOwner);
-        
+
         if (tokens.length === 0) {
             return null;
         }
-        
+
         // Sort tokens numerically to get the latest one
         const sortedTokens = tokens.sort((a, b) => {
             const numA = parseInt(a);
             const numB = parseInt(b);
             return numB - numA; // descending order
         });
-        
+
         return sortedTokens[0];
     }
 
@@ -553,7 +554,7 @@ export class Cw721Token implements INft721 {
         const timestamp = Date.now();
         const randomSuffix = Math.floor(Math.random() * 10000);
         const tokenId = `${tokenIdPrefix}_${timestamp}_${randomSuffix}`;
-        
+
         await this.mintTx(tokenId, receiverAddress);
         return tokenId;
     }
@@ -561,13 +562,13 @@ export class Cw721Token implements INft721 {
     async mintMultipleAndGetTokenIds(receiverAddresses: string[], tokenIdPrefix: string = 'test'): Promise<string[]> {
         const tokenIds: string[] = [];
         const timestamp = Date.now();
-        
+
         for (let i = 0; i < receiverAddresses.length; i++) {
             const randomSuffix = Math.floor(Math.random() * 10000);
             const tokenId = `${tokenIdPrefix}_${timestamp}_${i}_${randomSuffix}`;
             tokenIds.push(tokenId);
         }
-        
+
         await this.mintMultiple(tokenIds, receiverAddresses);
         return tokenIds;
     }
@@ -610,8 +611,8 @@ export class Cw1155Token implements INft1155 {
 
     getAddress() { return this.address};
     uri(tokenId: string) { return this.query<{ uri: string }>({ nft_info: { token_id: tokenId } }).then(r => r.uri); }
-    balanceOf(account: string, tokenId: string) { return this.query<{ balance: string }>({ balance: { owner: account, token_id: tokenId } }).then(r => r.balance); }
-    balanceOfBatch(accounts: string[], tokenIds: string[]) { return this.query<{ balances: string[] }>({ batch_balance: { owner: accounts, token_ids: tokenIds } }).then(r => r.balances.map(b => b)); }
+    balanceOf(account: string, tokenId: string) { return this.query<{ balance: string }>({ balance_of: { owner: account, token_id: tokenId } }).then(r => r.balance); }
+    balanceOfBatch(accounts: string[], tokenIds: string[]) { return this.query<{ balances: string[] }>({ balance_of_batch: { owners: accounts, token_ids: tokenIds } }).then(r => r.balances.map(b => b)); }
     setApprovalForAll(operator: string, approved: boolean) { return this.exec({ set_approval_for_all: { operator, approved } }); }
     isApprovedForAll(account: string, operator: string) { return this.query<{ approval: boolean }>({ approval: { owner: account, operator } }).then(r => r.approval); }
     safeTransferFrom(from: string, to: string, tokenId: string, amount: string) { return this.exec({ transfer: { recipient: to, token_id: tokenId, amount } }); }

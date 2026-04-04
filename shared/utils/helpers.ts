@@ -63,10 +63,11 @@ export function calcNewBaseFee(
     prevBaseFee: number,
     blockGasUsed: number
 ): number {
-    const blockGasLimit = 10_000_000;
-    const targetGasUsed = 850000;
-    const maxUpwardAdjustment = 0.007500000000000000; // 1.89%
-    const maxDownwardAdjustment = 0.003900000000000000; // 0.39%
+    const blockGasLimit = 5000000000;
+    const targetGasUsed = 250000;
+    const maxUpwardAdjustment = 0.018900000000000000;
+    const maxDownwardAdjustment = 0.003900000000000000;
+    const minFeePerGas = 1000000000;
 
     if (blockGasUsed > targetGasUsed) {
         // Upward adjustment
@@ -83,6 +84,6 @@ export function calcNewBaseFee(
         const percentageEmpty = numerator / denominator;
         const adjustmentFactor = maxDownwardAdjustment * percentageEmpty;
         const newBaseFee = prevBaseFee * (1 - adjustmentFactor);
-        return Math.floor(newBaseFee) < 1000000000 ?  1000000000: Math.floor(newBaseFee);
+        return Math.floor(newBaseFee) < minFeePerGas ? minFeePerGas : Math.floor(newBaseFee);
     }
 }

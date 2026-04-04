@@ -117,3 +117,220 @@ export function returnTextProposal(isExpedited = false, title="Test Text Proposa
         "is_expedited": isExpedited
     })
 }
+
+export function parseRewardsResponse(rewards: any) {
+    return {
+        rewards: rewards.rewards.map((r: any) => ({
+            coins: r.coins.map((c: any) => ({
+                amount: c.amount.toString(),
+                decimals: Number(c.decimals),
+                denom: c.denom
+            })),
+            validator_address: r.validator_address
+        })),
+        total: rewards.total.map((t: any) => ({
+            amount: t.amount.toString(),
+            decimals: Number(t.decimals),
+            denom: t.denom
+        }))
+    };
+}
+
+export function calculateTotalRewardsAmount(parsedRewards: { total: Array<{ amount: string; decimals: number; denom: string }> }): bigint {
+    let total = BigInt(0);
+    for (const coin of parsedRewards.total) {
+        if (coin.denom === 'usei') {
+            total += BigInt(coin.amount);
+        }
+    }
+    return total;
+}
+
+export function findEvent(receipt: any, contract: any, eventName: string) {
+    return receipt.logs.find((l: any) => {
+        try { return contract.interface.parseLog(l)?.name === eventName; }
+        catch { return false; }
+    });
+}
+
+export async function waitForRewards(distrContract: any, delegatorAddress: string, maxWaitSeconds = 120): Promise<bigint> {
+    const pollInterval = 5;
+    let elapsed = 0;
+    const { waitFor } = await import('../../shared/utils/helpers');
+    while (elapsed < maxWaitSeconds) {
+        const rewards = await distrContract.rewards(delegatorAddress);
+        const parsed = parseRewardsResponse(rewards);
+        const total = calculateTotalRewardsAmount(parsed);
+        if (total > BigInt(0)) return total;
+        await waitFor(pollInterval);
+        elapsed += pollInterval;
+    }
+    throw new Error(`No rewards accumulated after ${maxWaitSeconds}s`);
+}
+
+// --- Staking helpers ---
+
+export interface StakingParams {
+    unbondingTime: bigint;
+    maxValidators: number;
+    maxEntries: number;
+    historicalEntries: number;
+    bondDenom: string;
+    minCommissionRate: string;
+    maxVotingPowerRatio: string;
+    maxVotingPowerEnforcementThreshold: string;
+}
+
+export const parseParams = (data: any): StakingParams => {
+    let p = data;
+    if (data && !data.bondDenom && data[0]) {
+        if (data[0].bondDenom || (Array.isArray(data[0]) || 'length' in data[0])) {
+             p = data[0];
+        }
+    }
+
+    return {
+        unbondingTime: p[0],
+        maxValidators: Number(p[1]),
+        maxEntries: Number(p[2]),
+        historicalEntries: Number(p[3]),
+        bondDenom: p[4],
+        minCommissionRate: p[5],
+        maxVotingPowerRatio: p[6],
+        maxVotingPowerEnforcementThreshold: p[7]
+    };
+};
+
+export interface StakingPool {
+    notBondedTokens: string;
+    bondedTokens: string;
+}
+
+export const parsePool = (data: any): StakingPool => {
+    let p = data;
+    if (data && !data.bondedTokens && data[0]) {
+        if (data[0].bondedTokens || (Array.isArray(data[0]) || 'length' in data[0])) {
+             p = data[0];
+        }
+    }
+    return {
+        notBondedTokens: p[0],
+        bondedTokens: p[1]
+    };
+};
+
+export interface UnbondingEntry {
+    creationHeight: bigint;
+    completionTime: bigint;
+    initialBalance: string;
+    balance: string;
+}
+
+export interface UnbondingDelegation {
+    delegatorAddress: string;
+    validatorAddress: string;
+    entries: UnbondingEntry[];
+}
+
+export const parseUnbondingEntry = (data: any): UnbondingEntry => {
+    return {
+        creationHeight: data[0],
+        completionTime: data[1],
+        initialBalance: data[2],
+        balance: data[3]
+    };
+};
+
+export const parseUnbondingDelegation = (data: any): UnbondingDelegation => {
+    console.log(data);
+    const entriesRaw = data[2];
+    const entries = (entriesRaw && typeof entriesRaw[Symbol.iterator] === 'function')
+        ? Array.from(entriesRaw)
+        : [];
+
+    return {
+        delegatorAddress: data[0],
+        validatorAddress: data[1],
+        entries: entries.map(parseUnbondingEntry)
+    };
+};
+
+export interface RedelegationEntry {
+    creationHeight: bigint;
+    completionTime: bigint;
+    initialBalance: string;
+    sharesDst: string;
+}
+
+export interface Redelegation {
+    delegatorAddress: string;
+    validatorSrcAddress: string;
+    validatorDstAddress: string;
+    entries: RedelegationEntry[];
+}
+
+export const parseRedelegationEntry = (data: any): RedelegationEntry => {
+    return {
+        creationHeight: data[0],
+        completionTime: data[1],
+        initialBalance: data[2],
+        sharesDst: data[3]
+    };
+};
+
+export const parseRedelegation = (data: any): Redelegation => {
+    const entriesRaw = data[3];
+    const entries = (entriesRaw && typeof entriesRaw[Symbol.iterator] === 'function')
+        ? Array.from(entriesRaw)
+        : [];
+
+    return {
+        delegatorAddress: data[0],
+        validatorSrcAddress: data[1],
+        validatorDstAddress: data[2],
+        entries: entries.map(parseRedelegationEntry)
+    };
+};
+
+export interface Validator {
+    operatorAddress: string;
+    consensusPubkey: string;
+    jailed: boolean;
+    status: number;
+    tokens: string;
+    delegatorShares: string;
+    description: string;
+    unbondingHeight: bigint;
+    unbondingTime: bigint;
+    commissionRate: string;
+    commissionMaxRate: string;
+    commissionMaxChangeRate: string;
+    commissionUpdateTime: bigint;
+    minSelfDelegation: string;
+}
+
+export const parseValidator = (data: any): Validator => {
+    let consensusPubkey = "";
+    try {
+        consensusPubkey = data[1];
+    } catch (e) {
+        console.warn("Failed to decode consensusPubkey", e);
+    }
+
+    return {
+        operatorAddress: data[0],
+        consensusPubkey: consensusPubkey,
+        jailed: data[2],
+        status: Number(data[3]),
+        tokens: data[4],
+        delegatorShares: data[5],
+        description: data[6],
+        unbondingHeight: data[7],
+        unbondingTime: data[8],
+        commissionRate: data[9],
+        commissionMaxRate: data[10],
+        commissionMaxChangeRate: data[11],
+        commissionUpdateTime: data[12],
+        minSelfDelegation: data[13]
+    };
+};

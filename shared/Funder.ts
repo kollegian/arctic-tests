@@ -31,11 +31,11 @@ export class Funder {
         let {stdout} = await exec(`seid keys show admin -a`);
         const output = await exec(`seid tx bank send ${stdout.trim()} ${address} ${amount}${tokenName} --fees 24500usei -y --broadcast-mode block`);
         await waitFor(1);
-        console.log('Address funded');
+        return output;
     }
 
 
-    async fundAddressesOnSei(users: SeiUser[], amount = '100000000'){
+    async fundAddressesOnSei(users: SeiUser[], amount = '10000000'){
         const remaining = [...users];
         while (remaining.length > 0) {
             const batch = remaining.splice(0, 200);
@@ -67,7 +67,7 @@ export class Funder {
             };
 
             const fee: StdFee = {
-                amount: coins(1200000, 'usei'),
+                amount: coins(12250000, 'usei'),
                 gas: "3500000",
             };
             await this.admin.seiWallet.signingClient.signAndBroadcast(this.admin.seiAddress, [msgMultiSend],  fee);

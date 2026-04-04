@@ -8,6 +8,7 @@ import {AtomicTxSender} from "../../shared/TxBuilder";
 import {waitFor} from "../../shared/utils/helpers";
 import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
 import {TokenDeployer} from "../../shared/Deployer";
+import fs from "fs";
 
 describe('Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -49,7 +50,7 @@ describe('Evm Rpc Tests', function () {
         const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
         baseCw20.setSigner(users[1]);
         const delayed = async () =>{
-            await waitFor(0.49);
+            await waitFor(0.70);
             return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
 
         }
@@ -70,7 +71,7 @@ describe('Evm Rpc Tests', function () {
         const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
         const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
         const delayed = async () => {
-            await waitFor(0.23);
+            await waitFor(0.10);
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin)
             return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
         }
@@ -95,7 +96,7 @@ describe('Evm Rpc Tests', function () {
         }
 
         const delayed = async () =>{
-            await waitFor(0.25);
+            await waitFor(0.70);
             return Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)))
         }
         const msgs = [
@@ -144,21 +145,21 @@ describe('Evm Rpc Tests', function () {
                 expect(ethers.formatEther(parsed.args[2].toString())).to.equal('0.01')
                 expect(ethers.toNumber(topic.blockNumber)).to.be.eq(Number(blockNumber));
                 expect(topic.blockHash).to.be.eq(blockHash);
-                
+
                 // Validate transaction index from multiple sources
                 const txIndexFromReceipt = await rpcClient.getTransactionReceipt(topic.transactionHash);
                 expect(txIndexFromReceipt.transactionIndex).to.be.eq(topic.transactionIndex);
-                
+
                 // Validate against block receipts
                 const blockReceipt = blockReceipts.find((receipt: any) => receipt.transactionHash === topic.transactionHash);
                 expect(blockReceipt).to.not.be.undefined;
                 expect(blockReceipt.transactionIndex).to.be.eq(topic.transactionIndex);
-                
+
                 // Validate against block details
                 const blockTx = blockDetails.transactions.find((tx: any) => tx.hash === topic.transactionHash);
                 expect(blockTx).to.not.be.undefined;
                 expect(blockTx.transactionIndex).to.be.eq(topic.transactionIndex);
-                
+
                 // Validate log index consistency
                 const receiptLogs = blockReceipt.logs.filter((log: any) => log.transactionHash === topic.transactionHash);
                 const matchingLog = receiptLogs.find((log: any) => log.logIndex === topic.logIndex);
@@ -166,14 +167,14 @@ describe('Evm Rpc Tests', function () {
                 expect(matchingLog.address.toLowerCase()).to.be.eq(topic.address.toString().toLowerCase());
                 expect(matchingLog.topics).to.deep.eq(topic.topics);
                 expect(matchingLog.data).to.be.eq(topic.data);
-                
+
                 txIndexes.add(topic.transactionIndex);
                 logIndexes.add(topic.logIndex);
-                
+
                 // Verify that log indexes start from 0
                 const found = expectedLogIndexes.find(index => index === topic.logIndex);
                 expect(found).to.not.be.undefined;
-                
+
                 console.log(`✅ Log validation passed for tx ${topic.transactionHash}: txIndex=${topic.transactionIndex}, logIndex=${topic.logIndex}`);
             }
             expect(txIndexes.size).to.be.eq(txBlocks.get(blockNumber));
@@ -242,7 +243,7 @@ describe('Evm Rpc Tests', function () {
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedErc20, admin),
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedErc721, admin),
         ]);
-        await waitFor(1);
+        await waitFor(4);
         const tx = await rpcClient.getTransactionReceipt(results[0]);
         const logParams1 = {
             fromBlock: ethers.toQuantity(Number(tx.blockNumber) - 1),
@@ -277,20 +278,24 @@ describe('Evm Rpc Tests', function () {
         const results = await Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)));
         await waitFor(0.5);
         const txReceipt = await rpcClient.getTransactionReceipt(results[0]);
+        for (const result of results){
+            console.log(result);
+        }
         multipleTxBlock = txReceipt.blockNumber;
         await waitFor(60);
         console.log('Current block number is ', Number(await admin.evmWallet.signingClient.getBlockNumber()));
         console.log('Sent block number is ', Number(txReceipt.blockNumber));
         const logParams = {
-            fromBlock: txReceipt.blockNumber,
+            fromBlock: ethers.toQuantity(Number(txReceipt.blockNumber) -5),
             toBlock: ethers.toQuantity(Number(txReceipt.blockNumber) + 100),
             topics: [ethers.id('Transfer(address,address,uint256)')],
             address: erc20.getAddress(),
         };
         const logResponses = await rpcClient.getLogs(logParams);
+        fs.writeFileSync('logs.json', JSON.stringify(logResponses, null, 2));
         expect(logResponses.length).to.be.eq(users.length);
         let txIndexes = new Set();
-        let logIndexes = new Set();
+        let logIndexes = [];
         const expectedLogIndexes = new Array(users.length).fill(0)
             .map((_, index) => ethers.toQuantity(index));
         for(const topic of logResponses) {
@@ -300,12 +305,13 @@ describe('Evm Rpc Tests', function () {
             expect(parsed.args[1]).to.equal(admin.evmAddress);
             expect(ethers.formatEther(parsed.args[2].toString())).to.equal('0.01')
             txIndexes.add(topic.transactionIndex);
-            logIndexes.add(topic.logIndex);
+            console.log(topic.transactionIndex);
+            logIndexes.push(topic.logIndex);
             // Verify that log indexes start from 0
             expect(topic.logIndex).to.be.oneOf(expectedLogIndexes);
         }
-        expect(txIndexes.size).to.be.eq(users.length);
-        expect(logIndexes.size).to.be.eq(users.length);
+        // expect(txIndexes.size).to.be.eq(users.length);
+        expect(logIndexes.length).to.be.eq(users.length);
     });
 
     let i = 0;

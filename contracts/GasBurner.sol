@@ -19,4 +19,11 @@ contract RealGasBurner {
         }
         emit Burned(50, gasleft());
     }
+
+    function burnGasIterations(uint256 salt, uint256 iterations) external {
+        for (uint256 i = 0; i < iterations; i++) {
+            store[uint256(keccak256(abi.encodePacked(block.number, msg.sender, i, salt)))] = i;
+        }
+        emit Burned(iterations, gasleft());
+    }
 }

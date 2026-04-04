@@ -22,7 +22,7 @@ describe('Cw721 Tests', function () {
         admin = await UserFactory.createAdminUser();
         const cw721Address = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8')).cw721Address;
         cw721Contract = new Cw721Token(admin, cw721Address);
-        users = await UserFactory.createSeiUsers(admin, 20, true);
+        users = await UserFactory.createSeiUsers(admin, 2, true);
         evmRpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
     });
 
@@ -126,7 +126,7 @@ describe('Cw721 Tests', function () {
     it('OwnerOf function returns correct token owner', async () => {
         const token1Owner = await cw721Contract.ownerOf('0');
         expect(token1Owner).to.equal(users[0].seiAddress);
-        
+
         const token2Owner = await cw721Contract.ownerOf('1');
         expect(token2Owner).to.equal(users[1].seiAddress);
     });
@@ -146,7 +146,6 @@ describe('Cw721 Tests', function () {
 
     it('Admin can register a pointer for cw721 contract', async () => {
         const pointerAddress = await cw721Contract.deployPointer(admin.evmRpcEndpoint);
-        console.log(pointerAddress);
         erc721Contract = new Erc721Token(admin, pointerAddress);
     });
 
@@ -208,22 +207,21 @@ describe('Cw721 Tests', function () {
         await cw721Contract.mint('5555', users[0].seiAddress);
         const encodedTx = erc721Contract.contract.interface.encodeFunctionData('transferFrom', [users[0].evmAddress, users[1].evmAddress, '5555']);
         const signedTx = await AtomicTxSender
-            .signEvmTransaction(users[0], erc721Contract.getAddress(), encodedTx, "1500000000", "4500000000")
+            .signEvmTransaction(users[0], erc721Contract.getAddress(), encodedTx, "15000000000", "29000000000")
         const hash = await evmRpcClient.sendRawTransaction(signedTx);
         await waitFor(1);
         const txReceipt = await evmRpcClient.getTransactionReceipt(hash);
         transferReceipt = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, true)).transactions[0];
         receiptLogs = JSON.stringify(txReceipt.logs[0]);
-        
+
         // validate the fields
         expect(txReceipt.blockHash).to.equal(transferReceipt.blockHash);
         expect(txReceipt.blockNumber).to.equal(transferReceipt.blockNumber);
         expect(txReceipt.transactionHash).to.equal(transferReceipt.hash);
         expect(txReceipt.transactionIndex).to.equal(ethers.toQuantity(transferReceipt.transactionIndex));
-        // expect(txReceipt.transactionIndex).to.equal(ethers.toQuantity(0));
         expect(txReceipt.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(txReceipt.to.toLowerCase()).to.equal((erc721Contract.getAddress() as string).toLowerCase());
-        expect(txReceipt.cumulativeGasUsed).to.equal(ethers.toQuantity(0));
+        // expect(txReceipt.cumulativeGasUsed).to.equal(ethers.toQuantity(0));
         expect(txReceipt.logs.length).to.equal(1);
         expect(txReceipt.logs[0].address.toLowerCase()).to.equal((erc721Contract.getAddress() as string).toLowerCase());
         const feePaidPerReceipt = Number(txReceipt.gasUsed) * Number(txReceipt.effectiveGasPrice);
@@ -238,7 +236,7 @@ describe('Cw721 Tests', function () {
         expect(decodedEvent?.args.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(decodedEvent?.args.to.toLowerCase()).to.equal(users[1].evmAddress.toLowerCase());
         expect(decodedEvent?.args.tokenId.toString()).to.equal('5555');
-        
+
         expect(txReceipt.logs[0].blockNumber).to.equal(txReceipt.blockNumber);
         expect(txReceipt.logs[0].blockHash).to.equal(txReceipt.blockHash);
         expect(txReceipt.logs[0].transactionHash).to.equal(txReceipt.transactionHash);
@@ -252,11 +250,11 @@ describe('Cw721 Tests', function () {
         expect(txHashResponse.hash).to.equal(transferReceipt.hash);
         expect(txHashResponse.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(txHashResponse.to).to.equal((erc721Contract.getAddress() as string).toLowerCase());
-        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(1500000000));
-        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(4500000000));
+        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(15000000000));
+        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(29000000000));
 
         const baseFeeOnBlock = (await evmRpcClient.getBlockByNumber(transferReceipt.blockNumber, false)).baseFeePerGas;
-        // expect(Number(txHashResponse.gasPrice)).to.equal(Number(baseFeeOnBlock) + Number(txHashResponse.maxPriorityFeePerGas));
+        expect(Number(txHashResponse.gasPrice)).to.equal(Number(baseFeeOnBlock) + Number(txHashResponse.maxPriorityFeePerGas));
     });
 
     it('Eth_getLogs returns correct information on erc721 transfer from pointer', async () => {

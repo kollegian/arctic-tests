@@ -12,7 +12,7 @@ export class AccountsClient extends BaseApiClient {
         super(url, clientId);
     }
 
-    async queryAccountData(accessToken: string): Promise<Response> {
+    async queryAccountData(accessToken: string): Promise<{status: number, data: UserProfile}> {
         const url = `${this.url}/api/v1/accounts/me`;
         const options = {
             method: 'GET',
@@ -21,10 +21,13 @@ export class AccountsClient extends BaseApiClient {
                 'Authorization': `Bearer ${accessToken}`,
             },
         }
-        return await fetch(url, options);
+        const dataRaw = await fetch(url, options);
+        const status = dataRaw.status;
+        const responseData = await dataRaw.json();
+        return {status, data: responseData};
     }
 
-    async queryAccountMovements(accessToken: string, page: number = 1, limit: number = 20) {
+    async queryAccountMovements(accessToken: string, page: number = 1, limit: number = 20): Promise< {status: number, data: LedgerMovement[]}>{
         const url = `${this.url}/api/v1/accounts/movements?$page=${page}&limit=${limit}`;
         const options = {
             method: 'GET',
@@ -33,7 +36,10 @@ export class AccountsClient extends BaseApiClient {
                 'Authorization': `Bearer ${accessToken}`,
             },
         }
-        return await fetch(url, options);
+        const dataRaw = await fetch(url, options);
+        const status = dataRaw.status;
+        const responseData = await dataRaw.json();
+        return {status, data: responseData};
     }
 
     async createSubAccount(accessToken: string, subAccountName: string, subAccountDescription: string) {

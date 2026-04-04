@@ -25,8 +25,8 @@ describe('Deploys the contracts and records addresses', function () {
     before('Initializes', async () => {
         console.log('Deploying contracts and funding users for tests...');
         admin = await UserFactory.createAdminUser();
-        await UserFactory.fundAdminOnSei();
-        users = await UserFactory.createSeiUsers(admin, 3, true);
+        //await UserFactory.fundAdminOnSei();
+        users = await UserFactory.createSeiUsers(admin, 10, true);
         const deployer = new TokenDeployer(admin);
         console.log('Deploying to the chain now');
         erc20 = await deployer.deployErc20();

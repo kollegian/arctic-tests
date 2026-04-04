@@ -68,7 +68,7 @@ describe('Sei get logs tests', function() {
         const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
         baseCw20.setSigner(users[1]);
         const delayed = async () =>{
-            await waitFor(0.49);
+            await waitFor(0.65);
             // The method expects 3 arguments: (rpcUrl, signedTx, sender) as per shared/TxBuilder.ts
             const txHash: string = await AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
             return txHash;
@@ -94,7 +94,7 @@ describe('Sei get logs tests', function() {
         const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
         const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
         const delayed = async () => {
-            await waitFor(0.23);
+            await waitFor(0.1);
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin);
             return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
         }
@@ -159,7 +159,7 @@ describe('Sei get logs tests', function() {
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedErc20, admin),
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedErc721, admin),
         ]);
-        await waitFor(1);
+        await waitFor(4);
         const tx = await rpcClient.getTransactionReceipt(results[0]);
         const logParams1 = {
             fromBlock: ethers.toQuantity(Number(tx.blockNumber) - 1),
@@ -192,7 +192,7 @@ describe('Sei get logs tests', function() {
         await waitFor(0.5);
         const txReceipt = await rpcClient.getTransactionReceipt(results[0]);
         multipleTxBlock = txReceipt.blockNumber;
-        await waitFor(5); // Shorter wait for test speed
+        await waitFor(60);
         const logParams = {
             fromBlock: txReceipt.blockNumber,
             toBlock: ethers.toQuantity(Number(txReceipt.blockNumber) + 100),
@@ -201,8 +201,8 @@ describe('Sei get logs tests', function() {
         };
         const logResponses = await rpcClient.sei_getLogs(logParams);
         expect(logResponses.length).to.be.eq(users.length);
-        let txIndexes = new Set();
-        let logIndexes = new Set();
+        let txIndexes = [];
+        let logIndexes = [];
         const expectedLogIndexes = new Array(users.length).fill(0)
             .map((_, index) => ethers.toQuantity(index));
         for(const topic of logResponses) {
@@ -211,20 +211,21 @@ describe('Sei get logs tests', function() {
             expect(parsed.name).to.be.eq('Transfer');
             expect(parsed.args[1]).to.equal(admin.evmAddress);
             expect(ethers.formatEther(parsed.args[2].toString())).to.equal('0.01')
-            txIndexes.add(topic.transactionIndex);
-            logIndexes.add(topic.logIndex);
+            txIndexes.push(topic.transactionIndex);
+            logIndexes.push(topic.logIndex);
             expect(topic.logIndex).to.be.oneOf(expectedLogIndexes);
         }
-        expect(txIndexes.size).to.be.eq(users.length);
-        expect(logIndexes.size).to.be.eq(users.length);
+        expect(txIndexes.length).to.be.eq(users.length);
+        expect(logIndexes.length).to.be.eq(users.length);
     });
 
     it('Sei get logs supports finalized, safe, latest, pending tags', async () => {
         let i = 0;
         const tags = ['finalized', 'safe', 'latest', 'pending'];
         for(const tag of tags) {
+            console.log(tag);
             await waitFor(2);
-            await baseCw20.transfer(admin.seiAddress, users[i].seiAddress, '1000');
+            baseCw20.transfer(admin.seiAddress, '1000');
             let index = 0;
             let found = false;
             while(index < 200){

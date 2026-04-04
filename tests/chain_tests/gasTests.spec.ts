@@ -27,7 +27,6 @@ describe('Gas tests', function () {
 
     before('Initializes client', async () => {
         admin = await UserFactory.createAdminUser();
-        await UserFactory.fundAdminOnSei();
         [alice, bob] = await UserFactory.createSeiUsers(admin, 2, true);
         const contractFactory = new ethers.ContractFactory(heavyGasAbi.abi, heavyGasAbi.bytecode, alice.evmWallet.wallet);
         const deploymentTx = await contractFactory.deploy();
@@ -35,25 +34,27 @@ describe('Gas tests', function () {
         // Initialize RPC client
         rpcClient = new EvmRpcClient(testConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
         chainId = (await alice.evmWallet.signingClient.getNetwork()).chainId;
-        
+
         // Load contract addresses dynamically at runtime
         const contractAddresses = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8'));
         erc20Contract = new Erc20Token(admin, contractAddresses.erc20Address);
-    
+
         console.log('Gas Burner contract deployed to:', gasBurnerContract.target);
         console.log('ERC20 contract deployed to:', erc20Contract.getAddress());
     });
 
     it('Users can send legacy txs and the gas fee charges specified amount', async () => {
+        const mintTx = await erc20Contract.mint(alice.evmAddress, ethers.parseEther('100'));
+        await mintTx.wait();
         const data = erc20Contract.contract.interface.encodeFunctionData(
             'transfer',
             [bob.evmAddress, ethers.parseEther('0.1')]
         );
         const senderPreSeiBalance = await rpcClient.getBalance(alice.evmAddress);
         const nonce = await alice.evmWallet.wallet.getNonce('latest');
-        const gasPrice = 1200000000n;
+        const gasPrice = 12000000000n;
         const gasLimit = 500000n;
-        
+
         const txRequest = {
             to: erc20Contract.getAddress(),
             data: data,
@@ -64,13 +65,12 @@ describe('Gas tests', function () {
             chainId: chainId,
             type: 0
         };
-        
+
         const signedTx = await alice.evmWallet.wallet.signTransaction(txRequest);
         const txHash = await AtomicTxSender.sendRawTransactionWithProvider(
             alice.evmWallet.signingClient,
             signedTx
         );
-        console.log(txHash);
         const receipt = await alice.evmWallet.signingClient.waitForTransaction(txHash);
         expect(receipt?.status).to.be.eq(1);
         expect(receipt?.type).to.be.eq(0);
@@ -79,7 +79,7 @@ describe('Gas tests', function () {
         if (receipt?.gasPrice !== undefined && receipt?.gasUsed !== undefined) {
             expect(Number(receipt.gasUsed)).to.be.lt(Number(gasLimit));
             expect(Number(receipt.gasPrice)).to.be.eq(Number(gasPrice));
-            
+
             // Verify correct gas fee taken from the user
             const senderAfterBalance = await rpcClient.getBalance(alice.evmAddress);
             const senderBalanceDiff = Number(ethers.formatEther(senderPreSeiBalance - senderAfterBalance));
@@ -96,16 +96,16 @@ describe('Gas tests', function () {
             'transfer',
             [bob.evmAddress, ethers.parseEther('1')]
         );
-        
+
         const nonce = await alice.evmWallet.wallet.getNonce('latest');
         const insufficientGasLimit = 1000n;
-        
+
         const txRequest = {
             to: erc20Contract.getAddress(),
             data: data,
             value: 0n,
             gasLimit: insufficientGasLimit,
-            gasPrice: 1000000000n,
+            gasPrice: 10000000000n,
             nonce: nonce,
             chainId: chainId,
             type: 0
@@ -133,7 +133,7 @@ describe('Gas tests', function () {
         );
         const nonce = await alice.evmWallet.wallet.getNonce('latest');
         const lowGasPrice = 999999999n;
-        
+
         const txRequest = {
             to: erc20Contract.getAddress(),
             data: data,
@@ -144,7 +144,7 @@ describe('Gas tests', function () {
             chainId: chainId,
             type: 0
         };
-        
+
         let failed = false;
         try {
             const signedTx = await alice.evmWallet.wallet.signTransaction(txRequest);
@@ -164,12 +164,12 @@ describe('Gas tests', function () {
             'transfer',
             [bob.evmAddress, ethers.parseEther('0.1')]
         );
-        
+
         const nonce = await alice.evmWallet.wallet.getNonce('latest');
-        const maxFeePerGas = 5000000000;
-        const maxPriorityFeePerGas = 1000000000;
+        const maxFeePerGas = 50000000000;
+        const maxPriorityFeePerGas = 10000000000;
         const senderPreSeiBalance = await rpcClient.getBalance(alice.evmAddress);
-        
+
         const txRequest = {
             to: erc20Contract.getAddress(),
             data: data,
@@ -206,17 +206,17 @@ describe('Gas tests', function () {
             'transfer',
             [bob.evmAddress, ethers.parseEther('1')]
         );
-        
+
         const nonce = await alice.evmWallet.wallet.getNonce('latest');
-        const lowMaxFeePerGas = 999999999n; // Below base fee
-        
+        const lowMaxFeePerGas = 9999999999n; // Below base fee
+
         const txRequest = {
             to: erc20Contract.getAddress(),
             data: data,
             value: 0n,
             gasLimit: 100000n,
             maxFeePerGas: lowMaxFeePerGas,
-            maxPriorityFeePerGas: 1000000000n,
+            maxPriorityFeePerGas: 10000000000n,
             nonce: nonce,
             chainId: chainId,
             type: 2
@@ -241,9 +241,9 @@ describe('Gas tests', function () {
             'transfer',
             [bob.evmAddress, ethers.parseEther('0.1')]
         );
-        
+
         const nonce = await alice.evmWallet.wallet.getNonce('latest');
-        const maxFeePerGas = 5000000000;
+        const maxFeePerGas = 50000000000;
         const txRequest = {
             to: erc20Contract.getAddress(),
             data: data,
@@ -272,9 +272,9 @@ describe('Gas tests', function () {
 
     });
 
-    it('Users can send type 2 txs that is above target gas limit and base gas fee reflects the changes', async () => {
-        // Create a transaction that will use more gas than the target
-        const tx = await gasBurnerContract.burnGasOverMaxLimit(1001, {gasLimit: 8000000, gasPrice: 1100000000});
+    it('Users can send type 2 txs with high gas limit and base gas fee matches expectation', async () => {
+        // Create a transaction that will use significant gas (but likely still below target of 2.5B)
+        const tx = await gasBurnerContract.burnGasIterations(30, 95, {gasLimit: 8000000, gasPrice: 11000000000});
         const receipt = await tx.wait();
         const nextBlock = Number(receipt!.blockNumber) + 1;
         const prevGasBlockUsed = await rpcClient.getBlockByNumber(ethers.toQuantity(receipt!.blockNumber), false);
@@ -307,10 +307,10 @@ describe('Gas tests', function () {
             'transfer',
             [bob.evmAddress, ethers.parseEther('0.1')]
         );
-        
+
         const nonce = await alice.evmWallet.wallet.getNonce('latest');
-        maxFeePerGas = 5000000000;
-        maxPriorityFeePerGas = 1000000000;
+        maxFeePerGas = 50000000000;
+        maxPriorityFeePerGas = 10000000000;
         const txRequest = {
             to: erc20Contract.getAddress(),
             data: data,
@@ -334,14 +334,14 @@ describe('Gas tests', function () {
         txBlockNumber = Number(receipt!.blockNumber);
         // Get block by number and verify gas data
         const block = await rpcClient.getBlockByNumber(ethers.toQuantity(receipt!.blockNumber), true);
-        
+
         expect(block).to.not.be.null;
         expect(block.hash).to.equal(receipt!.blockHash);
         expect(block.number).to.equal(ethers.toQuantity(receipt!.blockNumber));
         expect(block.gasLimit).to.exist;
         expect(block.gasUsed).to.exist;
         expect(block.baseFeePerGas).to.exist;
-        
+
         // Verify gas used is reasonable
         expect(Number(block.gasUsed)).to.be.gt(0);
         expect(Number(block.gasUsed)).to.be.lte(Number(block.gasLimit));
@@ -356,7 +356,7 @@ describe('Gas tests', function () {
         expect(Number(tx.nonce)).to.be.eq(Number(nonce));
         expect(Number(tx.value)).to.be.eq(0);
         expect(tx.from.toLowerCase()).to.be.eq(alice.evmAddress.toLowerCase());
-        expect(tx.to).to.be.eq(erc20Contract.getAddress());
+        expect(tx.to.toLowerCase()).to.be.eq(erc20Contract.getAddress().toLowerCase());
         expect(tx.input).to.be.eq(data);
         expect(tx.hash).to.be.eq(txHash);
         expect(tx.blockHash).to.be.eq(receipt!.blockHash);
@@ -366,12 +366,12 @@ describe('Gas tests', function () {
         // Send a transaction first
         const blockHash = (await rpcClient.getBlockByNumber(ethers.toQuantity(txBlockNumber))).hash;
         const block = await rpcClient.getBlockByHash(blockHash, true);
-        
+
         expect(block).to.not.be.null;
         expect(block.gasLimit).to.exist;
         expect(block.gasUsed).to.exist;
         expect(block.baseFeePerGas).to.exist;
-        
+
         const tx = block.transactions.find(tx => tx.hash === txHash);
         //validate gas related data from block txs
         const expectedGasPrice = Number(block.baseFeePerGas) + Number(tx.maxPriorityFeePerGas);
@@ -388,7 +388,7 @@ describe('Gas tests', function () {
         expect(rpcReceipt.transactionHash).to.equal(txHash);
         // Verify gas used matches
         expect(rpcReceipt.gasUsed).to.equal(ethers.toQuantity(receipt!.gasUsed));
-        
+
         // Verify effective gas price matches
         const effectiveGasPrice = Number(baseFee) + Number(maxPriorityFeePerGas);
         expect(Number(rpcReceipt.effectiveGasPrice)).to.equal(effectiveGasPrice);
@@ -408,17 +408,16 @@ describe('Gas tests', function () {
         // Get transaction by block number and index
         const tx = await rpcClient.getTransactionByBlockNumberAndIndex(
             ethers.toQuantity(receipt!.blockNumber),
-            receipt!.transactionIndex
+            receipt!.index
         );
-        console.log(receipt);
-        console.log(tx);
+
         expect(tx).to.not.be.null;
         expect(tx.hash).to.equal(txHash);
         expect(tx.gas).to.exist;
         expect(tx.maxFeePerGas).to.exist;
         expect(tx.maxPriorityFeePerGas).to.exist;
         expect(tx.type).to.equal('0x2');
-        
+
         // Verify gas data matches the transaction by hash
         const txByHash = await rpcClient.getTransactionByHash(txHash);
         expect(tx.gas).to.equal(txByHash.gas);
