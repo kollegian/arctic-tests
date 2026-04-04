@@ -2,17 +2,18 @@ import {Contract, ethers} from "ethers";
 import {expect} from "chai";
 import {SeiUser, UserFactory} from "../../shared/User";
 import stakingAbi from "./abis/staking_abi.json";
-import {findValidator, returnQueryClient} from "./utils";
-import {QueryClient, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
-import crypto from "crypto";
-import {waitFor} from "../../shared/utils/helpers";
 import {
+    findValidator,
+    returnQueryClient,
     parseParams,
     parsePool,
     parseUnbondingDelegation,
     parseValidator,
     parseRedelegation
-} from "./staking_helpers";
+} from "./utils";
+import {QueryClient, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
+import crypto from "crypto";
+import {waitFor} from "../../shared/utils/helpers";
 
 const STAKING_ADDRESS = "0x0000000000000000000000000000000000001005";
 

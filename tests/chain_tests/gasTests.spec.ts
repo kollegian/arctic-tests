@@ -27,7 +27,6 @@ describe('Gas tests', function () {
 
     before('Initializes client', async () => {
         admin = await UserFactory.createAdminUser();
-        //await UserFactory.fundAdminOnSei();
         [alice, bob] = await UserFactory.createSeiUsers(admin, 2, true);
         const contractFactory = new ethers.ContractFactory(heavyGasAbi.abi, heavyGasAbi.bytecode, alice.evmWallet.wallet);
         const deploymentTx = await contractFactory.deploy();
@@ -47,13 +46,11 @@ describe('Gas tests', function () {
     it('Users can send legacy txs and the gas fee charges specified amount', async () => {
         const mintTx = await erc20Contract.mint(alice.evmAddress, ethers.parseEther('100'));
         await mintTx.wait();
-        console.log(await erc20Contract.balanceOf(alice.evmAddress));
         const data = erc20Contract.contract.interface.encodeFunctionData(
             'transfer',
             [bob.evmAddress, ethers.parseEther('0.1')]
         );
         const senderPreSeiBalance = await rpcClient.getBalance(alice.evmAddress);
-        console.log(senderPreSeiBalance);
         const nonce = await alice.evmWallet.wallet.getNonce('latest');
         const gasPrice = 12000000000n;
         const gasLimit = 500000n;
@@ -74,7 +71,6 @@ describe('Gas tests', function () {
             alice.evmWallet.signingClient,
             signedTx
         );
-        console.log(txHash);
         const receipt = await alice.evmWallet.signingClient.waitForTransaction(txHash);
         expect(receipt?.status).to.be.eq(1);
         expect(receipt?.type).to.be.eq(0);

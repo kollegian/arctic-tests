@@ -105,14 +105,14 @@
     "inputs":
     [
       {
-        "internalType": "string",
+        "internalType": "address",
         "name": "fromAddress",
-        "type": "string"
+        "type": "address"
       },
       {
-        "internalType": "string",
+        "internalType": "address",
         "name": "toAddress",
-        "type": "string"
+        "type": "address"
       },
       {
         "internalType": "string",
