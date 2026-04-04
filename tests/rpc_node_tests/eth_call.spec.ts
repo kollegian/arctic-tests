@@ -1,10 +1,10 @@
 
-import {ethers} from "ethers";
 import {SeiUser, UserFactory} from "../../shared/User";
 import {Erc20Token} from "../../shared/Token";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import contractAddresses from './contractAddresses.json'
 import {expect} from "chai";
+
 describe('Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
     let users: SeiUser[];
@@ -13,11 +13,10 @@ describe('Evm Rpc Tests', function () {
     let rpcClient: EvmRpcClient;
     let ercPointerAddress: string;
 
-
     before('Initializes', async () => {
         admin = await UserFactory.createAdminUser();
         ercPointerAddress = contractAddresses.cwPointerOnEvm;
-        users = await UserFactory.createSeiUsers(admin, 30, true);
+        users = await UserFactory.createSeiUsers(admin, 10, true);
         erc20 = new Erc20Token(admin, contractAddresses.erc20);
         rpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
     });

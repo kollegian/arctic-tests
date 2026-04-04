@@ -51,7 +51,6 @@ describe('eth_call', function () {
 
       const balance = erc20.interface.decodeFunctionResult('balanceOf', result)[0];
       expect(balance > 0n).to.be.true;
-      console.log(`Alice balance: ${ethers.formatEther(balance)}`);
     });
 
     it('calls view function with from address', async () => {
@@ -77,7 +76,6 @@ describe('eth_call', function () {
 
       const totalSupply = erc20.interface.decodeFunctionResult('totalSupply', result)[0];
       expect(totalSupply > 0n).to.be.true;
-      console.log(`Total supply: ${ethers.formatEther(totalSupply)}`);
     });
 
     it('calls name and symbol', async () => {
@@ -225,7 +223,7 @@ describe('eth_call', function () {
 
     it('calls with "earliest" tag returns zero balance', async () => {
       const data = erc20.interface.encodeFunctionData('balanceOf', [alice.address]);
-      
+
       try {
         const result = await provider.call({ to: erc20Address, data }, 'earliest');
         const balance = erc20.interface.decodeFunctionResult('balanceOf', result)[0];

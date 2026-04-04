@@ -1,8 +1,8 @@
 {
-  "cw20Address": "sei18cszlvm6pze0x9sz32qnjq4vtd45xehqs8dq7cwy8yhq35wfnn3quh5sau",
-  "cw721Address": "sei1yvgh8xeju5dyr0zxlkvq09htvhjj20fncp5g58np4u25g8rkpgjsf4g5jl",
-  "erc20Address": "0x0453C2dcADeF880A4917528B1e0CD7fD35E5e27b",
-  "erc721Address": "0x4296Ef1959f8A2c1Df2F2FfE053351Cc3e66e487",
-  "cw20MultiMintTx": 148,
-  "cw721MultiMintTx": 184
+  "cw20Address": "sei14pyj2fqf9f2aaw5rv3s0vwjahepkp6e6wrp4yvgx8fsglmk7zevqyr2zs9",
+  "cw721Address": "sei13j2a2rd0lqvqf38fjhutneel0musuq5danrhhqjvvvc506mzmtvsevde26",
+  "erc20Address": "0x58c06C06a68AaBAbcf3b6f954B2e1cd56be2a47A",
+  "erc721Address": "0x583D8112B57f42B25a5D1f610758651B2cb340b4",
+  "cw20MultiMintTx": 149847159,
+  "cw721MultiMintTx": 149847186
 }

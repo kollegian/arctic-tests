@@ -30,7 +30,7 @@ export class TokenDeployer {
         );
         const contract = await factory.deploy(this.user.evmWallet.wallet);
         await contract.waitForDeployment();
-        console.log('Contract deployed to ', contract.target);
+        console.log('ERC20 Contract deployed to ', contract.target);
         return new Erc20Token(this.user, contract.target as string);
     }
 
@@ -39,6 +39,7 @@ export class TokenDeployer {
         symbol: string,
         baseUri: string
     ): Promise<Erc721Token> {
+        const ownerAddress = await this.user.evmWallet.wallet.getAddress();
         const factory = new ethers.ContractFactory(
             ERC721_ARTIFACT.abi,
             ERC721_ARTIFACT.bytecode,
@@ -47,7 +48,7 @@ export class TokenDeployer {
         const contract = await factory.deploy(this.user.evmWallet.wallet);
         await contract.waitForDeployment();
         console.log('Contract deployed to ', contract.target);
-        return new Erc721Token(this.user, contract.target as string);
+                return new Erc721Token(this.user, contract.target as string);
     }
 
 

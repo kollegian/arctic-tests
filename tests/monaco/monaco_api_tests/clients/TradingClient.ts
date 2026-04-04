@@ -31,13 +31,18 @@ export interface CreateOrderRequest {
     trading_mode?: TradingMode;
     use_master_balance?: boolean;
     expiration_date?: string;
+    slippage_tolerance_bps?: number;
+    time_in_force?: string;
 }
 
 export interface CreateOrderResponse {
-    order_id: string;
-    status: string;
-    message: string;
-    match_result?: MatchResultInfo;
+    responseData: {
+        order_id: string;
+        status: string;
+        message: string;
+        match_result?: MatchResultInfo;
+    },
+    status: number,
 }
 
 export interface MatchResultInfo {
@@ -46,6 +51,9 @@ export interface MatchResultInfo {
     remaining_quantity: string;
     average_fill_price?: string;
     status: string;
+    actual_slippage_bps: number;
+    max_slippage_bps: number;
+    execution_price_range: object;
 }
 
 export interface CancelOrderRequest {
@@ -53,9 +61,12 @@ export interface CancelOrderRequest {
 }
 
 export interface CancelOrderResponse {
-    order_id: string;
-    status: string;
-    message: string;
+    responseData: {
+        order_id: string;
+        status: string;
+        message: string;
+    }
+    status: number,
 }
 
 export interface UpdateOrderRequest {
@@ -65,12 +76,15 @@ export interface UpdateOrderRequest {
 }
 
 export interface UpdateOrderResponse {
-    order_id: string;
-    status: string;
-    message: string;
-    updated_fields: UpdatedFields;
-    original_order_id?: string;
-    match_result?: MatchResultInfo;
+    responseData: {
+        order_id: string;
+        status: string;
+        message: string;
+        updated_fields: UpdatedFields;
+        original_order_id?: string;
+        match_result?: MatchResultInfo;
+    }
+    status: number,
 }
 
 export interface UpdatedFields {
@@ -79,17 +93,31 @@ export interface UpdatedFields {
 }
 
 export interface OrderResponse {
-    id: string;
-    trading_pair: string;
-    order_type: string;
-    side: string;
-    price?: string;
-    quantity: string;
-    filled_quantity: string;
-    status: string;
-    trading_mode: string;
-    created_at: string;
-    updated_at?: string;
+    responseData: {
+        id: string;
+        trading_pair: string;
+        order_type: string;
+        side: string;
+        price?: string;
+        quantity: string;
+        filled_quantity: string;
+        average_fill_price?: string;
+        remaining_quantity?: string;
+        status: string;
+        trading_mode: string;
+        time_in_force: string;
+        expiration_date: string;
+        use_master_balance?: boolean;
+        created_at: string;
+        updated_at?: string;
+        monaco_taker_fee: string;
+        monaco_maker_rebate: string;
+        total_taker_fees: string;
+        application_taker_fee:string;
+        taker_total_payment: string;
+        maker_total_receipt: string;
+    }
+    status: number,
 }
 
 export interface PaginatedOrdersResponse {
@@ -122,6 +150,7 @@ export default class TradingClient extends BaseApiClient {
             trading_mode?: TradingMode;
             use_master_balance?: boolean;
             expiration_date?: string;
+            slippage_tolerance_bps?: number;
         }
     ): Promise<CreateOrderResponse> {
         this.validateRequired({ tokenPair, side, price, quantity }, ['tokenPair', 'side', 'price', 'quantity']);
@@ -147,8 +176,10 @@ export default class TradingClient extends BaseApiClient {
         options?: {
             trading_mode?: TradingMode;
             use_master_balance?: boolean;
+            price?: string;
+            slippage_tolerance_bps?: number;
+            time_in_force?: string;
         },
-        price?: string
     ): Promise<CreateOrderResponse> {
         this.validateRequired({ tokenPair, side, quantity }, ['tokenPair', 'side', 'quantity']);
 
@@ -159,7 +190,9 @@ export default class TradingClient extends BaseApiClient {
             quantity,
             trading_mode: options?.trading_mode || 'SPOT',
             use_master_balance: options?.use_master_balance,
-            price
+            price: options?.price,
+            slippage_tolerance_bps: options?.slippage_tolerance_bps,
+            time_in_force: options?.time_in_force || 'GTC',
         };
 
         return this.post<CreateOrderResponse>('/api/v1/orders', request, accessToken);
@@ -228,7 +261,7 @@ export default class TradingClient extends BaseApiClient {
             page_size: options?.page_size,
         });
     }
-    
+
     async getOrdersByTradingPair(
         tradingPair: string,
         accessToken: string,

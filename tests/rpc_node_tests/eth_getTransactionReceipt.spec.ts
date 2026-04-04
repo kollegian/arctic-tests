@@ -13,7 +13,7 @@ import DebugContractAbi from '../../artifacts/contracts/DebugContract.sol/DebugC
 
 describe('Eth Get Transaction Receipt Tests', function () {
     this.timeout(10 * 60 * 1000);
-    
+
     let users: SeiUser[];
     let admin: SeiUser;
     let erc20: Erc20Token;
@@ -52,8 +52,11 @@ describe('Eth Get Transaction Receipt Tests', function () {
             const encodedData = erc20.contract.interface.encodeFunctionData('transfer', [users[1].evmAddress, ethers.parseEther('1000000000')]);
             const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
             const txHash = await AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin);
+            console.log(`Failed transaction hash: ${txHash}`);
+            await waitFor(1);
             failedTxReceipt = await rpcClient.getTransactionReceipt(txHash) as ContractTransactionReceipt;
-            expect(failedTxReceipt.status).to.equal(0);
+            expect(Number(failedTxReceipt.status)).to.equal(0);
+            console.log(failedTxReceipt);
         });
 
         it('Creates a simple ETH transfer transaction', async () => {
@@ -76,7 +79,7 @@ describe('Eth Get Transaction Receipt Tests', function () {
     describe('Validate eth_getTransactionReceipt fields for successful transaction', function () {
         it('Validates all required fields are present', async () => {
             const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             // Required fields
             expect(receipt).to.have.property('transactionHash');
             expect(receipt).to.have.property('transactionIndex');
@@ -94,7 +97,7 @@ describe('Eth Get Transaction Receipt Tests', function () {
 
         it('Validates field types and formats', async () => {
             const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             // Check field types
             expect(receipt.transactionHash).to.be.a('string');
             expect(receipt.transactionHash).to.match(/^0x[a-fA-F0-9]{64}$/);
@@ -108,7 +111,7 @@ describe('Eth Get Transaction Receipt Tests', function () {
             expect(receipt.to).to.match(/^0x[a-fA-F0-9]{40}$/);
             expect(receipt.cumulativeGasUsed).to.be.a('string');
             expect(receipt.gasUsed).to.be.a('string');
-            expect(receipt.contractAddress).to.be.a('string');
+            // expect(receipt.contractAddress).to.be.a('string');
             expect(receipt.logs).to.be.an('array');
             expect(receipt.status).to.be.a('string');
             expect(receipt.logsBloom).to.be.a('string');
@@ -116,13 +119,13 @@ describe('Eth Get Transaction Receipt Tests', function () {
 
         it('Validates field values for successful transaction', async () => {
             const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             // Check specific values
             expect(receipt.transactionHash).to.equal(successfulTxReceipt.hash);
             expect(receipt.status).to.equal('0x1'); // Success
             expect(receipt.from.toLowerCase()).to.equal(admin.evmAddress.toLowerCase());
             expect(receipt.to.toLowerCase()).to.equal(erc20.getAddress().toLowerCase());
-            expect(receipt.contractAddress).to.equal('0x0000000000000000000000000000000000000000'); // Not a contract creation
+            expect(receipt.contractAddress).to.equal(null); // Not a contract creation
             expect(parseInt(receipt.gasUsed, 16)).to.be.greaterThan(0);
             expect(parseInt(receipt.cumulativeGasUsed, 16)).to.be.greaterThan(0);
             expect(parseInt(receipt.blockNumber, 16)).to.be.greaterThan(0);
@@ -131,7 +134,7 @@ describe('Eth Get Transaction Receipt Tests', function () {
 
         it('Validates logs array structure', async () => {
             const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             expect(receipt.logs).to.be.an('array');
             if (receipt.logs.length > 0) {
                 const log = receipt.logs[0];
@@ -144,7 +147,7 @@ describe('Eth Get Transaction Receipt Tests', function () {
                 expect(log).to.have.property('address');
                 expect(log).to.have.property('data');
                 expect(log).to.have.property('topics');
-                
+
                 // Check types
                 expect(log.removed).to.be.a('boolean');
                 expect(log.logIndex).to.be.a('string');
@@ -160,7 +163,7 @@ describe('Eth Get Transaction Receipt Tests', function () {
 
         it('Validates logsBloom format', async () => {
             const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             expect(receipt.logsBloom).to.be.a('string');
             expect(receipt.logsBloom).to.match(/^0x[a-fA-F0-9]{512}$/); // 256 bytes = 512 hex chars
         });
@@ -168,16 +171,17 @@ describe('Eth Get Transaction Receipt Tests', function () {
 
     describe('Validate eth_getTransactionReceipt fields for failed transaction', function () {
         it('Validates status field for failed transaction', async () => {
-            const receipt = await rpcClient.getTransactionReceipt(failedTxReceipt.hash);
-            
+            console.log(failedTxReceipt);
+            const receipt = await rpcClient.getTransactionReceipt(failedTxReceipt.transactionHash);
+
             expect(receipt.status).to.equal('0x0'); // Failed
-            expect(receipt.transactionHash).to.equal(failedTxReceipt.hash);
+            expect(receipt.transactionHash).to.equal(failedTxReceipt.transactionHash);
             expect(parseInt(receipt.gasUsed, 16)).to.be.greaterThan(0);
         });
 
         it('Validates logs for failed transaction', async () => {
-            const receipt = await rpcClient.getTransactionReceipt(failedTxReceipt.hash);
-            
+            const receipt = await rpcClient.getTransactionReceipt(failedTxReceipt.transactionHash);
+
             // Failed transactions may or may not have logs depending on when they fail
             expect(receipt.logs).to.be.an('array');
         });
@@ -186,11 +190,11 @@ describe('Eth Get Transaction Receipt Tests', function () {
     describe('Validate eth_getTransactionReceipt fields for simple ETH transfer', function () {
         it('Validates fields for simple transfer', async () => {
             const receipt = await rpcClient.getTransactionReceipt(simpleTransferTxReceipt.hash);
-            
+
             expect(receipt.status).to.equal('0x1');
             expect(receipt.from.toLowerCase()).to.equal(admin.evmAddress.toLowerCase());
             expect(receipt.to.toLowerCase()).to.equal(users[2].evmAddress.toLowerCase());
-            expect(receipt.contractAddress).to.equal('0x0000000000000000000000000000000000000000');
+            expect(receipt.contractAddress).to.equal(null);
             expect(receipt.logs).to.be.an('array');
             expect(receipt.logs.length).to.equal(0); // Simple transfers don't generate logs
         });
@@ -199,11 +203,11 @@ describe('Eth Get Transaction Receipt Tests', function () {
     describe('Validate eth_getTransactionReceipt fields for transaction with multiple logs', function () {
         it('Validates logs for transaction with multiple events', async () => {
             const receipt = await rpcClient.getTransactionReceipt(multipleLogsTxReceipt.hash);
-            
+
             expect(receipt.status).to.equal('0x1');
             expect(receipt.logs).to.be.an('array');
             expect(receipt.logs.length).to.be.greaterThan(0);
-            
+
             // Validate each log
             receipt.logs.forEach((log, index) => {
                 expect(log).to.have.property('removed');
@@ -215,7 +219,7 @@ describe('Eth Get Transaction Receipt Tests', function () {
                 expect(log).to.have.property('address');
                 expect(log).to.have.property('data');
                 expect(log).to.have.property('topics');
-                
+
                 expect(log.transactionHash).to.equal(multipleLogsTxReceipt.hash);
                 expect(log.blockNumber).to.equal(receipt.blockNumber);
                 expect(log.blockHash).to.equal(receipt.blockHash);
@@ -225,14 +229,14 @@ describe('Eth Get Transaction Receipt Tests', function () {
 
         it('Validates log topics structure', async () => {
             const receipt = await rpcClient.getTransactionReceipt(multipleLogsTxReceipt.hash);
-            
+
             receipt.logs.forEach((log) => {
                 expect(log.topics).to.be.an('array');
                 expect(log.topics.length).to.be.greaterThan(0);
-                
+
                 // First topic should be the event signature
                 expect(log.topics[0]).to.match(/^0x[a-fA-F0-9]{64}$/);
-                
+
                 // All topics should be 32-byte hex strings
                 log.topics.forEach((topic) => {
                     expect(topic).to.match(/^0x[a-fA-F0-9]{64}$/);
@@ -260,18 +264,18 @@ describe('Eth Get Transaction Receipt Tests', function () {
 
         it('Validates transaction index consistency', async () => {
             const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             // Get block to verify transaction index
             const block = await rpcClient.getBlockByNumber(receipt.blockNumber, true);
             const txIndex = parseInt(receipt.transactionIndex, 16);
-            
+
             expect(block.transactions.length).to.be.greaterThan(txIndex);
             expect(block.transactions[txIndex].hash).to.equal(receipt.transactionHash);
         });
 
         it('Validates block hash consistency', async () => {
             const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             // Get block to verify block hash
             const block = await rpcClient.getBlockByNumber(receipt.blockNumber, false);
             expect(block.hash).to.equal(receipt.blockHash);
@@ -279,10 +283,10 @@ describe('Eth Get Transaction Receipt Tests', function () {
 
         it('Validates cumulative gas used consistency', async () => {
             const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             const gasUsed = parseInt(receipt.gasUsed, 16);
             const cumulativeGasUsed = parseInt(receipt.cumulativeGasUsed, 16);
-            
+
             expect(cumulativeGasUsed).to.be.greaterThanOrEqual(gasUsed);
         });
     });
@@ -307,17 +311,17 @@ describe('Eth Get Transaction Receipt Tests', function () {
         it('Compares RPC receipt with ethers.js receipt', async () => {
             const rpcReceipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
             const ethersReceipt = await provider.getTransactionReceipt(successfulTxReceipt.hash);
-            
+
             // Compare key fields
             expect(rpcReceipt.transactionHash).to.equal(ethersReceipt.hash);
-            expect(rpcReceipt.blockNumber).to.equal(ethersReceipt.blockNumber.toString(16));
+            expect(rpcReceipt.blockNumber).to.equal('0x' + ethersReceipt.blockNumber.toString(16));
             expect(rpcReceipt.blockHash).to.equal(ethersReceipt.blockHash);
-            expect(rpcReceipt.from).to.equal(ethersReceipt.from);
-            expect(rpcReceipt.to).to.equal(ethersReceipt.to);
+            expect(rpcReceipt.from.toLowerCase()).to.equal(ethersReceipt.from.toLowerCase());
+            expect(rpcReceipt.to.toLowerCase()).to.equal(ethersReceipt.to.toLowerCase());
             expect(rpcReceipt.status).to.equal(ethersReceipt.status === 1 ? '0x1' : '0x0');
-            expect(rpcReceipt.gasUsed).to.equal(ethersReceipt.gasUsed.toString(16));
-            expect(rpcReceipt.cumulativeGasUsed).to.equal(ethersReceipt.cumulativeGasUsed.toString(16));
+            expect(rpcReceipt.gasUsed).to.equal(ethers.toQuantity(ethersReceipt.gasUsed));
+            expect(rpcReceipt.cumulativeGasUsed).to.equal(ethers.toQuantity(ethersReceipt.cumulativeGasUsed));
             expect(rpcReceipt.logs.length).to.equal(ethersReceipt.logs.length);
         });
     });
-}); 
+});

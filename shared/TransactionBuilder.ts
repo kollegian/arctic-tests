@@ -45,7 +45,7 @@ export default class TransactionBuilder {
             const index1 = this.users.indexOf(user);
             AtomicTxSender.sendRawTransaction(user.evmRpcEndpoint, signedTxs[index1], user);
             this.cw20Token.setSigner(user);
-            this.cw20Token.transfer(this.users[0].seiAddress, '1000');
+            const txData = this.cw20Token.transfer(this.users[0].seiAddress, '1000');
             await waitFor(0.04);
         }
         await waitFor(1);

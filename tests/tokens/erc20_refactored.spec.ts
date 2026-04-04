@@ -26,7 +26,7 @@ describe('Erc20 Tests', function () {
         admin = await UserFactory.createAdminUser();
         const erc20Address = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8')).erc20Address;
         erc20Contract = new Erc20Token(admin, erc20Address);
-        users = await UserFactory.createSeiUsers(admin, 20, true);
+        users = await UserFactory.createSeiUsers(admin, 3, true);
         evmRpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
         adminInitialBalance = await erc20Contract.balanceOf(admin.evmAddress);
         alice = users[0];
@@ -93,6 +93,7 @@ describe('Erc20 Tests', function () {
                 throw new Error('Transfer should have failed');
             } catch (e: any) {
                 expect(e.message).to.include('execution reverted');
+                await waitFor(1);
             }
         });
 
@@ -171,6 +172,9 @@ describe('Erc20 Tests', function () {
                 const txInfo = await evmRpcClient.getBlockByNumber(ethers.toQuantity(evmOnlyTxBlock), true);
                 const tx = txInfo.transactions.find(tx => tx.from.toLowerCase() === alice.evmAddress.toLowerCase());
                 expect(Number(tx.type)).to.be.eq(2);
+                console.log(tx);
+                console.log('*****');
+                console.log(txReceipt);
                 expect(tx.to.toLowerCase()).to.be.eq(erc20Contract.getAddress().toLowerCase());
                 const input = erc20Contract.contract.interface.decodeFunctionData("mint", tx.input);
                 expect(input[0].toLowerCase()).to.be.eq(alice.evmAddress.toLowerCase());
@@ -180,7 +184,6 @@ describe('Erc20 Tests', function () {
                 expect(Number(tx.blockNumber)).to.be.eq(txReceipt.blockNumber);
                 expect(Number(tx.transactionIndex)).to.be.eq(txReceipt.index);
                 expect(Number(tx.gasPrice)).to.be.eq(Number(txReceipt.gasPrice));
-                expect(Number(tx.type)).to.be.eq(0);
             });
 
             it('eth get block by hash returns info on evm erc20 txs', async () =>{
@@ -242,7 +245,7 @@ describe('Erc20 Tests', function () {
                     topics: [topic],
                     address: erc20Contract.getAddress() as string
                 }
-
+                const curentBlock = await evmRpcClient.getBlockNumber();
                 seiLogs = {
                     fromBlock: ethers.toQuantity(Number(evmOnlyTxBlock) - 1),
                     toBlock: ethers.toQuantity(Number(evmOnlyTxBlock) + 1),
@@ -259,6 +262,7 @@ describe('Erc20 Tests', function () {
 
             it('Eth filter logs returns info on evm erc20 txs', async () =>{
                 const newFilter = await evmRpcClient.eth_newFilter(evmLogs);
+                await waitFor(2);
                 const filterResults = await evmRpcClient.eth_getFilterLogs(newFilter);
                 expect(filterResults.length).to.be.eq(1);
             });

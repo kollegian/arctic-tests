@@ -6,6 +6,7 @@ import { AtomicTxSender } from "../../shared/TxBuilder";
 import { EvmRpcClient } from "../../shared/RpcClient";
 import fs from "fs";
 import {waitFor} from "../../shared/utils/helpers";
+import {clearSetCode} from "../chain_tests/pectra_upgrade/utils";
 
 describe('ERC721 Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -22,13 +23,26 @@ describe('ERC721 Tests', function () {
     let failedTxBlockHash: string;
     let failedTxHash: string;
     let pointerAddress: string;
-    const nftStartId = 1950;
+    const nftStartId = Math.floor(Math.random() * 1000000) + 2000;
 
     before('Deploys contracts and initializes users', async () => {
         admin = await UserFactory.createAdminUser();
-        const erc20Address = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8')).erc721Address;
-        erc721Contract = new Erc721Token(admin, erc20Address);
-        users = await UserFactory.createSeiUsers(admin, 20, true);
+        
+        // Clear any 7702 delegation on admin account so safeMint works
+        // (7702 wallets have code, which triggers onERC721Received callback that fails)
+        console.log('Clearing 7702 delegation on admin account...');
+        try {
+            await clearSetCode(admin);
+            console.log('7702 delegation cleared successfully');
+        } catch (e) {
+            console.log('No 7702 delegation to clear or already cleared');
+        }
+        
+        const erc721Address = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8')).erc721Address;
+        erc721Contract = new Erc721Token(admin, erc721Address);
+        console.log('Using existing ERC721 contract at:', erc721Address);
+        console.log('Using random nftStartId:', nftStartId);
+        users = await UserFactory.createSeiUsers(admin, 3, true);
         rpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
         alice = users[0];
         bob = users[1];
@@ -162,7 +176,7 @@ describe('ERC721 Tests', function () {
                 AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx1, admin),
                 AtomicTxSender.sendRawTransaction(bob.evmRpcEndpoint, signedTx2, bob),
             ]);
-            await waitFor(1);
+            await waitFor(3);
             const transferTxReceipt = await rpcClient.getTransactionReceipt(transferTx);
 
             const logParams = {

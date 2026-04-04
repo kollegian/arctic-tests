@@ -1,6 +1,7 @@
 import {BaseApiClient} from "./BaseApiClient";
 import {ethers} from "ethers/lib.esm";
 import {waitFor} from "../../../../shared/utils/helpers";
+import {SeiUser} from "../../../../shared/User";
 
 export default class VaultClient extends BaseApiClient {
     constructor(url: string, clientId: string) {
@@ -21,7 +22,12 @@ export default class VaultClient extends BaseApiClient {
         return data.vault_contract_address;
     }
 
-    async depositFundsIntoVault(vaultContract: ethers.Contract, depositSeedInfo: any, tokenContractAddress: string, amount: string){
+    async depositFundsIntoVault(vaultContract: ethers.Contract, depositSeedInfo: any, tokenContractAddress: string, amount: string, signer?: SeiUser){
+        if (signer) {
+            const depositTx = await vaultContract
+                .connect(signer.evmWallet.wallet).deposit(tokenContractAddress, amount, depositSeedInfo.seed, depositSeedInfo.signature);
+            return await depositTx.wait();
+        }
         const depositTx = await vaultContract
             .deposit(tokenContractAddress, amount, depositSeedInfo.seed, depositSeedInfo.signature);
         return await depositTx.wait();
