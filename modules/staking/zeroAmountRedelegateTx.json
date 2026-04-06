@@ -1,0 +1,35 @@
+{
+  "body": {
+    "messages": [
+      {
+        "@type": "/cosmos.staking.v1beta1.MsgBeginRedelegate",
+        "delegator_address": "sei1twfu6qwxw4qp77jtpjzx9xenx5qxxhysym602n",
+        "validator_src_address": "seivaloper1y4h8tt0pgjwg9zayq2nuwkhvg49f2xnz56m24y",
+        "validator_dst_address": "seivaloper13jqa68x528y8l4jakyu3gr0yct580pytwljda9",
+        "amount": {
+          "denom": "usei",
+          "amount": "0"
+        }
+      }
+    ],
+    "memo": "",
+    "timeout_height": "0",
+    "extension_options": [],
+    "non_critical_extension_options": []
+  },
+  "auth_info": {
+    "signer_infos": [],
+    "fee": {
+      "amount": [
+        {
+          "denom": "usei",
+          "amount": "24200"
+        }
+      ],
+      "gas_limit": "500000",
+      "payer": "",
+      "granter": ""
+    }
+  },
+  "signatures": []
+}
