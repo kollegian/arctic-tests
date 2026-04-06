@@ -1,4 +1,4 @@
-import {DeliverTxResponse, GasPrice, SigningStargateClient, StdFee} from '@cosmjs/stargate';
+import {DeliverTxResponse, GasPrice, SigningStargateClient, StdFee, defaultRegistryTypes} from '@cosmjs/stargate';
 import { ethers, HDNodeWallet, JsonRpcProvider, TransactionRequest, TransactionResponse } from 'ethers';
 import { Coin, DirectSecp256k1HdWallet, EncodeObject, Registry } from '@cosmjs/proto-signing';
 import { stringToPath } from '@cosmjs/crypto';
@@ -104,11 +104,14 @@ export class SeiWallet extends User<DirectSecp256k1HdWallet> {
     }
 
     async isAssociated(): Promise<boolean> {
-        const result = await Querier.evm.EVMAddressBySeiAddress(
-            { sei_address: this.walletAddress },
-            { pathPrefix: this.restEndpoint }
-        );
-        return result.associated;
+        try {
+            const result = await execCommandAndReturnJson(
+                `seid q evm evm-addr ${this.walletAddress}`
+            );
+            return !!result.evm_address;
+        } catch {
+            return false;
+        }
     }
 
     async associate(): Promise<DeliverTxResponse> {
@@ -128,7 +131,7 @@ export class SeiWallet extends User<DirectSecp256k1HdWallet> {
     }
 
     private async createSigningClient(rpcEndpoint: string, wallet: DirectSecp256k1HdWallet): Promise<SigningStargateClient> {
-        const registry = new Registry(seiProtoRegistry);
+        const registry = new Registry([...seiProtoRegistry, ...defaultRegistryTypes]);
         return await SigningStargateClient.connectWithSigner(rpcEndpoint, wallet, {registry});
     }
 }
