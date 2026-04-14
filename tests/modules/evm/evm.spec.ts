@@ -10,6 +10,8 @@ import ExpectStatic = Chai.ExpectStatic;
 let expect: ExpectStatic;
 
 const restEndpoint = testConfig.restEndpoint;
+const POINTER_TYPE_ERC20 = 0;
+const CUSTOM_ASSOCIATE_MESSAGE = 'customMessage';
 
 describe('EVM Module Tests', function () {
   this.timeout(5 * 60 * 1000);
@@ -31,7 +33,6 @@ describe('EVM Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q evm evm-addr ${user.seiAddress}`
       );
-      expect(result).to.exist;
       expect(result.evm_address).to.be.a('string');
       expect(result.evm_address).to.not.be.eq('');
     });
@@ -40,7 +41,6 @@ describe('EVM Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q evm sei-addr ${user.evmAddress}`
       );
-      expect(result).to.exist;
       expect(result.sei_address).to.be.a('string');
       expect(result.sei_address).to.be.eq(user.seiAddress);
     });
@@ -49,13 +49,13 @@ describe('EVM Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q evm pointer ERC20 usei`
       );
-      expect(result).to.exist;
+      expect(String(result.pointer_type || result.pointerType)).to.have.length.gt(0);
+      expect(String(result.pointee || result.pointee_address || result.pointeeAddress)).to.have.length.gt(0);
     });
 
     it('Queries EVM params via seid', async () => {
       const result = await execCommandAndReturnJson('seid q evm params');
-      expect(result).to.exist;
-      expect(result.params).to.exist;
+      expect(result.params).to.be.an('object');
     });
   });
 
@@ -74,7 +74,7 @@ describe('EVM Module Tests', function () {
 
       const msgAssociate = Encoder.evm.MsgAssociate.fromPartial({
         sender: freshUser.seiAddress,
-        custom_message: 'customMessage',
+        custom_message: CUSTOM_ASSOCIATE_MESSAGE,
       });
       const msgSend = {
         typeUrl: `/${Encoder.evm.MsgAssociate.$type}`,
@@ -84,6 +84,7 @@ describe('EVM Module Tests', function () {
         freshUser.seiAddress, [msgSend], freshUser.seiWallet.fee
       );
       expect(txResult.code).to.equal(0);
+      expect(txResult.transactionHash).to.be.a('string');
 
       response = await Querier.evm.EVMAddressBySeiAddress(
         { sei_address: freshUser.seiAddress },
@@ -96,7 +97,7 @@ describe('EVM Module Tests', function () {
     it('Cannot associate an already associated address', async () => {
       const msgAssociate = Encoder.evm.MsgAssociate.fromPartial({
         sender: user.seiAddress,
-        custom_message: 'customMessage',
+        custom_message: CUSTOM_ASSOCIATE_MESSAGE,
       });
       const msgSend = {
         typeUrl: `/${Encoder.evm.MsgAssociate.$type}`,
@@ -128,7 +129,7 @@ describe('EVM Module Tests', function () {
 
     it('Can get pointer version via Querier', async () => {
       const response = await Querier.evm.PointerVersion(
-        { pointer_type: 0 },
+        { pointer_type: POINTER_TYPE_ERC20 },
         { pathPrefix: restEndpoint }
       );
       expect(response.version).to.be.a('number');
@@ -186,7 +187,7 @@ describe('EVM Module Tests', function () {
 
     it('Can query EVM gas price', async () => {
       const feeData = await admin.evmWallet.signingClient.getFeeData();
-      expect(feeData.gasPrice).to.exist;
+      expect(feeData.gasPrice).to.not.be.null;
       expect(Number(feeData.gasPrice)).to.be.gt(0);
     });
 
@@ -202,7 +203,8 @@ describe('EVM Module Tests', function () {
         await execCommandAndReturnJson('seid q evm evm-addr notavalidaddress');
         expect.fail('Should have thrown for invalid sei address');
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
 
@@ -306,7 +308,7 @@ describe('EVM Module Tests', function () {
         value: ethers.parseEther('0.001'),
       });
       const receipt = await tx.wait();
-      expect(receipt).to.exist;
+      expect(receipt).to.not.be.null;
       const gasUsed = Number(receipt!.gasUsed);
       expect(gasUsed).to.be.gte(21000);
       expect(gasUsed).to.be.lte(100000);

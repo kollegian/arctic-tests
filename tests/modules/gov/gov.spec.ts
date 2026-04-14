@@ -10,6 +10,13 @@ import ExpectStatic = Chai.ExpectStatic;
 let expect: ExpectStatic;
 const restEndpoint = testConfig.restEndpoint;
 const fee = { amount: coins(24000, 'usei'), gas: '500000' };
+const CLI_FEE = '24200usei';
+const PROPOSAL_SUBMIT_DEPOSIT = '1000000usei';
+const PROPOSAL_DEPOSIT_AMOUNT = '100000usei';
+const PROPOSAL_DEPOSIT_COIN = coins('100000', 'usei');
+const CLI_PROPOSAL_TITLE = 'CLI Test Proposal';
+const CLI_PROPOSAL_DESCRIPTION = 'CLI test proposal description';
+const INVALID_PROPOSAL_ID = 999999;
 
 describe('Governance Module Tests', function () {
   this.timeout(4 * 60 * 1000);
@@ -28,24 +35,25 @@ describe('Governance Module Tests', function () {
 
     it('Submit proposal via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx gov submit-proposal --type text --title "CLI Test Proposal" --description "CLI test proposal description" --deposit 1000000usei --from govUser --fees 24200usei -y --broadcast-mode block`
+        `seid tx gov submit-proposal --type text --title "${CLI_PROPOSAL_TITLE}" --description "${CLI_PROPOSAL_DESCRIPTION}" --deposit ${PROPOSAL_SUBMIT_DEPOSIT} --from govUser --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.be.eq(0);
       const event = result.logs?.[0]?.events?.find((e: any) => e.type === 'submit_proposal');
       cliProposalId = event?.attributes?.find((a: any) => a.key === 'proposal_id')?.value;
-      expect(cliProposalId).to.exist;
+      expect(cliProposalId).to.be.a('string');
+      expect(Number(cliProposalId)).to.be.gt(0);
     });
 
     it('Deposit on proposal via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx gov deposit ${cliProposalId} 100000usei --from govUser --fees 24200usei -y --broadcast-mode block`
+        `seid tx gov deposit ${cliProposalId} ${PROPOSAL_DEPOSIT_AMOUNT} --from govUser --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.be.eq(0);
     });
 
     it('Vote on proposal via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx gov vote ${cliProposalId} yes --from govUser --fees 24200usei -y --broadcast-mode block`
+        `seid tx gov vote ${cliProposalId} yes --from govUser --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.be.eq(0);
     });
@@ -54,7 +62,8 @@ describe('Governance Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q gov proposal ${cliProposalId}`
       );
-      expect(result.proposal_id || result.id).to.exist;
+      expect(String(result.proposal_id || result.id)).to.be.eq(cliProposalId);
+      expect(String(result.status)).to.have.length.gt(0);
     });
 
     it('Query proposals via seid CLI', async () => {
@@ -69,21 +78,30 @@ describe('Governance Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q gov deposit ${cliProposalId} ${user.seiAddress}`
       );
-      expect(result.deposit || result.amount).to.exist;
+      const deposit = result.deposit || result;
+      expect(deposit.depositor).to.be.eq(user.seiAddress);
+      expect(deposit.amount).to.be.an('array');
+      expect(deposit.amount[0].denom).to.be.eq('usei');
+      expect(Number(deposit.amount[0].amount)).to.be.gte(Number(PROPOSAL_DEPOSIT_AMOUNT.replace('usei', '')));
     });
 
     it('Query votes via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
         `seid q gov vote ${cliProposalId} ${user.seiAddress}`
       );
-      expect(result.vote || result.voter).to.exist;
+      const vote = result.vote || result;
+      expect(vote.voter).to.be.eq(user.seiAddress);
+      expect(String(vote.proposal_id || vote.proposalId)).to.be.eq(cliProposalId);
+      expect((vote.options || []).length).to.be.gte(1);
     });
 
     it('Query gov params via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
         `seid q gov params`
       );
-      expect(result.deposit_params || result.params).to.exist;
+      const params = result.deposit_params || result.params;
+      expect(params).to.be.an('object');
+      expect(params.min_deposit || params.minDeposit).to.be.an('array');
     });
   });
 
@@ -100,7 +118,7 @@ describe('Governance Module Tests', function () {
         value: {
           proposalId: Number(proposalId),
           depositor: user.seiAddress,
-          amount: coins('100000', 'usei')
+          amount: PROPOSAL_DEPOSIT_COIN
         }
       };
       const response = await user.seiWallet.signingClient.signAndBroadcast(
@@ -115,7 +133,7 @@ describe('Governance Module Tests', function () {
         value: {
           proposalId: Number(proposalId),
           depositor: user.seiAddress,
-          amount: coins('100000', 'usei')
+          amount: PROPOSAL_DEPOSIT_COIN
         },
       };
       const response = await user.seiWallet.signingClient.signAndBroadcast(
@@ -163,16 +181,18 @@ describe('Governance Module Tests', function () {
         proposal_id: Number(proposalId),
         depositor: user.seiAddress
       }, { pathPrefix: restEndpoint });
-      expect(response.deposit).to.exist;
+      expect(response.deposit).to.not.be.undefined;
       expect(response.deposit!.amount).to.be.an('array');
       expect(response.deposit!.amount).to.have.length.gte(1);
+      expect(response.deposit!.depositor).to.be.eq(user.seiAddress);
+      expect(response.deposit!.amount[0].denom).to.be.eq('usei');
       expect(Number(response.deposit!.amount[0].amount)).to.be.gt(0);
     });
 
     it('Query vote for proposal via gov extension', async () => {
       const queryClient = await createGovQueryClient(testConfig.seiRpcEndpoint) as QueryClient & GovExtension;
       const response = await queryClient.gov.proposal(proposalId);
-      expect(response.proposal).to.exist;
+      expect(response.proposal).to.not.be.undefined;
       expect(response.proposal!.proposalId.toString()).to.be.eq(proposalId);
     });
   });
@@ -203,9 +223,9 @@ describe('Governance Module Tests', function () {
       const msgDeposit = {
         typeUrl: '/cosmos.gov.v1beta1.MsgDeposit',
         value: {
-          proposalId: 999999,
+          proposalId: INVALID_PROPOSAL_ID,
           depositor: user.seiAddress,
-          amount: coins('100000', 'usei')
+          amount: PROPOSAL_DEPOSIT_COIN
         }
       };
       try {
@@ -214,22 +234,23 @@ describe('Governance Module Tests', function () {
         );
         expect(result.code).to.not.be.eq(0);
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
 
     it('Cannot vote with invalid option (seid CLI)', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx gov vote ${errorProposalId} invalid_option --from govUser --fees 24200usei -y --broadcast-mode block`
+        `seid tx gov vote ${errorProposalId} invalid_option --from govUser --fees ${CLI_FEE} -y --broadcast-mode block`
       );
-      expect(result.code === undefined || result.code !== 0).to.be.true;
+      expect(result.code).to.not.be.eq(0);
     });
 
     it('Cannot submit proposal with zero deposit (seid CLI)', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx gov submit-proposal --type text --title "Zero Deposit" --description "Should fail" --deposit 0usei --from govUser --fees 24200usei -y --broadcast-mode block`
+        `seid tx gov submit-proposal --type text --title "Zero Deposit" --description "Should fail" --deposit 0usei --from govUser --fees ${CLI_FEE} -y --broadcast-mode block`
       );
-      expect(result.code === undefined || result.code !== 0).to.be.true;
+      expect(result.code).to.not.be.eq(0);
     });
 
     it('Double voting updates the vote (CosmJS)', async () => {
@@ -267,9 +288,10 @@ describe('Governance Module Tests', function () {
         `seid q gov vote ${voteProposalId} ${user.seiAddress}`
       );
       const options = voteQuery.options || voteQuery.vote?.options;
-      expect(options).to.exist;
+      expect(options).to.be.an('array');
+      expect(options).to.have.length(1);
       const lastOption = options[options.length - 1];
-      expect(lastOption.option === 'VOTE_OPTION_NO' || lastOption.option === 3).to.be.true;
+      expect(lastOption.option).to.be.oneOf(['VOTE_OPTION_NO', 3]);
     });
   });
 

@@ -102,7 +102,7 @@ describe('Debug Trace Block By Number Tests', function () {
 
     it('sends Type 2 (EIP-1559) transactions', async () => {
       const user = users[2];
-      const tx = await txBuilder.sendEip1559Tx(user, users[3].address, ethers.parseEther('0.01'), '0x', {gasLimit: 200000n});
+      const tx = await txBuilder.sendEip1559Tx(user, users[3].address, ethers.parseEther('0.01'), '0x');
       const receipt = await tx.wait();
 
       expect(receipt).to.not.be.null;
@@ -179,7 +179,7 @@ describe('Debug Trace Block By Number Tests', function () {
       const validatorAddress = validators.validators[0].operatorAddress;
       console.log(`Validator address: ${validatorAddress}`);
       const amount = ethers.parseEther('0.02');
-      const tx = await connectedStaking.delegate(validatorAddress, { value: amount, gasLimit: 75000000n });
+      const tx = await connectedStaking.delegate(validatorAddress, { value: amount });
       const receipt = await tx.wait();
 
       expect(receipt).to.not.be.null;

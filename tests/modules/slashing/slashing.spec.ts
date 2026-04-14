@@ -13,6 +13,7 @@ import ExpectStatic = Chai.ExpectStatic;
 let expect: ExpectStatic;
 
 const fee = { amount: coins(24000, 'usei'), gas: '500000' };
+const SIGNING_INFO_PUBKEY_TYPE = '/cosmos.crypto.ed25519.PubKey';
 
 describe('Slashing Module Tests', function () {
   this.timeout(4 * 60 * 1000);
@@ -46,24 +47,24 @@ describe('Slashing Module Tests', function () {
   describe('seid CLI Tests', function () {
     it('Queries slashing params via seid', async () => {
       const result = await execCommandAndReturnJson('seid q slashing params');
-      expect(result).to.exist;
-      expect(result.params).to.exist;
-      expect(result.params.signed_blocks_window).to.exist;
+      expect(result.params).to.be.an('object');
+      expect(Number(result.params.signed_blocks_window)).to.be.gt(0);
+      expect(result.params.min_signed_per_window).to.be.a('string');
     });
 
     it('Queries signing info for a validator via seid', async () => {
       const result = await execCommandAndReturnJson(
-        `seid q slashing signing-info '{"@type":"/cosmos.crypto.ed25519.PubKey","key":"${validatorInfo!.validator!.consensus_pubkey!.key}"}'`
+        `seid q slashing signing-info '{"@type":"${SIGNING_INFO_PUBKEY_TYPE}","key":"${validatorInfo!.validator!.consensus_pubkey!.key}"}'`
       );
-      expect(result).to.exist;
-      expect(result.val_signing_info).to.exist;
+      expect(result.val_signing_info.address).to.be.eq(consAddress);
+      expect(Number(result.val_signing_info.start_height)).to.be.gte(0);
     });
 
     it('Queries all signing infos via seid', async () => {
       const result = await execCommandAndReturnJson('seid q slashing signing-infos');
-      expect(result).to.exist;
       expect(result.info).to.be.an('array');
       expect(result.info).to.have.length.gte(1);
+      expect(result.info.some((entry: any) => entry.address === consAddress)).to.be.true;
     });
   });
 
@@ -85,8 +86,7 @@ describe('Slashing Module Tests', function () {
       const response = await Querier.cosmos.slashing.v1beta1.SigningInfo({
         cons_address: consAddress
       }, { pathPrefix: restEndpoint });
-      expect(response).to.exist;
-      expect(response.val_signing_info).to.exist;
+      expect(response.val_signing_info).to.not.be.undefined;
       expect(response.val_signing_info!.address).to.be.eq(consAddress);
     });
 
@@ -94,26 +94,25 @@ describe('Slashing Module Tests', function () {
       const response = await Querier.cosmos.slashing.v1beta1.SigningInfos(
         {}, { pathPrefix: restEndpoint }
       );
-      expect(response).to.exist;
       expect(response.info).to.be.an('array');
       expect(response.info).to.have.length.gte(1);
+      expect(response.info.some((entry: any) => entry.address === consAddress)).to.be.true;
     });
 
     it('Queries slashing params', async () => {
       const response = await Querier.cosmos.slashing.v1beta1.Params(
         {}, { pathPrefix: restEndpoint }
       );
-      expect(response).to.exist;
-      expect(response.params).to.exist;
-      expect(response.params!.signed_blocks_window).to.exist;
+      expect(response.params).to.not.be.undefined;
       expect(Number(response.params!.signed_blocks_window)).to.be.gt(0);
+      expect(response.params!.min_signed_per_window).to.be.a('string');
     });
 
     it('Signing info shows correct start height and jailed status', async () => {
       const response = await Querier.cosmos.slashing.v1beta1.SigningInfo({
         cons_address: consAddress
       }, { pathPrefix: restEndpoint });
-      expect(response.val_signing_info!.jailed_until).to.exist;
+      expect(response.val_signing_info!.jailed_until).to.be.a('string');
       expect(Number(response.val_signing_info!.start_height)).to.be.gte(0);
     });
   });
@@ -141,7 +140,8 @@ describe('Slashing Module Tests', function () {
         );
         expect.fail('Should have thrown for invalid consensus address');
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
   });
@@ -160,7 +160,7 @@ describe('Slashing Module Tests', function () {
 
     it('Signing info via seid matches Querier signing info', async () => {
       const seidResult = await execCommandAndReturnJson(
-        `seid q slashing signing-info '{"@type":"/cosmos.crypto.ed25519.PubKey","key":"${validatorInfo!.validator!.consensus_pubkey!.key}"}'`
+        `seid q slashing signing-info '{"@type":"${SIGNING_INFO_PUBKEY_TYPE}","key":"${validatorInfo!.validator!.consensus_pubkey!.key}"}'`
       );
       const querierResp = await Querier.cosmos.slashing.v1beta1.SigningInfo(
         { cons_address: consAddress },

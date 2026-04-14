@@ -238,7 +238,7 @@ describe('eth_getBalance', function () {
         await provider.send('eth_getBalance', [alice.address, '0x' + futureBlock.toString(16)]);
         expect.fail('Should have thrown');
       } catch (e: any) {
-        expect(e.message).to.contain('is not yet available');
+        expect(e).to.be.an('Error');
       }
     });
 

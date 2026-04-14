@@ -68,6 +68,7 @@ describe('ERC721 Tests', function () {
                 AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx1, admin),
                 AtomicTxSender.sendRawTransaction(users[0].evmRpcEndpoint, signedTx2, users[0]),
             ]);
+            console.log('txHashes:', txHashes);
             await waitFor(1);
             failedTxHash = txHashes[0];
             failedTxBlockNumber = (await rpcClient.getTransactionReceipt(failedTxHash)).blockNumber;

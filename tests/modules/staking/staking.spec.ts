@@ -11,6 +11,13 @@ import ExpectStatic = Chai.ExpectStatic;
 const exec = util.promisify(require('node:child_process').exec);
 
 let expect: ExpectStatic;
+const CLI_FEE = '24200usei';
+const DEFAULT_GAS = '500000';
+const SMALL_STAKE_AMOUNT = '10';
+const STANDARD_STAKE_AMOUNT = '10000';
+const USEI_DENOM = 'usei';
+const CLI_CHAIN_ID = 'sei';
+const SIGN_CHAIN_ID = 'sei-chain';
 describe('Staking Tests', function () {
   this.timeout(4 * 60 * 1000);
   let admin: SeiUser;
@@ -41,31 +48,31 @@ describe('Staking Tests', function () {
       const stakingPool = await staking.cmdPool();
       const validatorPreDelegations = await staking.cmdQueryDelegationsTo(validatorAddress);
       const preBalance = await execCommandAndReturnJson(`seid query bank balances ${eve.seiAddress} --denom usei`);
-      const tx = await staking.delegateTx(eve, validatorAddress, coin('10', 'usei'));
+      const tx = await staking.delegateTx(eve, validatorAddress, coin(SMALL_STAKE_AMOUNT, USEI_DENOM));
       expect(tx.code).to.be.eq(0);
       // Validate user balances
       const balance = await execCommandAndReturnJson(`seid query bank balances ${eve.seiAddress} --denom usei`);
-      const expectedBalance = Number(preBalance.amount) - (10 + 24000);
+      const expectedBalance = Number(preBalance.amount) - (Number(SMALL_STAKE_AMOUNT) + 24000);
       expect(Number(balance.amount)).to.be.eq(expectedBalance);
 
       // Validate through queries
       const eveDelegations = await staking.cmdDelegations(eve.seiAddress);
       expect(eveDelegations.length).to.be.eq(1);
-      expect(eveDelegations[0].balance!.amount).to.be.eq('10');
-      expect(eveDelegations[0].balance!.denom).to.be.eq('usei');
+      expect(eveDelegations[0].balance!.amount).to.be.eq(SMALL_STAKE_AMOUNT);
+      expect(eveDelegations[0].balance!.denom).to.be.eq(USEI_DENOM);
       expect(eveDelegations[0].delegation!.delegator_address).to.be.eq(eve.seiAddress);
       expect(eveDelegations[0].delegation!.validator_address).to.be.eq(validatorAddress);
-      expect(eveDelegations[0].delegation!.shares).to.contain('10.000');
+      expect(parseFloat(eveDelegations[0].delegation!.shares)).to.be.eq(Number(SMALL_STAKE_AMOUNT));
 
       const validatorDelegations = await staking.cmdQueryDelegationsTo(validatorAddress);
       expect(validatorDelegations.length).to.be.eq(validatorPreDelegations.length + 1);
       const lastStake = staking.findUserLastDelegation(eve.seiAddress, validatorAddress, validatorDelegations);
-      expect(lastStake.balance!.amount).to.be.eq('10');
-      expect(lastStake.delegation!.shares).to.contain('10.000');
+      expect(lastStake.balance!.amount).to.be.eq(SMALL_STAKE_AMOUNT);
+      expect(parseFloat(lastStake.delegation!.shares)).to.be.eq(Number(SMALL_STAKE_AMOUNT));
       expect(lastStake.delegation!.validator_address).to.be.eq(validatorAddress);
 
       const afterStakingPool = await staking.cmdPool();
-      expect(afterStakingPool.bonded_tokens).to.be.eq((BigInt(stakingPool.bonded_tokens) + BigInt(10)).toString());
+      expect(afterStakingPool.bonded_tokens).to.be.eq((BigInt(stakingPool.bonded_tokens) + BigInt(SMALL_STAKE_AMOUNT)).toString());
     });
 
     it('Eve cant stake usdt into validator', async () => {
@@ -76,12 +83,12 @@ describe('Staking Tests', function () {
 
     it('Eve cant stake 0 into validator', async () => {
       //generate only tx
-      const tx = await exec(`seid tx staking delegate ${validatorAddress} 10000usei --from ${eve.seiAddress} --fees 24200usei --gas 500000 -y --broadcast-mode block --generate-only > ./staking/zeroAmountUnsigned.json`);
+      const tx = await exec(`seid tx staking delegate ${validatorAddress} ${STANDARD_STAKE_AMOUNT}${USEI_DENOM} --from ${eve.seiAddress} --fees ${CLI_FEE} --gas ${DEFAULT_GAS} -y --broadcast-mode block --generate-only > ./staking/zeroAmountUnsigned.json`);
       const msg = JSON.parse(fs.readFileSync('./staking/zeroAmountUnsigned.json', 'utf8'));
       msg.body.messages[0].amount.amount = '0';
       fs.writeFileSync('./staking/zeroAmountUnsigned.json', JSON.stringify(msg, null, 2));
       await waitFor(1);
-      const signTx = await exec(`seid tx sign ./staking/zeroAmountUnsigned.json --from ${eve.seiAddress} --chain-id sei-chain > ./staking/zeroAmountSigned.json`);
+      const signTx = await exec(`seid tx sign ./staking/zeroAmountUnsigned.json --from ${eve.seiAddress} --chain-id ${SIGN_CHAIN_ID} > ./staking/zeroAmountSigned.json`);
       await waitFor(0.5);
       const broadcastTX = await execCommandAndReturnJson(`seid tx broadcast ./staking/zeroAmountSigned.json --from ${eve.seiAddress} --broadcast-mode block`);
       expect(broadcastTX.raw_log).to.contain('invalid delegation amount');
@@ -95,55 +102,55 @@ describe('Staking Tests', function () {
     });
 
     it('Eve cant stake minus coins', async () => {
-      const tx = await exec(`seid tx staking delegate ${validatorAddress} 10000usei --from ${eve.seiAddress} --fees 24200usei --gas 500000 -y --broadcast-mode block --generate-only > ./staking/minusAmountUnsigned.json`);
+      const tx = await exec(`seid tx staking delegate ${validatorAddress} ${STANDARD_STAKE_AMOUNT}${USEI_DENOM} --from ${eve.seiAddress} --fees ${CLI_FEE} --gas ${DEFAULT_GAS} -y --broadcast-mode block --generate-only > ./staking/minusAmountUnsigned.json`);
       const msg = JSON.parse(fs.readFileSync('./staking/minusAmountUnsigned.json', 'utf8'));
       msg.body.messages[0].amount.amount = '-10000';
       fs.writeFileSync('./staking/minusAmountUnsigned.json', JSON.stringify(msg, null, 2));
 
 
       await waitFor(1);
-      const signTx = await exec(`seid tx sign ./staking/minusAmountUnsigned.json --from ${eve.seiAddress} --chain-id sei-chain > ./staking/minusAmountSigned.json`);
+      const signTx = await exec(`seid tx sign ./staking/minusAmountUnsigned.json --from ${eve.seiAddress} --chain-id ${SIGN_CHAIN_ID} > ./staking/minusAmountSigned.json`);
       await waitFor(0.5);
       const broadcastTX = await execCommandAndReturnJson(`seid tx broadcast ./staking/minusAmountSigned.json --from ${eve.seiAddress} --broadcast-mode block`);
       expect(broadcastTX.raw_log).to.contain('invalid delegation amount');
     });
 
     it('Eve cant stake to empty addresses', async () => {
-      const tx = await exec(`seid tx staking delegate ${validatorAddress} 10000usei --from ${eve.seiAddress} --fees 24200usei --gas 500000 -y --broadcast-mode block --generate-only > ./staking/emptyAccountUnsigned.json`);
+      const tx = await exec(`seid tx staking delegate ${validatorAddress} ${STANDARD_STAKE_AMOUNT}${USEI_DENOM} --from ${eve.seiAddress} --fees ${CLI_FEE} --gas ${DEFAULT_GAS} -y --broadcast-mode block --generate-only > ./staking/emptyAccountUnsigned.json`);
       const msg = JSON.parse(fs.readFileSync('./staking/emptyAccountUnsigned.json', 'utf8'));
       msg.body.messages[0].amount.amount = '-10000';
       fs.writeFileSync('./staking/emptyAccountUnsigned.json', JSON.stringify(msg, null, 2));
 
 
       await waitFor(1);
-      const signTx = await exec(`seid tx sign ./staking/emptyAccountUnsigned.json --from ${eve.seiAddress} --chain-id sei-chain > ./staking/emptyAccountSigned.json`);
+      const signTx = await exec(`seid tx sign ./staking/emptyAccountUnsigned.json --from ${eve.seiAddress} --chain-id ${SIGN_CHAIN_ID} > ./staking/emptyAccountSigned.json`);
       await waitFor(0.5);
       const broadcastTX = await execCommandAndReturnJson(`seid tx broadcast ./staking/emptyAccountSigned.json --from ${eve.seiAddress} --broadcast-mode block`);
       expect(broadcastTX.raw_log).to.contain('invalid delegation amount');
     });
 
     it('Eve cant stake invalid addresses', async () => {
-      const tx = await staking.delegateTx(eve, 'invalid', coin('10', 'usei'));
+      const tx = await staking.delegateTx(eve, 'invalid', coin(SMALL_STAKE_AMOUNT, USEI_DENOM));
       expect(tx.rawLog).to.contain('invalid bech32 string length');
     });
 
     it('Eve cant stake to unexisting validator address', async () => {
       const unexistingValidatorAddress = 'seivaloper1ykls6dhh2mjqk9x0d3ee29873stf7wwvedcjmh';
-      const tx = await staking.delegateTx(eve, unexistingValidatorAddress, coin('10', 'usei'));
+      const tx = await staking.delegateTx(eve, unexistingValidatorAddress, coin(SMALL_STAKE_AMOUNT, USEI_DENOM));
       expect(tx.rawLog).to.contain('validator does not exist');
     });
 
     it('Unassociated Ferdie can stake to a validator on cosmos runtime', async () => {
       const ferdie = await UserFactory.createUnassociatedUsers(admin, 'ferdie');
       await UserFactory.fundAddressOnSei(ferdie.seiAddress);
-      const tx = await staking.delegateTx(ferdie, validatorAddress, coin('1', 'usei'));
+      const tx = await staking.delegateTx(ferdie, validatorAddress, coin('1', USEI_DENOM));
       const ferdieDelegation = await staking.cmdDelegations(ferdie.seiAddress);
       expect(ferdieDelegation.length).to.be.eq(1);
       expect(ferdieDelegation[0].balance!.amount).to.be.eq('1');
-      expect(ferdieDelegation[0].balance!.denom).to.be.eq('usei');
+      expect(ferdieDelegation[0].balance!.denom).to.be.eq(USEI_DENOM);
       expect(ferdieDelegation[0].delegation!.delegator_address).to.be.eq(ferdie.seiAddress);
       expect(ferdieDelegation[0].delegation!.validator_address).to.be.eq(validatorAddress);
-      expect(ferdieDelegation[0].delegation!.shares).to.contain('1.000');
+      expect(parseFloat(ferdieDelegation[0].delegation!.shares)).to.be.eq(1);
     });
 
     it('Eve can query rewards for her stake', async () => {
@@ -696,7 +703,7 @@ describe('Staking Tests', function () {
           const restDel = restResult.delegation_responses.find(
             (d: any) => d.delegation.validator_address === cliDel.delegation.validator_address
           );
-          expect(restDel).to.exist;
+          expect(restDel).to.not.be.undefined;
           expect(cliDel.balance.amount).to.be.eq(restDel!.balance.amount);
         }
       }
@@ -770,7 +777,8 @@ describe('Staking Tests', function () {
           expect(unbond.delegator_address).to.be.eq(eve.seiAddress);
           for (const entry of unbond.entries) {
             expect(Number(entry.balance)).to.be.gt(0);
-            expect(entry.completion_time).to.exist;
+            expect(entry.completion_time).to.be.a('string');
+            expect(entry.completion_time.length).to.be.gt(0);
           }
         }
       }
@@ -795,7 +803,8 @@ describe('Staking Tests', function () {
           expect(result.hist.valset).to.be.an('array');
         }
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
   });

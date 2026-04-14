@@ -563,7 +563,7 @@ describe('IBC Tests', function () {
     })
   }
 
-  it.only('Sends from atlantic - 2 to arctic 1 to 0x addresses', async () =>{
+  it('Sends from atlantic - 2 to arctic 1 to 0x addresses', async () =>{
     const sourceChannel = 'channel-105';
     const counterpartyChannel = 'channel-33';
     const ibc = new IBC('https://rest-arctic-1.sei-apis.com', 'sei', sourceChannel, ibcPrecompile);

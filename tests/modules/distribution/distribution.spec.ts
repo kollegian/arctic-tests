@@ -11,6 +11,10 @@ import ExpectStatic = Chai.ExpectStatic;
 let expect: ExpectStatic;
 
 const fee = { amount: coins(24000, 'usei'), gas: '500000' };
+const CLI_FEE = '24200usei';
+const INITIAL_DELEGATION_AMOUNT = '10000';
+const LIFECYCLE_DELEGATION_AMOUNT = '100000';
+const REWARD_DENOM = 'usei';
 
 describe('Distribution Module Tests', function () {
   this.timeout(4 * 60 * 1000);
@@ -37,37 +41,35 @@ describe('Distribution Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q distribution rewards ${user.seiAddress} ${validatorAddress}`
       );
-      expect(result).to.exist;
       expect(result.rewards).to.be.an('array');
+      expect(result.total).to.be.an('array');
     });
 
     it('Queries community pool via seid', async () => {
       const result = await execCommandAndReturnJson('seid q distribution community-pool');
-      expect(result).to.exist;
       expect(result.pool).to.be.an('array');
       expect(result.pool.length).to.be.gte(1);
+      expect(result.pool[0].denom).to.be.eq(REWARD_DENOM);
     });
 
     it('Queries distribution params via seid', async () => {
       const result = await execCommandAndReturnJson('seid q distribution params');
-      expect(result).to.exist;
-      expect(result.params).to.exist;
-      expect(result.params.community_tax).to.exist;
+      expect(result.params).to.be.an('object');
+      expect(parseFloat(result.params.community_tax)).to.be.gte(0);
     });
 
     it('Queries validator commission via seid', async () => {
       const result = await execCommandAndReturnJson(
         `seid q distribution commission ${validatorAddress}`
       );
-      expect(result).to.exist;
-      expect(result.commission).to.exist;
+      expect(result.commission.commission).to.be.an('array');
+      expect(result.commission.commission[0].denom).to.be.eq(REWARD_DENOM);
     });
 
     it('Queries validator slashes via seid', async () => {
       const result = await execCommandAndReturnJson(
         `seid q distribution slashes ${validatorAddress} 1 1000`
       );
-      expect(result).to.exist;
       expect(result.slashes).to.be.an('array');
     });
 
@@ -75,23 +77,24 @@ describe('Distribution Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q distribution rewards ${user.seiAddress}`
       );
-      expect(result).to.exist;
       expect(result.rewards).to.be.an('array');
+      expect(result.total).to.be.an('array');
     });
 
     it('Withdraws rewards via seid CLI and balance increases', async () => {
       const preBalance = await execCommandAndReturnJson(`seid q bank balances ${user.seiAddress} --denom usei`);
       const result = await execCommandAndReturnJson(
-        `seid tx distribution withdraw-rewards ${validatorAddress} --from distUser --fees 24200usei -y --broadcast-mode block`
+        `seid tx distribution withdraw-rewards ${validatorAddress} --from distUser --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.be.eq(0);
       const postBalance = await execCommandAndReturnJson(`seid q bank balances ${user.seiAddress} --denom usei`);
-      expect(Number(postBalance.amount)).to.be.gte(Number(preBalance.amount) - 24200);
+      const balanceDelta = Number(postBalance.amount) - Number(preBalance.amount);
+      expect(balanceDelta).to.be.gte(-24000);
     });
 
     it('Sets withdraw address via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx distribution set-withdraw-addr ${admin.seiAddress} --from distUser --fees 24200usei -y --broadcast-mode block`
+        `seid tx distribution set-withdraw-addr ${admin.seiAddress} --from distUser --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.be.eq(0);
       const withdrawAddr = await execCommandAndReturnJson(
@@ -100,7 +103,7 @@ describe('Distribution Module Tests', function () {
       expect(withdrawAddr.withdraw_address).to.be.eq(admin.seiAddress);
       // Reset back
       await execCommandAndReturnJson(
-        `seid tx distribution set-withdraw-addr ${user.seiAddress} --from distUser --fees 24200usei -y --broadcast-mode block`
+        `seid tx distribution set-withdraw-addr ${user.seiAddress} --from distUser --fees ${CLI_FEE} -y --broadcast-mode block`
       );
     });
 
@@ -121,13 +124,13 @@ describe('Distribution Module Tests', function () {
         value: {
           delegatorAddress: user.seiAddress,
           validatorAddress: validatorAddress,
-          amount: coin('10000', 'usei'),
+          amount: coin(INITIAL_DELEGATION_AMOUNT, REWARD_DENOM),
         },
       };
       const result = await user.seiWallet.signingClient.signAndBroadcast(
         user.seiAddress, [msg], fee, 'stake'
       );
-      console.log(result.rawLog);
+      expect(result.code).to.be.eq(0);
     });
 
     it('Queries reward data and withdraws rewards', async () => {
@@ -138,7 +141,7 @@ describe('Distribution Module Tests', function () {
       }, { pathPrefix: restEndpoint });
       const preRewardAmount = rewards.rewards[0].amount;
 
-      expect(rewards.rewards[0].denom).to.be.eq('usei');
+      expect(rewards.rewards[0].denom).to.be.eq(REWARD_DENOM);
       expect(parseFloat(rewards.rewards[0].amount)).to.be.gt(0);
       console.log(preRewardAmount);
 
@@ -164,7 +167,7 @@ describe('Distribution Module Tests', function () {
     });
 
     it('Sets a withdraw address', async () => {
-      const withdrawAddress = 'sei19907knyd83jregfjh0v2knwfls22k2mamhxdnn';
+      const withdrawAddress = admin.seiAddress;
       const msg = {
         typeUrl: '/cosmos.distribution.v1beta1.MsgSetWithdrawAddress',
         value: {
@@ -185,7 +188,7 @@ describe('Distribution Module Tests', function () {
       const response = await Querier.cosmos.distribution.v1beta1.DelegationTotalRewards({
         delegator_address: user.seiAddress
       }, { pathPrefix: restEndpoint });
-      expect(response.total[0].denom).to.be.eq('usei');
+      expect(response.total[0].denom).to.be.eq(REWARD_DENOM);
       expect(parseFloat(response.total[0].amount)).to.be.gt(0);
     });
 
@@ -193,7 +196,7 @@ describe('Distribution Module Tests', function () {
       const response = await Querier.cosmos.distribution.v1beta1.CommunityPool(
         {}, { pathPrefix: restEndpoint }
       );
-      expect(response.pool[0].denom).to.be.eq('usei');
+      expect(response.pool[0].denom).to.be.eq(REWARD_DENOM);
       expect(parseFloat(response.pool[0].amount)).to.be.gt(0);
     });
 
@@ -201,7 +204,7 @@ describe('Distribution Module Tests', function () {
       const response = await Querier.cosmos.distribution.v1beta1.ValidatorCommission({
         validator_address: validatorAddress
       }, { pathPrefix: restEndpoint });
-      expect(response.commission?.commission[0].denom).to.be.eq('usei');
+      expect(response.commission?.commission[0].denom).to.be.eq(REWARD_DENOM);
       expect(parseFloat(response.commission!.commission[0]!.amount)).to.be.gt(0);
     });
 
@@ -211,7 +214,7 @@ describe('Distribution Module Tests', function () {
         validator_address: validatorAddress
       }, { pathPrefix: restEndpoint });
       expect(parseFloat(response.rewards!.rewards[0].amount)).to.be.gt(0);
-      expect(response.rewards!.rewards[0].denom).to.be.eq('usei');
+      expect(response.rewards!.rewards[0].denom).to.be.eq(REWARD_DENOM);
     });
 
     it('Queries validator slashes', async () => {
@@ -236,8 +239,7 @@ describe('Distribution Module Tests', function () {
       const response = await Querier.cosmos.distribution.v1beta1.Params(
         {}, { pathPrefix: restEndpoint }
       );
-      expect(response.params).to.exist;
-      expect(response.params!.community_tax).to.exist;
+      expect(response.params).to.not.be.undefined;
       expect(parseFloat(response.params!.community_tax)).to.be.gte(0);
     });
 
@@ -325,7 +327,8 @@ describe('Distribution Module Tests', function () {
         );
         expect.fail('Should have failed');
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
 
@@ -343,7 +346,8 @@ describe('Distribution Module Tests', function () {
         );
         expect.fail('Should have failed');
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
   });
@@ -357,7 +361,7 @@ describe('Distribution Module Tests', function () {
         value: {
           delegatorAddress: lifecycleUser.seiAddress,
           validatorAddress: validatorAddress,
-          amount: coin('100000', 'usei'),
+          amount: coin(LIFECYCLE_DELEGATION_AMOUNT, REWARD_DENOM),
         },
       };
       const delegateResult = await lifecycleUser.seiWallet.signingClient.signAndBroadcast(
@@ -372,6 +376,7 @@ describe('Distribution Module Tests', function () {
         validator_address: validatorAddress
       }, { pathPrefix: restEndpoint });
       expect(parseFloat(rewards.rewards[0].amount)).to.be.gt(0);
+      const rewardAmountBeforeWithdraw = parseFloat(rewards.rewards[0].amount);
 
       const preBalance = await lifecycleUser.seiWallet.queryBalance();
 
@@ -390,6 +395,12 @@ describe('Distribution Module Tests', function () {
       const postBalance = await lifecycleUser.seiWallet.queryBalance();
       const balanceDiff = Number(postBalance.amount) - Number(preBalance.amount);
       expect(balanceDiff).to.be.gt(-24000);
+
+      const rewardsAfterWithdraw = await Querier.cosmos.distribution.v1beta1.DelegationRewards({
+        delegator_address: lifecycleUser.seiAddress,
+        validator_address: validatorAddress
+      }, { pathPrefix: restEndpoint });
+      expect(parseFloat(rewardsAfterWithdraw.rewards[0].amount)).to.be.lt(rewardAmountBeforeWithdraw);
     });
   });
 });

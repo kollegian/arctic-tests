@@ -6,6 +6,12 @@ import testConfig from '../../../config/testConfig.json';
 import ExpectStatic = Chai.ExpectStatic;
 
 let expect: ExpectStatic;
+const CLI_FEE = '24200usei';
+const CLI_GAS = '500000';
+const STORE_FEE = '25000000usei';
+const STORE_GAS = '25000000';
+const CONTRACT_LABEL = 'Our Name Service';
+const INVALID_CONTRACT_ADDRESS = 'sei1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0yqtl5';
 
 describe('Wasm Module Tests', function () {
   this.timeout(5 * 60 * 1000);
@@ -30,24 +36,22 @@ describe('Wasm Module Tests', function () {
   describe('seid CLI Tests', function () {
     it('Queries all codes via seid', async () => {
       const result = await execCommandAndReturnJson('seid q wasm list-code');
-      expect(result).to.exist;
       expect(result.code_infos).to.be.an('array');
       expect(result.code_infos.length).to.be.gte(1);
+      expect(result.code_infos.some((info: any) => Number(info.code_id) === codeId)).to.be.true;
     });
 
     it('Queries code info by ID via seid', async () => {
       const result = await execCommandAndReturnJson(`seid q wasm code-info ${codeId}`);
-      expect(result).to.exist;
       expect(result.code_id).to.be.eq(String(codeId));
       expect(result.creator).to.be.eq(user.seiAddress);
     });
 
     it('Queries contract info via seid', async () => {
       const result = await execCommandAndReturnJson(`seid q wasm contract ${contractAddress}`);
-      expect(result).to.exist;
       expect(result.address).to.be.eq(contractAddress);
-      expect(result.contract_info).to.exist;
-      expect(result.contract_info.label).to.be.eq('Our Name Service');
+      expect(result.contract_info).to.not.be.undefined;
+      expect(result.contract_info.label).to.be.eq(CONTRACT_LABEL);
     });
 
     it('Queries contract state via smart query in seid', async () => {
@@ -55,16 +59,14 @@ describe('Wasm Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q wasm contract-state smart ${contractAddress} '${query}'`
       );
-      expect(result).to.exist;
-      expect(result.data).to.exist;
+      expect(result.data).to.not.be.undefined;
       expect(result.data.address).to.be.eq(user.seiAddress);
     });
 
     it('Stores code via seid', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx wasm store ./artifacts/cw_nameservice.wasm --from ${user.seiAddress} --fees 25000000usei --gas 25000000 --broadcast-mode block -y`
+        `seid tx wasm store ./artifacts/cw_nameservice.wasm --from ${user.seiAddress} --fees ${STORE_FEE} --gas ${STORE_GAS} --broadcast-mode block -y`
       );
-      expect(result).to.exist;
       expect(result.code).to.be.eq(0);
     });
 
@@ -75,9 +77,8 @@ describe('Wasm Module Tests', function () {
         transfer_price: { amount: '999', denom: 'usei' },
       });
       const result = await execCommandAndReturnJson(
-        `seid tx wasm instantiate ${cliCodeId} '${initMsg}' --label "CLI Name Service" --admin ${user.seiAddress} --from ${user.seiAddress} --fees 24200usei --gas 500000 --broadcast-mode block -y`
+        `seid tx wasm instantiate ${cliCodeId} '${initMsg}' --label "CLI Name Service" --admin ${user.seiAddress} --from ${user.seiAddress} --fees ${CLI_FEE} --gas ${CLI_GAS} --broadcast-mode block -y`
       );
-      expect(result).to.exist;
       expect(result.code).to.be.eq(0);
     });
   });
@@ -89,15 +90,14 @@ describe('Wasm Module Tests', function () {
         expect(allCode).to.be.an('array');
         expect(allCode).to.have.length.gte(1);
         const uploaded = allCode.find((c: any) => c.id === codeId);
-        expect(uploaded).to.exist;
+        expect(uploaded).to.not.be.undefined;
       });
 
       it('Can query specific code by ID', async () => {
         const specificCode = await user.seiWallet.cosmWasmSigningClient.getCodeDetails(codeId);
-        expect(specificCode).to.exist;
         expect(specificCode.id).to.be.eq(codeId);
         expect(specificCode.creator).to.be.eq(user.seiAddress);
-        expect(specificCode.data).to.exist;
+        expect(specificCode.data).to.not.be.undefined;
       });
 
       it('Can query contracts by code ID', async () => {
@@ -111,11 +111,10 @@ describe('Wasm Module Tests', function () {
     describe('Contract Queries', function () {
       it('Can query contract info by address', async () => {
         const contractInfo = await user.seiWallet.cosmWasmSigningClient.getContract(contractAddress);
-        expect(contractInfo).to.exist;
         expect(contractInfo.address).to.be.eq(contractAddress);
         expect(contractInfo.codeId).to.be.eq(codeId);
         expect(contractInfo.creator).to.be.eq(user.seiAddress);
-        expect(contractInfo.label).to.be.eq('Our Name Service');
+        expect(contractInfo.label).to.be.eq(CONTRACT_LABEL);
       });
 
       it('Can query smart contract state', async () => {
@@ -123,7 +122,6 @@ describe('Wasm Module Tests', function () {
           resolve_record: { name }
         };
         const smartQuery = await user.seiWallet.cosmWasmSigningClient.queryContractSmart(contractAddress, queryDataRaw);
-        expect(smartQuery).to.exist;
         expect(smartQuery.address).to.be.eq(user.seiAddress);
       });
 
@@ -142,7 +140,8 @@ describe('Wasm Module Tests', function () {
           await user.seiWallet.cosmWasmSigningClient.queryContractSmart(contractAddress, queryDataRaw);
           expect.fail('Should have thrown for unknown name');
         } catch (e: any) {
-          expect(e.message).to.exist;
+          expect(e.message).to.be.a('string');
+          expect(e.message.length).to.be.gt(0);
         }
       });
     });
@@ -194,16 +193,16 @@ describe('Wasm Module Tests', function () {
         );
         expect.fail('Should have thrown for invalid code ID');
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
 
     it('Cannot execute on non-existent contract address', async () => {
-      const fakeContract = 'sei1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0yqtl5';
       try {
         await user.seiWallet.cosmWasmSigningClient.execute(
           user.seiAddress,
-          fakeContract,
+          INVALID_CONTRACT_ADDRESS,
           { register: { name: 'test' } },
           user.seiWallet.fee,
           '',
@@ -211,17 +210,18 @@ describe('Wasm Module Tests', function () {
         );
         expect.fail('Should have thrown for non-existent contract');
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
 
     it('Cannot query non-existent contract', async () => {
-      const fakeContract = 'sei1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0yqtl5';
       try {
-        await user.seiWallet.cosmWasmSigningClient.getContract(fakeContract);
+        await user.seiWallet.cosmWasmSigningClient.getContract(INVALID_CONTRACT_ADDRESS);
         expect.fail('Should have thrown for non-existent contract');
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
   });

@@ -1,11 +1,12 @@
 import { expect } from 'chai';
-import { ethers } from 'ethers';
+import { ethers, Contract } from 'ethers';
 import { User } from '../../shared/User';
 import { TxBuilder } from '../../shared';
 import { UserFactory as SeiUserFactory } from '../../../../shared/User';
 import { getNetwork } from '../../config';
 
 import ERC20_ARTIFACT from '../../../../artifacts/contracts/TestERC20.sol/TestERC20.json';
+
 
 const network = getNetwork('local');
 const RPC_URL = network.url;
@@ -36,7 +37,17 @@ describe('eth_estimateGas', function () {
     erc20 = await txBuilder.deployErc20(funder);
     erc20Address = await erc20.getAddress();
 
-    await txBuilder.mintToUsers(ethers.parseEther('1000'));
+    const mintResult = await txBuilder.mintToUsers(ethers.parseEther('1000'));
+    if (mintResult.failCount > 0) {
+      const erc20ForMint = new Contract(erc20Address, ERC20_ARTIFACT.abi, funder.wallet);
+      for (const user of [alice, bob]) {
+        const balance = await erc20.balanceOf(user.address);
+        if (balance === 0n) {
+          const tx = await erc20ForMint.getFunction('mint')(user.address, ethers.parseEther('1000'));
+          await tx.wait();
+        }
+      }
+    }
   });
 
   describe('Simple transfer estimation', function () {
@@ -160,7 +171,7 @@ describe('eth_estimateGas', function () {
       const tx = await connectedErc20.transfer(bob.address, ethers.parseEther('1'), { gasLimit: estimate });
       const receipt = await tx.wait();
 
-      expect(receipt!.gasUsed).to.be.lte(estimate);
+      expect(Number(receipt!.gasUsed)).to.be.lte(Number(estimate));
       console.log(`Estimate: ${estimate}, Actual: ${receipt!.gasUsed}`);
     });
 
@@ -290,17 +301,18 @@ describe('eth_estimateGas', function () {
 
       expect(result).to.match(/^0x[a-fA-F0-9]+$/);
       const estimate = BigInt(result);
-      expect(estimate).to.be.gt(21000n);
+      expect(Number(estimate)).to.be.gt(21000);
       console.log(`Raw RPC estimate: ${estimate}`);
     });
 
     it('uses eth_estimateGas with all parameters', async () => {
+      const feeData = await provider.getFeeData();
       const result = await provider.send('eth_estimateGas', [
         {
           from: alice.address,
           to: bob.address,
           gas: '0x100000',
-          gasPrice: '0x77359400',
+          gasPrice: ethers.toQuantity(feeData.gasPrice!),
           value: '0x' + ethers.parseEther('0.1').toString(16),
           data: '0x',
         },
@@ -328,12 +340,13 @@ describe('eth_estimateGas', function () {
   describe('Different transaction types', function () {
 
     it('estimates gas for legacy transaction (type 0)', async () => {
+      const feeData = await provider.getFeeData();
       const estimate = await provider.estimateGas({
         from: alice.address,
         to: bob.address,
         value: ethers.parseEther('0.01'),
         type: 0,
-        gasPrice: ethers.parseUnits('2', 'gwei'),
+        gasPrice: feeData.gasPrice!,
       });
 
       expect(estimate).to.equal(21000n);
@@ -408,7 +421,7 @@ describe('eth_estimateGas', function () {
         value: ethers.parseEther('0.01'),
       });
 
-      expect(estimate).to.be.gte(21000n);
+      expect(Number(estimate)).to.be.gte(21000);
     });
 
   });

@@ -39,7 +39,6 @@ describe('Ethereum Transaction Types Tests', function () {
         deployer = new TokenDeployer(admin);
         erc20Contract = await deployer.deployErc20();
         rpcClient = new EvmRpcClient(testConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
-        console.log('All started');
         // Fund users with ERC20 token
         await erc20Contract.mint(bob.evmAddress, ethers.parseEther('1000').toString());
         await waitFor(0.5);
@@ -49,7 +48,6 @@ describe('Ethereum Transaction Types Tests', function () {
         const contractFactory = new ethers.ContractFactory(heavyGasAbi.abi, heavyGasAbi.bytecode, admin.evmWallet.wallet);
         const deploymentTx = await contractFactory.deploy();
         gasBurnerContract = await deploymentTx.waitForDeployment() as unknown as RealGasBurner;
-        console.log('Gas burner deployed to ', gasBurnerContract.target);
         await waitFor(0.5);
     });
 
@@ -88,12 +86,10 @@ describe('Ethereum Transaction Types Tests', function () {
                 expect(receipt!.status).to.equal(1);
                 expect(receipt!.type).to.equal(0);
 
-                expect(receipt!.gasUsed).to.be.a('bigint');
-                expect(receipt!.gasUsed).to.be.greaterThan(0n);
-                expect(receipt!.gasUsed).to.be.lessThan(500000n);
+                expect(Number(receipt!.gasUsed)).to.be.greaterThan(0);
+                expect(Number(receipt!.gasUsed)).to.be.lessThan(500000);
 
-                expect(receipt!.gasPrice).to.be.a('bigint');
-                expect(receipt!.gasPrice).to.be.greaterThanOrEqual(currentGasPrice);
+                expect(Number(receipt!.gasPrice)).to.be.greaterThanOrEqual(Number(currentGasPrice));
 
                 const senderAfterBalance = await rpcClient.getBalance(alice.evmAddress);
                 const senderBalanceDiff = senderPreSeiBalance - senderAfterBalance;
@@ -145,7 +141,7 @@ describe('Ethereum Transaction Types Tests', function () {
                 );
                 const nonce = await alice.evmWallet.wallet.getNonce('latest');
                 const feeData = await alice.evmWallet.signingClient.getFeeData();
-                const gasPrice = feeData.gasPrice! * 2n;
+                const gasPrice = feeData.gasPrice!;
                 const overGasLimit = 35000000n;
 
                 const txRequest = {
@@ -166,8 +162,8 @@ describe('Ethereum Transaction Types Tests', function () {
                 const receipt = await alice.evmWallet.signingClient.waitForTransaction(txHash);
                 expect(receipt).to.not.be.null;
                 expect(receipt!.status).to.equal(1);
-                expect(receipt!.gasUsed).to.be.greaterThan(0n);
-                expect(receipt!.gasUsed).to.be.lessThan(overGasLimit);
+                expect(Number(receipt!.gasUsed)).to.be.greaterThan(0);
+                expect(Number(receipt!.gasUsed)).to.be.lessThan(Number(overGasLimit));
             });
 
             it('All users send multiple legacy transactions in parallel and base fee increases', async () => {
@@ -182,21 +178,21 @@ describe('Ethereum Transaction Types Tests', function () {
 
                 for (const user of users) {
                     const feeData = await user.evmWallet.signingClient.getFeeData();
-                    const gasPrice = feeData.gasPrice! * 10n;
+                    const gasPrice = feeData.gasPrice! * 2n;
                     const baseNonce = await user.evmWallet.wallet.getNonce('latest');
                     const signedTxs: string[] = [];
 
                     for (let i = 0; i < numTxs; i++) {
                         const data = gasBurnerContract.interface.encodeFunctionData(
-                            "burnGasOverMaxLimit",
-                            [baseNonce + i]
+                            "burnGasIterations",
+                            [baseNonce + i, 50]
                         )
                         const nonce = baseNonce + i;
                         const txRequest = {
                             to: gasBurnerContract.target,
                             data: data,
                             value: 0n,
-                            gasLimit: 34990000n,
+                            gasLimit: 8000000n,
                             gasPrice: gasPrice,
                             nonce: nonce,
                             chainId: chainId,
@@ -251,18 +247,11 @@ describe('Ethereum Transaction Types Tests', function () {
 
                 const earliestBlock = sortedBlocks[0];
                 const latestBlock = sortedBlocks[sortedBlocks.length - 1];
-                for (let i = earliestBlock; i <= latestBlock + 2; i++) {
-                    const currentBlock = await rpcClient.getBlockByNumber(ethers.toQuantity(i), false);
-                    const currentGasFee = Number(currentBlock.baseFeePerGas);
-                    const expectedGasFee = calcNewBaseFee(Number(currentGasFee), Number(currentBlock.gasUsed));
-                    const nextBlockData = await rpcClient.getBlockByNumber(ethers.toQuantity(i + 1), false);
-                    console.log(`Block ${i}: baseFee=${currentGasFee}, gasUsed=${Number(currentBlock.gasUsed)}, nextBaseFee=${Number(nextBlockData.baseFeePerGas)}, expectedNextBaseFee=${expectedGasFee}`);
-                }
 
                 const postTestBlock = await rpcClient.getBlockByNumber(ethers.toQuantity(latestBlock), false);
                 const postTestBaseFee = BigInt(postTestBlock.baseFeePerGas);
-                expect(postTestBaseFee).to.be.greaterThan(
-                    preTestBaseFee,
+                expect(Number(postTestBaseFee)).to.be.greaterThan(
+                    Number(preTestBaseFee),
                     `Base fee should increase after heavy gas usage: before=${preTestBaseFee}, after=${postTestBaseFee}`
                 );
             });
@@ -299,8 +288,8 @@ describe('Ethereum Transaction Types Tests', function () {
                 expect(receipt).to.not.be.null;
                 expect(receipt!.status).to.equal(1);
                 expect(receipt!.type).to.equal(0);
-                expect(receipt!.gasUsed).to.be.greaterThan(0n);
-                expect(receipt!.gasPrice).to.be.greaterThanOrEqual(feeData.gasPrice!);
+                expect(Number(receipt!.gasUsed)).to.be.greaterThan(0);
+                expect(Number(receipt!.gasPrice)).to.be.greaterThanOrEqual(Number(feeData.gasPrice!));
 
                 const userAfterBalance = await rpcClient.getBalance(alice.evmAddress);
                 const userBalanceDiff = userPreBalance - userAfterBalance;
@@ -346,7 +335,7 @@ describe('Ethereum Transaction Types Tests', function () {
                 expect(receipt.from.toLowerCase()).to.equal(alice.evmAddress.toLowerCase());
                 expect(receipt.to!.toLowerCase()).to.equal((await erc20Contract.getAddress()).toLowerCase());
                 expect(receipt.blockNumber).to.be.greaterThan(0);
-                expect(receipt.gasUsed).to.be.greaterThan(0n);
+                expect(Number(receipt.gasUsed)).to.be.greaterThan(0);
             });
 
             it('should get transaction by hash', async () => {
@@ -401,7 +390,7 @@ describe('Ethereum Transaction Types Tests', function () {
                 expect(block.transactions).to.be.an('array').that.includes(txHash);
                 expect(block.hash).to.equal(receipt.blockHash);
                 expect(BigInt(block.number)).to.equal(BigInt(receipt.blockNumber));
-                expect(BigInt(block.gasUsed)).to.be.greaterThan(0n);
+                expect(Number(BigInt(block.gasUsed))).to.be.greaterThan(0);
                 expect(block.baseFeePerGas).to.not.be.undefined;
             });
 
@@ -459,10 +448,6 @@ describe('Ethereum Transaction Types Tests', function () {
                 ];
                 for (const [prop, a, b] of pairs) {
                     if (a === null && b === null) continue;
-                    if (a === null || b === null) {
-                        console.warn(`Property ${prop} missing in one of the objects: receipt=${a}, blockReceipt=${b}`);
-                        continue;
-                    }
                     expect(a).to.equal(b, `Mismatch in property ${prop}: receipt=${a}, blockReceipt=${b}`);
                 }
                 // logs
@@ -477,7 +462,6 @@ describe('Ethereum Transaction Types Tests', function () {
                     }
                     expect(logA.data).to.equal(logB.data, `Log data mismatch at index ${i}`);
                 }
-                console.log('All properties compared for getTransactionReceipt vs eth_getBlockReceipts');
             });
 
             it('should compare getTransactionReceipt vs getTransactionByHash (all properties)', async () => {
@@ -499,14 +483,9 @@ describe('Ethereum Transaction Types Tests', function () {
                 ];
                 for (const [prop, a, b] of pairs) {
                     if (a === null && b === null) continue;
-                    if (a === null || b === null) {
-                        console.warn(`Property ${prop} missing in one of the objects: receipt=${a}, tx=${b}`);
-                        continue;
-                    }
                     expect(a).to.equal(b, `Mismatch in property ${prop}: receipt=${a}, tx=${b}`);
                 }
                 // Additional tx-only fields (input, nonce, value, chainId, v, r, s) can be logged if needed
-                console.log('All properties compared for getTransactionReceipt vs getTransactionByHash');
             });
 
             it('should compare getTransactionByHash vs getBlockByNumber (all properties)', async () => {
@@ -523,10 +502,6 @@ describe('Ethereum Transaction Types Tests', function () {
                 ];
                 for (const [prop, a, b] of pairs) {
                     if (a === null && b === null) continue;
-                    if (a === null || b === null) {
-                        console.warn(`Property ${prop} missing in one of the objects: tx=${a}, block=${b}`);
-                        continue;
-                    }
                     expect(a).to.equal(b, `Mismatch in property ${prop}: tx=${a}, block=${b}`);
                 }
                 // Check tx hash is in block.transactions
@@ -536,7 +511,6 @@ describe('Ethereum Transaction Types Tests', function () {
                 if (idx !== -1 && tx.transactionIndex !== undefined) {
                     // expect(idx).to.equal(parseInt(tx.transactionIndex, 16), 'transactionIndex mismatch with block.transactions order');
                 }
-                console.log('All properties compared for getTransactionByHash vs getBlockByNumber');
             });
         });
     });
@@ -604,7 +578,7 @@ describe('Ethereum Transaction Types Tests', function () {
             expect(receipt).to.not.be.null;
             expect(receipt!.status).to.equal(1);
             expect(receipt!.type).to.equal(0);
-            expect(receipt!.gasUsed).to.be.greaterThan(21000n, 'Large data payload should consume more gas than a simple transfer');
+            expect(Number(receipt!.gasUsed)).to.be.greaterThan(21000, 'Large data payload should consume more gas than a simple transfer');
 
             const tx = await rpcClient.getTransactionByHash(txHash);
             expect(tx.input).to.equal(largeData);
@@ -642,7 +616,7 @@ describe('Ethereum Transaction Types Tests', function () {
                 );
                 throw new Error('Should have rejected wrong chain ID');
             } catch (error: any) {
-                console.log('Wrong chain ID correctly rejected:', error.message);
+                expect(error).to.be.an('Error');
             }
         });
     });

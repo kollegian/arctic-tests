@@ -8,6 +8,7 @@ let expect: ExpectStatic;
 describe('Mint Module Tests', function () {
   this.timeout(4 * 60 * 1000);
   const restEndpoint = testConfig.restEndpoint;
+  const MINT_DENOM = 'usei';
 
   before('Initializes test dependencies', async () => {
     const chai = await import('chai');
@@ -17,22 +18,21 @@ describe('Mint Module Tests', function () {
   describe('seid CLI Tests', function () {
     it('Queries inflation via seid', async () => {
       const result = await execCommandAndReturnJson('seid q mint inflation');
-      expect(result).to.exist;
       expect(result.inflation).to.be.a('string');
       expect(parseFloat(result.inflation)).to.be.gte(0);
     });
 
     it('Queries annual provisions via seid', async () => {
       const result = await execCommandAndReturnJson('seid q mint annual-provisions');
-      expect(result).to.exist;
       expect(result.annual_provisions).to.be.a('string');
       expect(parseFloat(result.annual_provisions)).to.be.gte(0);
     });
 
     it('Queries mint params via seid', async () => {
       const result = await execCommandAndReturnJson('seid q mint params');
-      expect(result).to.exist;
-      expect(result.params).to.exist;
+      expect(result.params).to.be.an('object');
+      expect(result.params.mint_denom).to.be.eq(MINT_DENOM);
+      expect(result.params.token_release_schedule).to.be.an('array');
     });
   });
 
@@ -41,7 +41,6 @@ describe('Mint Module Tests', function () {
       const response = await Querier.cosmos.mint.v1beta1.AnnualProvisions(
         {}, { pathPrefix: restEndpoint }
       );
-      expect(response).to.exist;
       expect(response.annual_provisions).to.be.a('string');
       expect(parseFloat(response.annual_provisions)).to.be.gte(0);
     });
@@ -50,7 +49,6 @@ describe('Mint Module Tests', function () {
       const response = await Querier.cosmos.mint.v1beta1.Inflation(
         {}, { pathPrefix: restEndpoint }
       );
-      expect(response).to.exist;
       expect(response.inflation).to.be.a('string');
       expect(parseFloat(response.inflation)).to.be.gte(0);
     });
@@ -59,16 +57,17 @@ describe('Mint Module Tests', function () {
       const response = await Querier.mint.v1beta1.Minter(
         {}, { pathPrefix: restEndpoint }
       );
-      expect(response).to.exist;
-      expect(response.minter).to.exist;
+      expect(response.minter).to.not.be.undefined;
+      expect(response.minter!.inflation).to.be.a('string');
+      expect(parseFloat(response.minter!.inflation)).to.be.gte(0);
     });
 
     it('Queries params and returns token release schedule', async () => {
       const response = await Querier.mint.v1beta1.Params(
         {}, { pathPrefix: restEndpoint }
       );
-      expect(response).to.exist;
-      expect(response.params).to.exist;
+      expect(response.params).to.not.be.undefined;
+      expect(response.params!.mint_denom).to.be.eq(MINT_DENOM);
       expect(response.params!.token_release_schedule).to.be.an('array');
       expect(response.params!.token_release_schedule).to.have.length.gte(1);
     });
@@ -83,9 +82,8 @@ describe('Mint Module Tests', function () {
       const inflation = parseFloat(inflationResp.inflation);
       const provisions = parseFloat(provisionsResp.annual_provisions);
 
-      if (inflation > 0) {
-        expect(provisions).to.be.gt(0);
-      }
+      expect(provisions >= 0).to.be.true;
+      expect(inflation === 0 ? provisions === 0 : provisions > 0).to.be.true;
     });
   });
 

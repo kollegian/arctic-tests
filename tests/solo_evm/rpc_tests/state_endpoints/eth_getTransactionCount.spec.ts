@@ -194,7 +194,5 @@ describe('eth_getTransactionCount', function () {
         console.log(`Future block error: ${e.message.slice(0, 80)}`);
       }
     });
-
   });
-
 });

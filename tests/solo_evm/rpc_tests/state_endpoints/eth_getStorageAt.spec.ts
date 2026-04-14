@@ -1,9 +1,12 @@
 import { expect } from 'chai';
-import { ethers } from 'ethers';
+import { ethers, Contract } from 'ethers';
 import { User } from '../../shared/User';
 import { TxBuilder } from '../../shared';
 import { UserFactory as SeiUserFactory } from '../../../../shared/User';
 import { getNetwork } from '../../config';
+
+import ERC20_ARTIFACT from '../../../../artifacts/contracts/TestERC20.sol/TestERC20.json';
+
 
 const network = getNetwork('local');
 const RPC_URL = network.url;
@@ -34,7 +37,17 @@ describe('eth_getStorageAt', function () {
     erc20 = await txBuilder.deployErc20(funder);
     erc20Address = await erc20.getAddress();
 
-    await txBuilder.mintToUsers(ethers.parseEther('1000'));
+    const mintResult = await txBuilder.mintToUsers(ethers.parseEther('1000'));
+    if (mintResult.failCount > 0) {
+      const erc20ForMint = new Contract(erc20Address, ERC20_ARTIFACT.abi, funder.wallet);
+      for (const user of users) {
+        const balance = await erc20.balanceOf(user.address);
+        if (balance === 0n) {
+          const tx = await erc20ForMint.getFunction('mint')(user.address, ethers.parseEther('1000'));
+          await tx.wait();
+        }
+      }
+    }
   });
 
   describe('Basic storage queries', function () {
@@ -104,7 +117,7 @@ describe('eth_getStorageAt', function () {
       
       const balanceBefore = await connectedErc20.balanceOf(alice.address);
       
-      const tx = await connectedErc20.transfer(funder.address, ethers.parseEther('10'), { gasLimit: 100000n });
+      const tx = await connectedErc20.transfer(funder.address, ethers.parseEther('10'));
       const receipt = await tx.wait();
       const txBlock = receipt!.blockNumber;
 

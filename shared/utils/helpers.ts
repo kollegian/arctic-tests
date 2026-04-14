@@ -59,31 +59,84 @@ export function hex2uint8(hex: string) {
     return uint8;
 }
 
+export interface Eip1559Params {
+    blockGasLimit: number;
+    targetGasUsedPerBlock: number;
+    maxUpwardAdjustment: number;
+    maxDownwardAdjustment: number;
+    minFeePerGas: number;
+    maxFeePerGas: number;
+}
+
+const DEFAULT_EIP1559_PARAMS: Eip1559Params = {
+    blockGasLimit: 5000000000,
+    targetGasUsedPerBlock: 250000,
+    maxUpwardAdjustment: 0.0189,
+    maxDownwardAdjustment: 0.0039,
+    minFeePerGas: 1000000000,
+    maxFeePerGas: 1000000000000,
+};
+
 export function calcNewBaseFee(
     prevBaseFee: number,
-    blockGasUsed: number
+    blockGasUsed: number,
+    params: Eip1559Params = DEFAULT_EIP1559_PARAMS
 ): number {
-    const blockGasLimit = 5000000000;
-    const targetGasUsed = 250000;
-    const maxUpwardAdjustment = 0.018900000000000000;
-    const maxDownwardAdjustment = 0.003900000000000000;
-    const minFeePerGas = 1000000000;
+    const { blockGasLimit, targetGasUsedPerBlock, maxUpwardAdjustment, maxDownwardAdjustment, minFeePerGas, maxFeePerGas } = params;
 
-    if (blockGasUsed > targetGasUsed) {
-        // Upward adjustment
-        const numerator = blockGasUsed - targetGasUsed;
-        const denominator = blockGasLimit - targetGasUsed;
+    let newBaseFee: number;
+    if (blockGasUsed > targetGasUsedPerBlock) {
+        const numerator = blockGasUsed - targetGasUsedPerBlock;
+        const denominator = blockGasLimit - targetGasUsedPerBlock;
         const percentageFull = numerator / denominator;
         const adjustmentFactor = maxUpwardAdjustment * percentageFull;
-        const newBaseFee = prevBaseFee * (1 + adjustmentFactor);
-        return Math.floor(newBaseFee);
+        newBaseFee = prevBaseFee * (1 + adjustmentFactor);
     } else {
-        // Downward adjustment
-        const numerator = targetGasUsed - blockGasUsed;
-        const denominator = targetGasUsed;
+        const numerator = targetGasUsedPerBlock - blockGasUsed;
+        const denominator = targetGasUsedPerBlock;
         const percentageEmpty = numerator / denominator;
         const adjustmentFactor = maxDownwardAdjustment * percentageEmpty;
-        const newBaseFee = prevBaseFee * (1 - adjustmentFactor);
-        return Math.floor(newBaseFee) < minFeePerGas ? minFeePerGas : Math.floor(newBaseFee);
+        newBaseFee = prevBaseFee * (1 - adjustmentFactor);
     }
+
+    newBaseFee = Math.floor(newBaseFee);
+    if (newBaseFee < minFeePerGas) return minFeePerGas;
+    if (newBaseFee > maxFeePerGas) return maxFeePerGas;
+    return newBaseFee;
+}
+
+export async function queryEip1559Params(): Promise<Eip1559Params> {
+    const { exec: execCb } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const exec = promisify(execCb);
+
+    async function queryParam(key: string): Promise<string> {
+        const { stdout } = await exec(`seid query params subspace evm ${key} --output json`);
+        const parsed = JSON.parse(stdout);
+        return parsed.value.replace(/"/g, '');
+    }
+
+    async function queryBlockGasLimit(): Promise<number> {
+        const { stdout } = await exec(`seid query params blockparams --output json`);
+        const parsed = JSON.parse(stdout);
+        return Number(parsed.max_gas);
+    }
+
+    const [minFee, maxFee, upward, downward, target, blockGasLimit] = await Promise.all([
+        queryParam('KeyMinFeePerGas'),
+        queryParam('KeyMaximumFeePerGas'),
+        queryParam('KeyMaxDynamicBaseFeeUpwardAdjustment'),
+        queryParam('KeyMaxDynamicBaseFeeDownwardAdjustment'),
+        queryParam('KeyTargetGasUsedPerBlock'),
+        queryBlockGasLimit(),
+    ]);
+
+    return {
+        blockGasLimit,
+        targetGasUsedPerBlock: Number(target),
+        maxUpwardAdjustment: parseFloat(upward),
+        maxDownwardAdjustment: parseFloat(downward),
+        minFeePerGas: parseFloat(minFee),
+        maxFeePerGas: parseFloat(maxFee),
+    };
 }

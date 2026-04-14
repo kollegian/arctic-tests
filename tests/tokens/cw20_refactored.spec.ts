@@ -217,11 +217,13 @@ describe('Cw20 Tests', function () {
     let gasPaid: string;
     let txReceipt: TransactionReceipt;
     let receiptLogs: string;
+    let liveFeeData: ethers.FeeData;
     it('Eth_getTransactionReceipt returns correct information on erc20 transfer from pointer', async () =>{
+        liveFeeData = await users[0].evmWallet.signingClient.getFeeData();
         const preBalanceOnSei = await evmRpcClient.getBalance(users[0].evmAddress);
         const encodedTx = erc20Contract.contract.interface.encodeFunctionData('transfer', [users[1].evmAddress, '100000']);
         const signedTx = await AtomicTxSender
-            .signEvmTransaction(users[0], erc20Contract.getAddress(), encodedTx, "15000000000", "29000000000")
+            .signEvmTransaction(users[0], erc20Contract.getAddress(), encodedTx)
         const hash = await evmRpcClient.sendRawTransaction(signedTx);
         await waitFor(2);
         const txReceipt = await evmRpcClient.getTransactionReceipt(hash);
@@ -283,8 +285,8 @@ describe('Cw20 Tests', function () {
         expect(txHashResponse.transactionIndex).to.equal(ethers.toQuantity(transferReceipt.transactionIndex));
         expect(txHashResponse.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(txHashResponse.to).to.equal(erc20Contract.getAddress().toLowerCase());
-        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(15000000000));
-        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(29000000000));
+        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(liveFeeData.maxPriorityFeePerGas!));
+        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(liveFeeData.maxFeePerGas!));
 
         //validate gas response
         const baseFeeOnBlock = (await evmRpcClient.getBlockByNumber(transferReceipt.blockNumber, false)).baseFeePerGas;

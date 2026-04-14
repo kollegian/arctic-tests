@@ -58,11 +58,16 @@ describe('Nonce Management Tests', function () {
                 ethers.parseEther('1'),
             ]);
             const feeData = await provider.getFeeData();
+            const estimatedGas = await provider.estimateGas({
+                from: alice.evmAddress,
+                to: erc20.getAddress(),
+                data,
+            });
             const txRequest = {
                 to: erc20.getAddress(),
                 data,
                 value: 0n,
-                gasLimit: 200000n,
+                gasLimit: estimatedGas * 2n,
                 maxFeePerGas: feeData.maxFeePerGas! * 2n,
                 maxPriorityFeePerGas: feeData.maxPriorityFeePerGas!,
                 nonce: nonceBefore,
@@ -71,8 +76,9 @@ describe('Nonce Management Tests', function () {
             };
             const signedTx = await alice.evmWallet.wallet.signTransaction(txRequest);
             const txHash = await AtomicTxSender.sendRawTransactionWithProvider(provider, signedTx);
-            await provider.waitForTransaction(txHash);
+            const receipt = await provider.waitForTransaction(txHash);
 
+            expect(receipt!.status).to.equal(1, 'ERC20 transfer should succeed');
             const nonceAfter = await rpcClient.getTransactionCount(alice.evmAddress, 'latest');
             expect(nonceAfter).to.equal(nonceBefore + 1);
         });
@@ -151,8 +157,8 @@ describe('Nonce Management Tests', function () {
             const receipt = await provider.waitForTransaction(txHash);
 
             expect(receipt!.status).to.equal(0, 'Transaction should have reverted');
-            expect(receipt!.gasUsed > 0n).to.equal(true,
-                'OOG should consume gas');
+            expect(receipt!.gasUsed).to.equal(gasLimit,
+                'OOG should consume the entire gas limit');
 
             const balanceAfter = await rpcClient.getBalance(alice.evmAddress);
             const gasCost = receipt!.gasUsed * receipt!.gasPrice;
@@ -223,13 +229,16 @@ describe('Nonce Management Tests', function () {
             const signedTx = await alice.evmWallet.wallet.signTransaction(txRequest);
 
             let rejected = false;
+            let rejectError = '';
             try {
                 await AtomicTxSender.sendRawTransactionWithProvider(provider, signedTx);
             } catch (err: any) {
                 rejected = true;
-                expect(err.message).to.include('fee');
+                rejectError = (err.message || '').toLowerCase();
             }
             expect(rejected).to.be.true;
+            expect(rejectError).to.include('insufficient fee',
+                'Sei rejects low gas price as insufficient fee');
 
             const balanceAfter = await rpcClient.getBalance(alice.evmAddress);
             expect(balanceAfter).to.equal(balanceBefore,
@@ -258,12 +267,16 @@ describe('Nonce Management Tests', function () {
             const signedTx = await alice.evmWallet.wallet.signTransaction(txRequest);
 
             let rejected = false;
+            let rejectError = '';
             try {
                 await AtomicTxSender.sendRawTransactionWithProvider(provider, signedTx);
             } catch (err: any) {
                 rejected = true;
+                rejectError = (err.message || '').toLowerCase();
             }
             expect(rejected).to.be.true;
+            expect(rejectError).to.be.a('string').and.have.length.above(0,
+                'Should receive an error message when gas is too low');
 
             const balanceAfter = await rpcClient.getBalance(alice.evmAddress);
             expect(balanceAfter).to.equal(balanceBefore,
@@ -295,12 +308,16 @@ describe('Nonce Management Tests', function () {
             const signedTx = await poorUser.evmWallet.wallet.signTransaction(txRequest);
 
             let rejected = false;
+            let rejectError = '';
             try {
                 await AtomicTxSender.sendRawTransactionWithProvider(provider, signedTx);
             } catch (err: any) {
                 rejected = true;
+                rejectError = (err.message || '').toLowerCase();
             }
             expect(rejected).to.be.true;
+            expect(rejectError).to.include('insufficient funds',
+                'EVM should reject tx with insufficient funds');
 
             const balanceAfter = await rpcClient.getBalance(poorUser.evmAddress);
             expect(balanceAfter).to.equal(poorBalance,
@@ -371,10 +388,9 @@ describe('Nonce Management Tests', function () {
             try {
                 futureHash = await AtomicTxSender.sendRawTransactionWithProvider(provider, futureSignedTx);
             } catch (err: any) {
-                // Some nodes reject future-nonce txs outright; that's valid behavior
-                console.log('Node rejected future nonce tx:', err.message);
                 const nonceStill = await rpcClient.getTransactionCount(alice.evmAddress, 'latest');
-                expect(nonceStill).to.equal(baseNonce);
+                expect(nonceStill).to.equal(baseNonce,
+                    'Nonce should not change when future-nonce tx is rejected');
                 return;
             }
 
@@ -430,12 +446,16 @@ describe('Nonce Management Tests', function () {
             const signedTx = await alice.evmWallet.wallet.signTransaction(txRequest);
 
             let rejected = false;
+            let rejectError = '';
             try {
                 await AtomicTxSender.sendRawTransactionWithProvider(provider, signedTx);
             } catch (err: any) {
                 rejected = true;
+                rejectError = (err.message || '').toLowerCase();
             }
             expect(rejected).to.be.true;
+            expect(rejectError).to.include('nonce',
+                'Error should mention nonce when using an already-used nonce');
 
             const nonceAfter = await rpcClient.getTransactionCount(alice.evmAddress, 'latest');
             expect(nonceAfter).to.equal(currentNonce,
@@ -475,9 +495,8 @@ describe('Nonce Management Tests', function () {
             let replacementHash: string | undefined;
             try {
                 replacementHash = await AtomicTxSender.sendRawTransactionWithProvider(provider, signed2);
-            } catch (err: any) {
+            } catch {
                 // Replacement may fail if first tx already mined
-                console.log('Replacement failed (first tx may have already been mined):', err.message);
             }
 
             // Wait for whichever tx was included
@@ -515,39 +534,58 @@ describe('Nonce Management Tests', function () {
 
     describe('Cosmos Nonce (Sequence) - Failed Transactions', function () {
 
-        it('Sequence does NOT increment when tx is rejected for insufficient balance', async () => {
+        it('Sequence DOES increment when send amount exceeds balance — ante handler passes (fee is covered)', async () => {
             const poorUser = await UserFactory.createSeiUser(admin, 'cosmosPoor');
-            await waitFor(2);
 
             const accountBefore = await poorUser.seiWallet.signingClient.getAccount(poorUser.seiAddress);
             const sequenceBefore = accountBefore!.sequence;
+            const balanceBefore = await poorUser.seiWallet.queryBalance();
+            const feeAmount = parseInt(poorUser.seiWallet.fee.amount[0].amount);
 
-            let rejected = false;
+            // User has enough to cover the fee (21k usei) but not the send amount.
+            // Ante handler passes → fee deducted, sequence incremented → execution fails.
+            let failed = false;
+            let errorMsg = '';
             try {
-                await poorUser.seiWallet.signingClient.sendTokens(
+                const result = await poorUser.seiWallet.signingClient.sendTokens(
                     poorUser.seiAddress,
                     bob.seiAddress,
                     coins(999999999999999, 'usei'),
                     poorUser.seiWallet.fee,
                 );
+                if (result.code !== 0) {
+                    failed = true;
+                    errorMsg = result.rawLog || '';
+                } else {
+                    expect.fail('Tx should fail for insufficient balance');
+                }
             } catch (err: any) {
-                rejected = true;
+                failed = true;
+                errorMsg = (err.message || '').toLowerCase();
             }
-            expect(rejected).to.be.true;
-            await waitFor(1);
+            expect(failed).to.be.true;
+            expect(errorMsg.toLowerCase()).to.include('insufficient funds',
+                'Error should mention insufficient funds');
 
             const accountAfter = await poorUser.seiWallet.signingClient.getAccount(poorUser.seiAddress);
-            expect(accountAfter!.sequence).to.equal(sequenceBefore,
-                'Sequence should NOT increment when tx is rejected for insufficient balance');
+            expect(accountAfter!.sequence).to.equal(sequenceBefore + 1,
+                'Sequence should increment — tx passed ante handler and was included in block');
+
+            const balanceAfter = await poorUser.seiWallet.queryBalance();
+            const diff = parseInt(balanceBefore.amount) - parseInt(balanceAfter.amount);
+            expect(diff).to.equal(feeAmount,
+                'Fee should be deducted (ante handler passed), send amount should NOT be deducted (execution failed)');
         });
 
         it('Sequence does NOT increment when tx runs out of gas (ante handler rejection)', async () => {
             const accountBefore = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             const sequenceBefore = accountBefore!.sequence;
+            const balanceBefore = await alice.seiWallet.queryBalance();
 
             const tinyGasFee = { amount: coins(1, 'usei'), gas: '1' };
 
             let rejected = false;
+            let errorMsg = '';
             try {
                 await alice.seiWallet.signingClient.sendTokens(
                     alice.seiAddress,
@@ -557,22 +595,31 @@ describe('Nonce Management Tests', function () {
                 );
             } catch (err: any) {
                 rejected = true;
+                errorMsg = (err.message || '').toLowerCase();
             }
             expect(rejected).to.be.true;
+            expect(errorMsg).to.include('out of gas',
+                'Ante handler should reject with out of gas');
             await waitFor(1);
 
             const accountAfter = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             expect(accountAfter!.sequence).to.equal(sequenceBefore,
-                'Sequence should NOT increment when tx is rejected due to insufficient gas');
+                'Sequence should NOT increment when tx is rejected at ante handler');
+
+            const balanceAfter = await alice.seiWallet.queryBalance();
+            expect(parseInt(balanceAfter.amount)).to.equal(parseInt(balanceBefore.amount),
+                'No fee should be deducted when rejected at ante handler');
         });
 
         it('Sequence does NOT increment when fee amount is too low', async () => {
             const accountBefore = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             const sequenceBefore = accountBefore!.sequence;
+            const balanceBefore = await alice.seiWallet.queryBalance();
 
             const lowFee = { amount: coins(1, 'usei'), gas: '200000' };
 
             let rejected = false;
+            let errorMsg = '';
             try {
                 await alice.seiWallet.signingClient.sendTokens(
                     alice.seiAddress,
@@ -582,19 +629,26 @@ describe('Nonce Management Tests', function () {
                 );
             } catch (err: any) {
                 rejected = true;
+                errorMsg = (err.message || '').toLowerCase();
             }
             expect(rejected).to.be.true;
+            expect(errorMsg).to.include('insufficient fee',
+                'Ante handler should reject with insufficient fee');
             await waitFor(1);
 
             const accountAfter = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             expect(accountAfter!.sequence).to.equal(sequenceBefore,
                 'Sequence should NOT increment when fee is too low');
+
+            const balanceAfter = await alice.seiWallet.queryBalance();
+            expect(parseInt(balanceAfter.amount)).to.equal(parseInt(balanceBefore.amount),
+                'No fee should be deducted when rejected for insufficient fee');
         });
     });
 
     describe('Cosmos Nonce (Sequence) - Failed Execution Post Ante Handler', function () {
         let cw20Address: string;
-        const WASM_FILE = 'cw20_base.wasm';
+        const WASM_FILE = 'wasm_store/cw20_base.wasm';
 
         before('Deploy CW20 for post-ante-handler failure tests', async () => {
             const cw20 = await deployer.deployCw20(WASM_FILE, {
@@ -607,7 +661,6 @@ describe('Nonce Management Tests', function () {
                 mint: { minter: admin.seiAddress },
             }, 'NonceTestCw20_' + Date.now());
             cw20Address = cw20.getAddress();
-            console.log('CW20 for nonce tests deployed at:', cw20Address);
             await waitFor(2);
         });
 
@@ -624,21 +677,19 @@ describe('Nonce Management Tests', function () {
         }
 
         it('Cosmos bank send OOG during execution (post ante handler) — sequence DOES increment', async () => {
-            // Probe to find actual gas usage for a bank send
             const probeFee = { amount: coins(100000, 'usei'), gas: '300000' };
             const probeResult = await alice.seiWallet.signingClient.sendTokens(
                 alice.seiAddress, bob.seiAddress, coins(1000, 'usei'), probeFee,
             );
             expect(probeResult.code).to.equal(0);
-            const probeGas = probeResult.gasUsed;
-            console.log(`Probe: bank send used ${probeGas} gas`);
+            const probeGas = Number(probeResult.gasUsed);
             await waitFor(1);
 
             const accountBefore = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             const seqBefore = accountBefore!.sequence;
+            const balanceBefore = await alice.seiWallet.queryBalance();
 
-            // Gas low enough to OOG during execution but high enough to pass ante handler
-            const oogGas = Math.max(Math.floor(Number(probeGas) * 0.5), 50000).toString();
+            const oogGas = Math.floor(probeGas * 0.8).toString();
             const oogFeeAmount = Math.ceil(parseInt(oogGas) * 0.25).toString();
             const oogFee = { amount: coins(oogFeeAmount, 'usei'), gas: oogGas };
 
@@ -650,30 +701,38 @@ describe('Nonce Management Tests', function () {
                 );
             } catch (err: any) {
                 threw = true;
-                console.log('Bank send OOG error:', err.message?.substring(0, 200));
             }
 
             await waitFor(1);
             const accountAfter = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
+            const balanceAfter = await alice.seiWallet.queryBalance();
+            const diff = parseInt(balanceBefore.amount) - parseInt(balanceAfter.amount);
 
-            if (!threw && result && result.code !== 0) {
+            if (!threw && result) {
+                expect(result.code).to.equal(11, 'Tx should fail with OOG (code 11)');
+                expect(Number(result.gasUsed)).to.be.above(0, 'Gas should be consumed');
                 expect(accountAfter!.sequence).to.equal(seqBefore + 1,
-                    'Sequence should increment when tx is included in block but execution fails');
-                console.log(`OOG bank send: code=${result.code}, gasUsed=${result.gasUsed}, seq: ${seqBefore} -> ${accountAfter!.sequence}`);
-            } else if (threw) {
-                // If ante handler rejected it, sequence should NOT change
-                console.log(`Bank send OOG was rejected at ante handler, seq: ${seqBefore} -> ${accountAfter!.sequence}`);
+                    'Sequence should increment — tx was included in block');
+                expect(diff).to.equal(parseInt(oogFeeAmount),
+                    'Fee should be deducted (ante handler passed), send amount NOT deducted (execution failed)');
+            } else {
+                expect(accountAfter!.sequence).to.equal(seqBefore,
+                    'Sequence should NOT increment when rejected at ante handler');
+                expect(diff).to.equal(0,
+                    'No fee deducted when rejected at ante handler');
             }
         });
 
         it('Wasm CW20 contract revert (insufficient tokens) — sequence DOES increment', async () => {
             const accountBefore = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             const seqBefore = accountBefore!.sequence;
+            const balanceBefore = await alice.seiWallet.queryBalance();
+            const feeAmount = 100000;
 
             const msg = buildWasmExecuteMsg(alice.seiAddress, cw20Address, {
                 transfer: { recipient: bob.seiAddress, amount: '999999999999999' },
             });
-            const fee = { amount: coins(100000, 'usei'), gas: '400000' };
+            const fee = { amount: coins(feeAmount, 'usei'), gas: '400000' };
 
             let result: any;
             let threw = false;
@@ -683,34 +742,35 @@ describe('Nonce Management Tests', function () {
                 );
             } catch (err: any) {
                 threw = true;
-                console.log('CW20 revert error:', err.message?.substring(0, 200));
             }
 
             await waitFor(1);
             const accountAfter = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
+            const balanceAfter = await alice.seiWallet.queryBalance();
+            const diff = parseInt(balanceBefore.amount) - parseInt(balanceAfter.amount);
 
             if (!threw && result) {
                 expect(result.code).to.not.equal(0, 'Tx should fail at contract level');
-                expect(accountAfter!.sequence).to.equal(seqBefore + 1,
-                    'Sequence should increment for a contract revert that was included in the block');
-                console.log(`CW20 revert: code=${result.code}, seq: ${seqBefore} -> ${accountAfter!.sequence}`);
-            } else if (threw) {
-                // signAndBroadcast threw — could be CheckTx failure or DeliverTx
-                // For DeliverTx failure, sequence should still increment
-                const diff = accountAfter!.sequence - seqBefore;
-                console.log(`CW20 revert threw, sequence diff: ${diff}`);
-                expect(diff).to.be.gte(0);
+                expect(Number(result.gasUsed)).to.be.above(0, 'Gas should be consumed');
             }
+            // Whether cosmjs threw or returned, the tx passed ante handler:
+            // fee is deducted and sequence is incremented
+            expect(accountAfter!.sequence).to.equal(seqBefore + 1,
+                'Sequence should increment — tx passed ante handler and was included in block');
+            expect(diff).to.equal(feeAmount,
+                'Fee should be deducted exactly (CW20 revert does not refund fee)');
         });
 
         it('Wasm execute with invalid message — sequence DOES increment', async () => {
             const accountBefore = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             const seqBefore = accountBefore!.sequence;
+            const balanceBefore = await alice.seiWallet.queryBalance();
+            const feeAmount = 100000;
 
             const msg = buildWasmExecuteMsg(alice.seiAddress, cw20Address, {
                 totally_invalid_method: { foo: 'bar' },
             });
-            const fee = { amount: coins(100000, 'usei'), gas: '400000' };
+            const fee = { amount: coins(feeAmount, 'usei'), gas: '400000' };
 
             let result: any;
             let threw = false;
@@ -720,26 +780,27 @@ describe('Nonce Management Tests', function () {
                 );
             } catch (err: any) {
                 threw = true;
-                console.log('Invalid wasm msg error:', err.message?.substring(0, 200));
             }
 
             await waitFor(1);
             const accountAfter = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
+            const balanceAfter = await alice.seiWallet.queryBalance();
+            const diff = parseInt(balanceBefore.amount) - parseInt(balanceAfter.amount);
 
             if (!threw && result) {
                 expect(result.code).to.not.equal(0, 'Tx should fail for unknown message');
-                expect(accountAfter!.sequence).to.equal(seqBefore + 1,
-                    'Sequence should increment — invalid contract msg is an execution failure, not ante handler');
-                console.log(`Invalid msg: code=${result.code}, seq: ${seqBefore} -> ${accountAfter!.sequence}`);
-            } else if (threw) {
-                const diff = accountAfter!.sequence - seqBefore;
-                console.log(`Invalid msg threw, sequence diff: ${diff}`);
-                expect(diff).to.be.gte(0);
+                expect(Number(result.gasUsed)).to.be.above(0, 'Gas should be consumed');
             }
+            // Invalid contract message is an execution failure, not ante handler rejection
+            expect(accountAfter!.sequence).to.equal(seqBefore + 1,
+                'Sequence should increment — invalid msg fails during execution, not ante handler');
+            expect(diff).to.equal(feeAmount,
+                'Fee should be deducted exactly (execution failure does not refund fee)');
         });
 
+        // NOTE: CosmWasm gasUsed can significantly exceed gasWanted on OOG due to batch
+        // gas checkpointing in the Wasm VM. The fee is based on gasWanted, not gasUsed.
         it('Wasm OOG during execution (post ante handler) — sequence DOES increment', async () => {
-            // Probe gas usage for a wasm execute
             const probeMsg = buildWasmExecuteMsg(alice.seiAddress, cw20Address, {
                 transfer: { recipient: bob.seiAddress, amount: '100' },
             });
@@ -748,11 +809,11 @@ describe('Nonce Management Tests', function () {
                 alice.seiAddress, [probeMsg], probeFee,
             );
             expect(probeResult.code).to.equal(0);
-            console.log(`Probe: wasm execute used ${probeResult.gasUsed} gas`);
             await waitFor(1);
 
             const accountBefore = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             const seqBefore = accountBefore!.sequence;
+            const balanceBefore = await alice.seiWallet.queryBalance();
 
             const oogGas = Math.max(Math.floor(Number(probeResult.gasUsed) * 0.4), 60000).toString();
             const oogFeeAmount = Math.ceil(parseInt(oogGas) * 0.25).toString();
@@ -770,26 +831,27 @@ describe('Nonce Management Tests', function () {
                 );
             } catch (err: any) {
                 threw = true;
-                console.log('Wasm OOG error:', err.message?.substring(0, 200));
             }
 
             await waitFor(1);
             const accountAfter = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
+            const balanceAfter = await alice.seiWallet.queryBalance();
+            const diff = parseInt(balanceBefore.amount) - parseInt(balanceAfter.amount);
 
             if (!threw && result) {
-                expect(result.code).to.not.equal(0, 'Tx should fail with OOG');
-                expect(accountAfter!.sequence).to.equal(seqBefore + 1,
-                    'Sequence should increment — OOG during execution means tx was included in block');
-                console.log(`Wasm OOG: code=${result.code}, gasUsed=${result.gasUsed}, seq: ${seqBefore} -> ${accountAfter!.sequence}`);
-            } else if (threw) {
-                const diff = accountAfter!.sequence - seqBefore;
-                console.log(`Wasm OOG threw, sequence diff: ${diff}`);
+                expect(result.code).to.equal(11, 'Tx should fail with OOG (code 11)');
+                expect(Number(result.gasUsed)).to.be.above(0, 'Gas should be consumed');
             }
+            expect(accountAfter!.sequence).to.equal(seqBefore + 1,
+                'Sequence should increment — OOG during execution means tx was included in block');
+            expect(diff).to.equal(parseInt(oogFeeAmount),
+                'Fee should be deducted exactly (OOG during execution does not refund fee)');
         });
 
         it('Contrast: wasm tx rejected at ante handler — sequence does NOT increment', async () => {
             const accountBefore = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             const seqBefore = accountBefore!.sequence;
+            const balanceBefore = await alice.seiWallet.queryBalance();
 
             const msg = buildWasmExecuteMsg(alice.seiAddress, cw20Address, {
                 transfer: { recipient: bob.seiAddress, amount: '100' },
@@ -797,24 +859,39 @@ describe('Nonce Management Tests', function () {
             const tinyFee = { amount: coins(1, 'usei'), gas: '1' };
 
             let threw = false;
+            let errorMsg = '';
             try {
                 await alice.seiWallet.cosmWasmSigningClient.signAndBroadcast(
                     alice.seiAddress, [msg], tinyFee,
                 );
             } catch (err: any) {
                 threw = true;
+                errorMsg = (err.message || '').toLowerCase();
             }
 
             expect(threw).to.be.true;
+            expect(errorMsg).to.include('out of gas',
+                'Ante handler should reject with out of gas');
             await waitFor(1);
 
             const accountAfter = await alice.seiWallet.signingClient.getAccount(alice.seiAddress);
             expect(accountAfter!.sequence).to.equal(seqBefore,
                 'Sequence should NOT increment when wasm tx is rejected at ante handler');
+
+            const balanceAfter = await alice.seiWallet.queryBalance();
+            expect(parseInt(balanceAfter.amount)).to.equal(parseInt(balanceBefore.amount),
+                'No fee should be deducted when rejected at ante handler');
         });
     });
 
-    describe('Cross-Layer Nonce Consistency', function () {
+    // NOTE: Sei stores EVM nonce and Cosmos sequence in INDEPENDENT stores.
+    // EVM nonce lives in the EVM keeper's NonceKeyPrefix KV store.
+    // Cosmos sequence lives in the x/auth account keeper.
+    // EVM txs go through EvmDeliverTxAnte (no UpdateSigners, no auth sequence change).
+    // Cosmos txs go through CosmosDeliverTxAnte → UpdateSigners (no evmKeeper.SetNonce).
+    // eth_getTransactionCount → CalculateNextNonce → evmKeeper.GetNonce (EVM store only).
+    // getAccount().sequence reads from x/auth (Cosmos store only).
+    describe('Cross-Layer Nonce Independence', function () {
 
         let freshUser: SeiUser;
 
@@ -823,16 +900,16 @@ describe('Nonce Management Tests', function () {
             await waitFor(2);
         });
 
-        it('EVM nonce and Cosmos sequence are consistent for a fresh account', async () => {
+        it('Fresh account starts with EVM nonce = 0 and Cosmos sequence = 0', async () => {
             const evmNonce = await rpcClient.getTransactionCount(freshUser.evmAddress, 'latest');
             const cosmosAccount = await freshUser.seiWallet.signingClient.getAccount(freshUser.seiAddress);
             const cosmosSequence = cosmosAccount!.sequence;
 
-            expect(evmNonce).to.equal(cosmosSequence,
-                `EVM nonce (${evmNonce}) and Cosmos sequence (${cosmosSequence}) should match for a fresh account`);
+            expect(evmNonce).to.equal(0, 'Fresh EVM nonce should be 0');
+            expect(cosmosSequence).to.equal(0, 'Fresh Cosmos sequence should be 0');
         });
 
-        it('EVM tx increments both EVM nonce and Cosmos sequence', async () => {
+        it('EVM tx increments EVM nonce but NOT Cosmos sequence', async () => {
             const evmNonceBefore = await rpcClient.getTransactionCount(freshUser.evmAddress, 'latest');
             const cosmosBefore = await freshUser.seiWallet.signingClient.getAccount(freshUser.seiAddress);
             const seqBefore = cosmosBefore!.sequence;
@@ -848,12 +925,13 @@ describe('Nonce Management Tests', function () {
             const cosmosAfter = await freshUser.seiWallet.signingClient.getAccount(freshUser.seiAddress);
             const seqAfter = cosmosAfter!.sequence;
 
-            expect(evmNonceAfter).to.equal(evmNonceBefore + 1);
-            expect(seqAfter).to.equal(seqBefore + 1,
-                `Cosmos sequence should increment after EVM tx: before=${seqBefore}, after=${seqAfter}`);
+            expect(evmNonceAfter).to.equal(evmNonceBefore + 1,
+                'EVM nonce should increment after EVM tx');
+            expect(seqAfter).to.equal(seqBefore,
+                'Cosmos sequence should NOT change — EVM path does not call UpdateSigners');
         });
 
-        it('Cosmos tx increments both Cosmos sequence and EVM nonce', async () => {
+        it('Cosmos tx increments Cosmos sequence but NOT EVM nonce', async () => {
             const evmNonceBefore = await rpcClient.getTransactionCount(freshUser.evmAddress, 'latest');
             const cosmosBefore = await freshUser.seiWallet.signingClient.getAccount(freshUser.seiAddress);
             const seqBefore = cosmosBefore!.sequence;
@@ -871,9 +949,46 @@ describe('Nonce Management Tests', function () {
             const cosmosAfter = await freshUser.seiWallet.signingClient.getAccount(freshUser.seiAddress);
             const seqAfter = cosmosAfter!.sequence;
 
-            expect(seqAfter).to.equal(seqBefore + 1);
-            expect(evmNonceAfter).to.equal(evmNonceBefore + 1,
-                `EVM nonce should increment after Cosmos tx: before=${evmNonceBefore}, after=${evmNonceAfter}`);
+            expect(seqAfter).to.equal(seqBefore + 1,
+                'Cosmos sequence should increment after Cosmos tx');
+            expect(evmNonceAfter).to.equal(evmNonceBefore,
+                'EVM nonce should NOT change — UpdateSigners does not call evmKeeper.SetNonce');
+        });
+
+        it('Mixed EVM + Cosmos txs: each counter increments independently', async () => {
+            const evmNonceBefore = await rpcClient.getTransactionCount(freshUser.evmAddress, 'latest');
+            const cosmosBefore = await freshUser.seiWallet.signingClient.getAccount(freshUser.seiAddress);
+            const seqBefore = cosmosBefore!.sequence;
+
+            // 2 EVM txs
+            for (let i = 0; i < 2; i++) {
+                const tx = await freshUser.evmWallet.wallet.sendTransaction({
+                    to: bob.evmAddress,
+                    value: ethers.parseEther('0.001'),
+                });
+                await tx.wait();
+            }
+
+            // 3 Cosmos txs
+            for (let i = 0; i < 3; i++) {
+                const result = await freshUser.seiWallet.signingClient.sendTokens(
+                    freshUser.seiAddress,
+                    bob.seiAddress,
+                    coins(100, 'usei'),
+                    freshUser.seiWallet.fee,
+                );
+                expect(result.code).to.equal(0);
+            }
+            await waitFor(2);
+
+            const evmNonceAfter = await rpcClient.getTransactionCount(freshUser.evmAddress, 'latest');
+            const cosmosAfter = await freshUser.seiWallet.signingClient.getAccount(freshUser.seiAddress);
+            const seqAfter = cosmosAfter!.sequence;
+
+            expect(evmNonceAfter).to.equal(evmNonceBefore + 2,
+                'EVM nonce should only reflect the 2 EVM txs');
+            expect(seqAfter).to.equal(seqBefore + 3,
+                'Cosmos sequence should only reflect the 3 Cosmos txs');
         });
     });
 });

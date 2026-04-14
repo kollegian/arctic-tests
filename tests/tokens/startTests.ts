@@ -15,7 +15,7 @@ describe('Deploy contracts and fund users here', function(){
     it('Deploy contracts and fund users', async () => {
         admin = await UserFactory.createAdminUser();
         // await UserFactory.fundAdminOnSei();
-        users = await UserFactory.createSeiUsers(admin, 2, true);
+        users = await UserFactory.createSeiUsers(admin, 10, true);
 
         const deployer = new TokenDeployer(admin);
         const initialBalances = users.map(user => ({address: user.seiAddress, amount: '100000000'}));

@@ -32,6 +32,9 @@ describe('Token factory extension tests', function () {
   this.timeout(5 * 60 * 1000);
   let expect: Chai.ExpectStatic;
   let admin: SeiUser;
+  const CLI_FEE = '24200usei';
+  const CLI_MINT_AMOUNT = 1000000;
+  const CLI_BURN_AMOUNT = 100;
 
   before(async () => {
     const chai = await import('chai');
@@ -53,21 +56,21 @@ describe('Token factory extension tests', function () {
 
     it('Create denom via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx tokenfactory create-denom ${cliSubdenom} --from tfCliCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory create-denom ${cliSubdenom} --from tfCliCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.equal(0);
     });
 
     it('Mint tokens via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx tokenfactory mint 1000000${cliFullDenom} --from tfCliCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory mint ${CLI_MINT_AMOUNT}${cliFullDenom} --from tfCliCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.equal(0);
     });
 
     it('Burn tokens via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx tokenfactory burn 100${cliFullDenom} --from tfCliCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory burn ${CLI_BURN_AMOUNT}${cliFullDenom} --from tfCliCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.equal(0);
     });
@@ -89,14 +92,14 @@ describe('Token factory extension tests', function () {
     it('Set metadata via seid CLI', async () => {
       const metadataFile = generateTokenMetadata(cliFullDenom);
       const result = await execCommandAndReturnJson(
-        `seid tx tokenfactory set-denom-metadata ${metadataFile} --from tfCliCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory set-denom-metadata ${metadataFile} --from tfCliCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.equal(0);
     });
 
     it('Change admin via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx tokenfactory change-admin ${cliFullDenom} ${cliNewAdmin.seiAddress} --from tfCliCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory change-admin ${cliFullDenom} ${cliNewAdmin.seiAddress} --from tfCliCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.equal(0);
 
@@ -679,11 +682,12 @@ describe('Token factory extension tests', function () {
     it('Cannot create denom with empty subdenom', async () => {
       try {
         const result = await execCommandAndReturnJson(
-          `seid tx tokenfactory create-denom "" --from tfErrCreator --fees 24200usei -y --broadcast-mode block`
+          `seid tx tokenfactory create-denom "" --from tfErrCreator --fees ${CLI_FEE} -y --broadcast-mode block`
         );
         expect(result.code).to.not.be.eq(0);
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
 
@@ -691,7 +695,7 @@ describe('Token factory extension tests', function () {
       const otherCreator = await UserFactory.createSeiUser(admin, 'tfOtherCreator');
       const subdenom = 'otherDenom';
       await execCommandAndReturnJson(
-        `seid tx tokenfactory create-denom ${subdenom} --from tfOtherCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory create-denom ${subdenom} --from tfOtherCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       const fullDenom = `factory/${otherCreator.seiAddress}/${subdenom}`;
 
@@ -715,7 +719,7 @@ describe('Token factory extension tests', function () {
       const fullDenom = `factory/${errorCreatorAddress}/${subdenom}`;
 
       const result = await execCommandAndReturnJson(
-        `seid tx tokenfactory change-admin ${fullDenom} invalidaddress --from tfErrCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory change-admin ${fullDenom} invalidaddress --from tfErrCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.not.be.eq(0);
     });
@@ -735,12 +739,12 @@ describe('Token factory extension tests', function () {
     it('Cannot create duplicate subdenom from same creator', async () => {
       const subdenom = 'dupeDenom';
       const result1 = await execCommandAndReturnJson(
-        `seid tx tokenfactory create-denom ${subdenom} --from tfErrCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory create-denom ${subdenom} --from tfErrCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result1.code).to.be.eq(0);
 
       const result2 = await execCommandAndReturnJson(
-        `seid tx tokenfactory create-denom ${subdenom} --from tfErrCreator --fees 24200usei -y --broadcast-mode block`
+        `seid tx tokenfactory create-denom ${subdenom} --from tfErrCreator --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result2.code).to.not.be.eq(0);
     });

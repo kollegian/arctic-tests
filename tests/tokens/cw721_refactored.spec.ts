@@ -22,7 +22,7 @@ describe('Cw721 Tests', function () {
         admin = await UserFactory.createAdminUser();
         const cw721Address = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8')).cw721Address;
         cw721Contract = new Cw721Token(admin, cw721Address);
-        users = await UserFactory.createSeiUsers(admin, 2, true);
+        users = await UserFactory.createSeiUsers(admin, 10, true);
         evmRpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
     });
 
@@ -193,6 +193,7 @@ describe('Cw721 Tests', function () {
     let gasPaid: string;
     let txReceipt: TransactionReceipt;
     let receiptLogs: string;
+    let liveFeeData: ethers.FeeData;
 
     let multipleTxBlock: number;
     it('In a block with multiple transactions from cosmos and evm runtime', async () =>{
@@ -205,9 +206,10 @@ describe('Cw721 Tests', function () {
     it('Eth_getTransactionReceipt returns correct information on erc721 transfer from pointer', async () => {
         cw721Contract.setSigner(admin);
         await cw721Contract.mint('5555', users[0].seiAddress);
+        liveFeeData = await users[0].evmWallet.signingClient.getFeeData();
         const encodedTx = erc721Contract.contract.interface.encodeFunctionData('transferFrom', [users[0].evmAddress, users[1].evmAddress, '5555']);
         const signedTx = await AtomicTxSender
-            .signEvmTransaction(users[0], erc721Contract.getAddress(), encodedTx, "15000000000", "29000000000")
+            .signEvmTransaction(users[0], erc721Contract.getAddress(), encodedTx)
         const hash = await evmRpcClient.sendRawTransaction(signedTx);
         await waitFor(1);
         const txReceipt = await evmRpcClient.getTransactionReceipt(hash);
@@ -250,8 +252,8 @@ describe('Cw721 Tests', function () {
         expect(txHashResponse.hash).to.equal(transferReceipt.hash);
         expect(txHashResponse.from.toLowerCase()).to.equal(users[0].evmAddress.toLowerCase());
         expect(txHashResponse.to).to.equal((erc721Contract.getAddress() as string).toLowerCase());
-        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(15000000000));
-        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(29000000000));
+        expect(txHashResponse.maxPriorityFeePerGas).to.equal(ethers.toQuantity(liveFeeData.maxPriorityFeePerGas!));
+        expect(txHashResponse.maxFeePerGas).to.equal(ethers.toQuantity(liveFeeData.maxFeePerGas!));
 
         const baseFeeOnBlock = (await evmRpcClient.getBlockByNumber(transferReceipt.blockNumber, false)).baseFeePerGas;
         expect(Number(txHashResponse.gasPrice)).to.equal(Number(baseFeeOnBlock) + Number(txHashResponse.maxPriorityFeePerGas));

@@ -130,14 +130,13 @@ export class TxBuilder {
   async mintToUsers(amount = ethers.parseEther('1000')): Promise<BatchTxResult> {
     const contract = this.getErc20();
     
-    // On Sei, unassociated users fail gas estimation
-    // Use explicit gas limit to bypass estimation
+    
     return this.sendParallelTxs(
       this.users,
       (user) => (contract.connect(user.wallet) as unknown as ERC20Contract).mint(
         user.address, 
         amount, 
-        { gasLimit: 200000n }
+        { gasLimit: 2000000n }
       )
     );
   }

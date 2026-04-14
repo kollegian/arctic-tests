@@ -249,7 +249,7 @@ export class UserFactory {
         await this.funder.fundAdminOnSei(tokenName);
     }
 
-    static async fundAddressOnSei(address: string, tokenName = 'usei', amount = '5000000') {
+    static async fundAddressOnSei(address: string, tokenName = 'usei', amount = '7000000') {
         return await this.funder.fundAddressOnSei(address, tokenName, amount);
     }
 

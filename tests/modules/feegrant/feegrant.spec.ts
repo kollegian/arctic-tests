@@ -11,6 +11,15 @@ import ExpectStatic = Chai.ExpectStatic;
 let expect: ExpectStatic;
 const restEndpoint = testConfig.restEndpoint;
 const fee = { amount: coins(24000, 'usei'), gas: '500000' };
+const CLI_FEE = '24200usei';
+const FEE_GRANT_GAS = '500000';
+const FEE_GRANT_FEE_AMOUNT = 24000;
+const BASIC_SPEND_LIMIT = '300000';
+const CROSS_RUNTIME_SPEND_LIMIT = '500000';
+const SMALL_SPEND_LIMIT = '1000';
+const SEND_AMOUNT = '1000';
+const MICRO_SEND_AMOUNT = '100';
+const USEI_DENOM = 'usei';
 
 describe('Feegrant Module Tests', function () {
   this.timeout(4 * 60 * 1000);
@@ -29,7 +38,7 @@ describe('Feegrant Module Tests', function () {
   describe('seid CLI Tests', function () {
     it('Grant basic allowance via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx feegrant grant fgPayer ${payee.seiAddress} --spend-limit 300000usei --from fgPayer --fees 24200usei -y --broadcast-mode block`
+        `seid tx feegrant grant fgPayer ${payee.seiAddress} --spend-limit ${BASIC_SPEND_LIMIT}${USEI_DENOM} --from fgPayer --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.be.eq(0);
     });
@@ -38,7 +47,10 @@ describe('Feegrant Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q feegrant grant ${payer.seiAddress} ${payee.seiAddress}`
       );
-      expect(result.allowance).to.exist;
+      expect(result.allowance.granter).to.be.eq(payer.seiAddress);
+      expect(result.allowance.grantee).to.be.eq(payee.seiAddress);
+      expect(result.allowance.allowance.spend_limit[0].denom).to.be.eq(USEI_DENOM);
+      expect(result.allowance.allowance.spend_limit[0].amount).to.be.eq(BASIC_SPEND_LIMIT);
     });
 
     it('Query grants-by-grantee via seid CLI', async () => {
@@ -59,7 +71,7 @@ describe('Feegrant Module Tests', function () {
 
     it('Revoke allowance via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx feegrant revoke fgPayer ${payee.seiAddress} --from fgPayer --fees 24200usei -y --broadcast-mode block`
+        `seid tx feegrant revoke fgPayer ${payee.seiAddress} --from fgPayer --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.be.eq(0);
     });
@@ -78,7 +90,7 @@ describe('Feegrant Module Tests', function () {
       value: Uint8Array.from(
         BasicAllowance.encode(
           BasicAllowance.fromPartial({
-            spendLimit: [{ denom: "usei", amount: "300000" }],
+            spendLimit: [{ denom: USEI_DENOM, amount: BASIC_SPEND_LIMIT }],
           }),
         ).finish(),
       ),
@@ -114,12 +126,12 @@ describe('Feegrant Module Tests', function () {
         value: {
           fromAddress: payee.seiAddress,
           toAddress: admin.seiAddress,
-          amount: [{ denom: "usei", amount: "1000" }]
+          amount: [{ denom: USEI_DENOM, amount: SEND_AMOUNT }]
         }
       };
       const grantedFee = {
-        amount: coins(24000, 'usei'),
-        gas: "500000",
+        amount: coins(FEE_GRANT_FEE_AMOUNT, USEI_DENOM),
+        gas: FEE_GRANT_GAS,
         granter: payer.seiAddress,
       };
       const result = await payee.seiWallet.signingClient.signAndBroadcast(
@@ -136,8 +148,8 @@ describe('Feegrant Module Tests', function () {
         denom: 'usei'
       }, { pathPrefix: restEndpoint });
 
-      expect(Number(payeePreBalance.balance!.amount) - Number(payeeAfterBalance.balance!.amount)).to.be.eq(1000);
-      expect(Number(payerPreBalance.balance!.amount) - Number(payerAfterBalance.balance!.amount)).to.be.eq(24000);
+      expect(Number(payeePreBalance.balance!.amount) - Number(payeeAfterBalance.balance!.amount)).to.be.eq(Number(SEND_AMOUNT));
+      expect(Number(payerPreBalance.balance!.amount) - Number(payerAfterBalance.balance!.amount)).to.be.eq(FEE_GRANT_FEE_AMOUNT);
     });
 
     it('Query allowance via Querier', async () => {
@@ -148,9 +160,9 @@ describe('Feegrant Module Tests', function () {
       expect(response.allowance!.granter).to.be.eq(payer.seiAddress);
       expect(response.allowance!.grantee).to.be.eq(payee.seiAddress);
       expect(response.allowance!.allowance!.spend_limit).to.have.length(1);
-      expect(response.allowance!.allowance!.spend_limit[0].denom).to.be.eq('usei');
+      expect(response.allowance!.allowance!.spend_limit[0].denom).to.be.eq(USEI_DENOM);
       expect(Number(response.allowance!.allowance!.spend_limit[0].amount)).to.be.gt(0);
-      expect(Number(response.allowance!.allowance!.spend_limit[0].amount)).to.be.lt(300000);
+      expect(Number(response.allowance!.allowance!.spend_limit[0].amount)).to.be.lt(Number(BASIC_SPEND_LIMIT));
     });
 
     it('Query allowances via Querier', async () => {
@@ -160,7 +172,7 @@ describe('Feegrant Module Tests', function () {
       expect(response.allowances[0].granter).to.be.eq(payer.seiAddress);
       expect(response.allowances[0].grantee).to.be.eq(payee.seiAddress);
       expect(response.allowances[0].allowance!.spend_limit).to.have.length(1);
-      expect(response.allowances[0].allowance!.spend_limit[0].denom).to.be.eq('usei');
+      expect(response.allowances[0].allowance!.spend_limit[0].denom).to.be.eq(USEI_DENOM);
       expect(Number(response.allowances[0].allowance!.spend_limit[0].amount)).to.be.gt(0);
     });
 
@@ -171,7 +183,7 @@ describe('Feegrant Module Tests', function () {
       expect(response.allowances[0].granter).to.be.eq(payer.seiAddress);
       expect(response.allowances[0].grantee).to.be.eq(payee.seiAddress);
       expect(response.allowances[0].allowance!.spend_limit).to.have.length(1);
-      expect(response.allowances[0].allowance!.spend_limit[0].denom).to.be.eq('usei');
+      expect(response.allowances[0].allowance!.spend_limit[0].denom).to.be.eq(USEI_DENOM);
     });
 
     it('Revoke allowance', async () => {
@@ -208,12 +220,12 @@ describe('Feegrant Module Tests', function () {
         value: {
           fromAddress: payee.seiAddress,
           toAddress: admin.seiAddress,
-          amount: [{ denom: "usei", amount: "100" }]
+          amount: [{ denom: USEI_DENOM, amount: MICRO_SEND_AMOUNT }]
         }
       };
       const grantedFee = {
-        amount: coins(24000, 'usei'),
-        gas: "500000",
+        amount: coins(FEE_GRANT_FEE_AMOUNT, USEI_DENOM),
+        gas: FEE_GRANT_GAS,
         granter: payer.seiAddress,
       };
       try {
@@ -248,7 +260,7 @@ describe('Feegrant Module Tests', function () {
         value: Uint8Array.from(
           BasicAllowance.encode(
             BasicAllowance.fromPartial({
-              spendLimit: [{ denom: "usei", amount: "300000" }],
+              spendLimit: [{ denom: USEI_DENOM, amount: BASIC_SPEND_LIMIT }],
             }),
           ).finish(),
         ),
@@ -273,7 +285,7 @@ describe('Feegrant Module Tests', function () {
         value: Uint8Array.from(
           BasicAllowance.encode(
             BasicAllowance.fromPartial({
-              spendLimit: [{ denom: "usei", amount: "0" }],
+              spendLimit: [{ denom: USEI_DENOM, amount: "0" }],
             }),
           ).finish(),
         ),
@@ -292,7 +304,8 @@ describe('Feegrant Module Tests', function () {
         );
         expect(result.code).to.not.be.eq(0);
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
     });
 
@@ -302,7 +315,7 @@ describe('Feegrant Module Tests', function () {
         value: Uint8Array.from(
           BasicAllowance.encode(
             BasicAllowance.fromPartial({
-              spendLimit: [{ denom: "usei", amount: "1000" }],
+              spendLimit: [{ denom: USEI_DENOM, amount: SMALL_SPEND_LIMIT }],
             }),
           ).finish(),
         ),
@@ -325,12 +338,12 @@ describe('Feegrant Module Tests', function () {
         value: {
           fromAddress: payee.seiAddress,
           toAddress: admin.seiAddress,
-          amount: [{ denom: "usei", amount: "100" }]
+          amount: [{ denom: USEI_DENOM, amount: MICRO_SEND_AMOUNT }]
         }
       };
       const grantedFee = {
-        amount: coins(24000, 'usei'),
-        gas: "500000",
+        amount: coins(FEE_GRANT_FEE_AMOUNT, USEI_DENOM),
+        gas: FEE_GRANT_GAS,
         granter: payer.seiAddress,
       };
       try {
@@ -339,7 +352,8 @@ describe('Feegrant Module Tests', function () {
         );
         expect.fail('Should have failed exceeding spend limit');
       } catch (e: any) {
-        expect(e.message).to.exist;
+        expect(e.message).to.be.a('string');
+        expect(e.message.length).to.be.gt(0);
       }
 
       const revokeMsg = {
@@ -362,12 +376,12 @@ describe('Feegrant Module Tests', function () {
         value: {
           fromAddress: payee.seiAddress,
           toAddress: admin.seiAddress,
-          amount: [{ denom: "usei", amount: "100" }]
+          amount: [{ denom: USEI_DENOM, amount: MICRO_SEND_AMOUNT }]
         }
       };
       const grantedFee = {
-        amount: coins(24000, 'usei'),
-        gas: "500000",
+        amount: coins(FEE_GRANT_FEE_AMOUNT, USEI_DENOM),
+        gas: FEE_GRANT_GAS,
         granter: unrelatedUser.seiAddress,
       };
       try {
@@ -396,7 +410,7 @@ describe('Feegrant Module Tests', function () {
         value: Uint8Array.from(
           BasicAllowance.encode(
             BasicAllowance.fromPartial({
-              spendLimit: [{ denom: "usei", amount: "300000" }],
+              spendLimit: [{ denom: USEI_DENOM, amount: BASIC_SPEND_LIMIT }],
             }),
           ).finish(),
         ),
@@ -419,12 +433,12 @@ describe('Feegrant Module Tests', function () {
         value: {
           fromAddress: bvPayee.seiAddress,
           toAddress: admin.seiAddress,
-          amount: [{ denom: "usei", amount: "100" }]
+          amount: [{ denom: USEI_DENOM, amount: MICRO_SEND_AMOUNT }]
         }
       };
       const grantedFee = {
-        amount: coins(24000, 'usei'),
-        gas: "500000",
+        amount: coins(FEE_GRANT_FEE_AMOUNT, USEI_DENOM),
+        gas: FEE_GRANT_GAS,
         granter: bvPayer.seiAddress,
       };
       const sendResult = await bvPayee.seiWallet.signingClient.signAndBroadcast(
@@ -437,7 +451,7 @@ describe('Feegrant Module Tests', function () {
         grantee: bvPayee.seiAddress
       }, { pathPrefix: restEndpoint });
       const remaining = Number(response.allowance!.allowance!.spend_limit[0].amount);
-      expect(remaining).to.be.eq(276000);
+      expect(remaining).to.be.eq(Number(BASIC_SPEND_LIMIT) - FEE_GRANT_FEE_AMOUNT);
     });
 
     it('Multiple fee uses deplete allowance', async () => {
@@ -452,12 +466,12 @@ describe('Feegrant Module Tests', function () {
         value: {
           fromAddress: bvPayee.seiAddress,
           toAddress: admin.seiAddress,
-          amount: [{ denom: "usei", amount: "100" }]
+          amount: [{ denom: USEI_DENOM, amount: MICRO_SEND_AMOUNT }]
         }
       };
       const grantedFee = {
-        amount: coins(24000, 'usei'),
-        gas: "500000",
+        amount: coins(FEE_GRANT_FEE_AMOUNT, USEI_DENOM),
+        gas: FEE_GRANT_GAS,
         granter: bvPayer.seiAddress,
       };
 
@@ -471,7 +485,7 @@ describe('Feegrant Module Tests', function () {
         grantee: bvPayee.seiAddress
       }, { pathPrefix: restEndpoint });
       const remainingAfterFirst = Number(response2.allowance!.allowance!.spend_limit[0].amount);
-      expect(remainingAfterFirst).to.be.eq(remainingBefore - 24000);
+      expect(remainingAfterFirst).to.be.eq(remainingBefore - FEE_GRANT_FEE_AMOUNT);
 
       const result2 = await bvPayee.seiWallet.signingClient.signAndBroadcast(
         bvPayee.seiAddress, [msgSend], grantedFee, 'deplete 2'
@@ -483,7 +497,7 @@ describe('Feegrant Module Tests', function () {
         grantee: bvPayee.seiAddress
       }, { pathPrefix: restEndpoint });
       const remainingAfterSecond = Number(response3.allowance!.allowance!.spend_limit[0].amount);
-      expect(remainingAfterSecond).to.be.eq(remainingAfterFirst - 24000);
+      expect(remainingAfterSecond).to.be.eq(remainingAfterFirst - FEE_GRANT_FEE_AMOUNT);
     });
   });
 
@@ -495,7 +509,7 @@ describe('Feegrant Module Tests', function () {
       xrPayer = await UserFactory.createSeiUser(admin, 'fgXrPayer');
       xrPayee = await UserFactory.createSeiUser(admin, 'fgXrPayee');
       const grantResult = await execCommandAndReturnJson(
-        `seid tx feegrant grant fgXrPayer ${xrPayee.seiAddress} --spend-limit 500000usei --from fgXrPayer --fees 24200usei -y --broadcast-mode block`
+        `seid tx feegrant grant fgXrPayer ${xrPayee.seiAddress} --spend-limit ${CROSS_RUNTIME_SPEND_LIMIT}${USEI_DENOM} --from fgXrPayer --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(grantResult.code).to.be.eq(0);
     });
@@ -513,12 +527,15 @@ describe('Feegrant Module Tests', function () {
       expect(restResponse.allowance!.grantee).to.be.eq(xrPayee.seiAddress);
 
       const cliAllowance = cliResult.allowance;
-      expect(cliAllowance).to.exist;
+      expect(cliAllowance.granter).to.be.eq(xrPayer.seiAddress);
+      expect(cliAllowance.grantee).to.be.eq(xrPayee.seiAddress);
+      expect(cliAllowance.allowance.spend_limit[0].denom).to.be.eq(USEI_DENOM);
+      expect(cliAllowance.allowance.spend_limit[0].amount).to.be.eq(CROSS_RUNTIME_SPEND_LIMIT);
 
       const restSpendLimit = restResponse.allowance!.allowance!.spend_limit;
       expect(restSpendLimit).to.be.an('array');
-      expect(restSpendLimit[0].denom).to.be.eq('usei');
-      expect(Number(restSpendLimit[0].amount)).to.be.eq(500000);
+      expect(restSpendLimit[0].denom).to.be.eq(USEI_DENOM);
+      expect(Number(restSpendLimit[0].amount)).to.be.eq(Number(CROSS_RUNTIME_SPEND_LIMIT));
     });
   });
 });

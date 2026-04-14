@@ -58,7 +58,6 @@ export function generateTokenMetadata(fullDenom: string): string {
     display: "test1"
   };
   fs.writeFileSync('token_metadata.json', JSON.stringify(metadata, null, 2));
-  console.log('Token metadata written to the folder');
   return 'token_metadata.json'
 }
 
@@ -102,11 +101,9 @@ export async function getProposalID(govContract: Contract, proposalJSON: any){
 export async function queryAllStakes(user: SeiUser){
     const stakingQueryClient = await returnQueryClient(setupStakingExtension) as QueryClient & StakingExtension;
     const delegations = await stakingQueryClient.staking.delegatorDelegations(user.seiAddress);
-    console.log(delegations);
     const totalStake = delegations.delegationResponses.reduce((total, resp) => {
         return total += Number(resp.balance.amount);
     }, 0);
-    console.log(totalStake);
     return totalStake;
 }
 export function returnTextProposal(isExpedited = false, title="Test Text Proposal") {
@@ -242,7 +239,6 @@ export const parseUnbondingEntry = (data: any): UnbondingEntry => {
 };
 
 export const parseUnbondingDelegation = (data: any): UnbondingDelegation => {
-    console.log(data);
     const entriesRaw = data[2];
     const entries = (entriesRaw && typeof entriesRaw[Symbol.iterator] === 'function')
         ? Array.from(entriesRaw)
