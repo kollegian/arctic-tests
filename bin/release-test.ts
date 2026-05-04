@@ -53,7 +53,7 @@ function runMocha(): Promise<{ exitCode: number; spawnError: Error | null }> {
       'npx',
       [
         'mocha',
-        '--require', 'ts-node/register',
+        '--require', 'ts-node/register/transpile-only',
         '--reporter', 'mochawesome',
         '--reporter-options', `reportDir=${REPORT_DIR},reportFilename=mochawesome,quiet=true,html=false,json=true`,
         SPEC_GLOB,
