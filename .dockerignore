@@ -6,3 +6,18 @@ release-test-report
 wasm_store
 *.iml
 README.md
+
+# Hardhat-generated; fresh copies come from the build stage.
+artifacts
+typechain
+typechain-types
+cache
+.env
+.env.*
+.idea
+.vscode
+coverage
+coverage.json
+*.log
+# Stale; canonical path is config/mnemonics.json.
+/mnemonics.json
