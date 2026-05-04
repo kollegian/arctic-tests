@@ -9,12 +9,12 @@ import {
     getCryptedBalance,
     getDecryptedBalance,
     getPayload
-} from "../../utils/cliUtils";
+} from "../../shared/utils/cliUtils";
 import {expect} from "chai";
-import {broadcastTx} from "../../utils/evmUtils";
-import {createCtUsers} from "../../utils/helpers";
+import {broadcastTx} from "../../shared/utils/evmUtils";
+import {createCtUsers} from "../../shared/utils/helpers";
 
-import * as CtAbi from "../../utils/abis/ct_abi.json";
+import * as CtAbi from "../../shared/utils/abis/ct_abi.json";
 
 const exec = util.promisify(require('node:child_process').exec);
 
@@ -28,7 +28,7 @@ describe('Can work on happy path for ct', function () {
     let ctContract: ethers.Contract;
     let denomName: string;
     let ctModuleAddress: string;
-    const abiPath = "../../utils/abis/ct_abi.json";
+    const abiPath = "../../shared/utils/abis/ct_abi.json";
 
     before('Initializes clients and users', async () => {
         admin = await UserFactory.createAdminUser(TestConfig);
