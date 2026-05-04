@@ -1,14 +1,15 @@
+import util from "node:util";
 import { SeiUser } from "./User";
 import { ethers, Contract, BigNumberish } from "ethers";
 import {calculateFee, DeliverTxResponse, StdFee} from "@cosmjs/stargate";
 import {ExecuteInstruction, ExecuteResult} from "@cosmjs/cosmwasm-stargate";
-const exec = util.promisify(require('node:child_process').exec);
 
 import ERC20_ARTIFACT from '../artifacts/contracts/TestERC20.sol/TestERC20.json';
 import ERC721_ARTIFACT from '../artifacts/contracts/TestNFT.sol/TestNFT.json';
 import ERC1155_ARTIFACT from '../artifacts/contracts/TestERC1155.sol/TestERC1155.json';
 import {TestERC20, TestNFT} from "../typechain-types";
-import util from "node:util";
+
+const exec = util.promisify(require('node:child_process').exec);
 import {waitFor} from "./utils/helpers";
 import {execCommandAndReturnJson} from "./utils/cliUtils";
 import {EncodeObject} from "@cosmjs/proto-signing";
