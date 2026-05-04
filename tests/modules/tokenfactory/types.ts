@@ -6,7 +6,7 @@ import {getAddress, rpcEndpoint} from './helpers';
 import {ethers} from 'ethers';
 
 export const fee = {
-  amount: coins(24000, "usei"),
+  amount: coins(50000, "usei"),
   gas: "500000",
 };
 
@@ -158,7 +158,7 @@ export async function updateDenomMessage(subdenom: string, signerWallet: DirectS
   };
 
   const fee = {
-    amount: coins(200000, "usei"),
+    amount: coins(600000, "usei"),
     gas: "6000000",
   };
   const client = await SigningStargateClient.connectWithSigner(rpcEndpoint, signerWallet, { registry: customRegistry });

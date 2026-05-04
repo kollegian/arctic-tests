@@ -1,0 +1,21 @@
+{
+  "require": ["tsx"],
+  "timeout": 600000,
+  "exit": true,
+  "reporter": "mochawesome",
+  "reporter-option": [
+    "reportDir=reports/chain",
+    "reportFilename=chain-report",
+    "html=true",
+    "json=true",
+    "overwrite=true"
+  ],
+  "spec": [
+    "tests/chain_tests/gasTests.spec.ts",
+    "tests/chain_tests/txTypesTests.ts",
+    "tests/chain_tests/eip1559_tests.ts",
+    "tests/chain_tests/nonce_management.spec.ts",
+    "tests/chain_tests/tx_execution.spec.ts",
+    "tests/chain_tests/pectra_upgrade/EOA.spec.ts"
+  ]
+}

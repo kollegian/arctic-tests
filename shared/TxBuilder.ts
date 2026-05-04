@@ -4,6 +4,7 @@ import { waitFor } from './utils/helpers';
 import { EvmRpcClient } from './RpcClient';
 import {SeiUser} from "./User";
 import {NonceManager} from "../tests/load_tests/NonceManager";
+import {TxRaw} from "cosmjs-types/cosmos/tx/v1beta1/tx";
 
 export class AtomicTxSender {
 
@@ -111,6 +112,153 @@ export class AtomicTxSender {
     ): Promise<string> {
         const client = new EvmRpcClient(rpcUrl, sender.evmWallet.signingClient);
         return client.sendRawTransaction(signedTx);
+    }
+
+    // Polls until the EVM head ticks over (i.e. a new block has been committed)
+    // and returns that new height. Used to align a broadcast to the start of a
+    // fresh block window, maximizing the chance that subsequent txs land in the
+    // same next block.
+    static async waitForNextBlock(user: SeiUser, pollMs = 30): Promise<number> {
+        const start = await user.evmWallet.signingClient.getBlockNumber();
+        while (true) {
+            const cur = await user.evmWallet.signingClient.getBlockNumber();
+            if (cur > start) return cur;
+            await waitFor(pollMs / 1000);
+        }
+    }
+
+    // Polls eth_getTransactionReceipt until the tx is mined. `sendRawTransaction`
+    // only waits for mempool admission, so the receipt is null until a block
+    // containing it has been committed.
+    static async waitForEvmReceipt(
+        rpcClient: EvmRpcClient,
+        txHash: string,
+        timeoutMs = 10_000,
+        pollMs = 100,
+    ): Promise<any> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const receipt = await rpcClient.getTransactionReceipt(txHash);
+            if (receipt && receipt.blockNumber != null) return receipt;
+            await waitFor(pollMs / 1000);
+        }
+        throw new Error(`evm tx ${txHash} not mined within ${timeoutMs}ms`);
+    }
+
+    // Broadcasts a pre-signed cosmos TxRaw via broadcastTxSync (returns after
+    // CheckTx, NOT after inclusion) and then polls for the committed tx so we
+    // can read its final height. Using sync semantics makes the cosmos side
+    // truly concurrent with the EVM `eth_sendRawTransaction` call.
+    static async broadcastCosmosAndResolve(
+        user: SeiUser,
+        signedTx: TxRaw,
+        timeoutMs = 10_000,
+        pollMs = 100,
+    ): Promise<{ txhash: string; height: number }> {
+        const raw = TxRaw.encode(signedTx).finish();
+        const txhash = await user.seiWallet.cosmWasmSigningClient.broadcastTxSync(raw);
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const found = await user.seiWallet.cosmWasmSigningClient.getTx(txhash);
+            if (found) {
+                if (found.code !== 0) {
+                    throw new Error(`cosmos tx ${txhash} failed with code ${found.code}: ${found.rawLog}`);
+                }
+                return { txhash, height: found.height };
+            }
+            await waitFor(pollMs / 1000);
+        }
+        throw new Error(`cosmos tx ${txhash} not included within ${timeoutMs}ms`);
+    }
+
+    // Reliably lands an EVM tx and a Cosmos tx in the same block.
+    //
+    // Strategy:
+    //   1. Wait for a fresh block boundary (maximizes mempool time before the
+    //      next proposer builds).
+    //   2. Re-sign both txs via the provided factories (each retry must use a
+    //      fresh nonce / account sequence).
+    //   3. Fire both in parallel using sync broadcast semantics so neither side
+    //      blocks on inclusion.
+    //   4. Compare heights; retry on mismatch. Each attempt is ~1 block (~400 ms
+    //      on Sei), so a handful of retries makes this effectively 100% reliable.
+    static async sendAtomicSameBlock(
+        user: SeiUser,
+        signEvm: () => Promise<string>,
+        evmRpcUrl: string,
+        signCosmos: () => Promise<TxRaw>,
+        rpcClient: EvmRpcClient,
+        maxAttempts = 5,
+    ): Promise<{ evmTxHash: string; evmReceipt: any; cosmosTxHash: string; blockNumber: number }> {
+        const result = await AtomicTxSender.sendAtomicSameBlockBatch(
+            user,
+            async () => [await signEvm()],
+            evmRpcUrl,
+            async () => [await signCosmos()],
+            rpcClient,
+            maxAttempts,
+        );
+        return {
+            evmTxHash: result.evmTxHashes[0],
+            evmReceipt: result.evmReceipts[0],
+            cosmosTxHash: result.cosmosTxHashes[0],
+            blockNumber: result.blockNumber,
+        };
+    }
+
+    // Batch variant: reliably lands N EVM txs and M cosmos txs in the same
+    // block. Same retry/alignment strategy as sendAtomicSameBlock. All EVM
+    // receipts and cosmos heights must match the same block number; otherwise
+    // we retry with fresh nonces / sequences.
+    static async sendAtomicSameBlockBatch(
+        user: SeiUser,
+        signEvms: () => Promise<string[]>,
+        evmRpcUrl: string,
+        signCosmoses: () => Promise<TxRaw[]>,
+        rpcClient: EvmRpcClient,
+        maxAttempts = 5,
+    ): Promise<{
+        evmTxHashes: string[];
+        evmReceipts: any[];
+        cosmosTxHashes: string[];
+        blockNumber: number;
+    }> {
+        let lastMismatch: { evm: number[]; cosmos: number[] } | undefined;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            await AtomicTxSender.waitForNextBlock(user);
+
+            const [signedEvms, signedCosmoses] = await Promise.all([signEvms(), signCosmoses()]);
+
+            const [evmHashes, cosmosResults] = await Promise.all([
+                Promise.all(signedEvms.map((s) => AtomicTxSender.sendRawTransaction(evmRpcUrl, s, user))),
+                Promise.all(signedCosmoses.map((s) => AtomicTxSender.broadcastCosmosAndResolve(user, s))),
+            ]);
+
+            const evmReceipts = await Promise.all(
+                evmHashes.map((h) => AtomicTxSender.waitForEvmReceipt(rpcClient, h)),
+            );
+            const evmBlocks = evmReceipts.map((r) => Number(r.blockNumber));
+            const cosmosHeights = cosmosResults.map((r) => r.height);
+            const all = [...evmBlocks, ...cosmosHeights];
+            const allSame = all.every((h) => h === all[0]);
+
+            if (allSame) {
+                return {
+                    evmTxHashes: evmHashes,
+                    evmReceipts,
+                    cosmosTxHashes: cosmosResults.map((r) => r.txhash),
+                    blockNumber: all[0],
+                };
+            }
+            lastMismatch = { evm: evmBlocks, cosmos: cosmosHeights };
+            console.warn(
+                `sendAtomicSameBlockBatch attempt ${attempt}/${maxAttempts}: evm=[${evmBlocks.join(',')}] cosmos=[${cosmosHeights.join(',')}], retrying`
+            );
+        }
+        throw new Error(
+            `failed to land EVM + cosmos in same block after ${maxAttempts} attempts` +
+            (lastMismatch ? ` (last: evm=[${lastMismatch.evm.join(',')}] cosmos=[${lastMismatch.cosmos.join(',')}])` : '')
+        );
     }
 
     static async sendRawTransactionWithProvider(

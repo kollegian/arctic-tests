@@ -14,9 +14,10 @@ describe('Deploy contracts and fund users here', function(){
 
     it('Deploy contracts and fund users', async () => {
         admin = await UserFactory.createAdminUser();
+        console.log('Admin created');
         // await UserFactory.fundAdminOnSei();
         users = await UserFactory.createSeiUsers(admin, 10, true);
-
+        console.log('Users created');
         const deployer = new TokenDeployer(admin);
         const initialBalances = users.map(user => ({address: user.seiAddress, amount: '100000000'}));
         const cw20 = await deployer.deployCw20('wasm_store/cw20_base_1.wasm', {

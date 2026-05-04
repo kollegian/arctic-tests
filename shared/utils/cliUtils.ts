@@ -14,7 +14,7 @@ export async function createTokenfactoryDenom(sender: SeiUser, secondUser: SeiUs
     const allowListFile = "allowlist.json";
     await exec(`echo '{"addresses": ["${sender.seiAddress}", "${secondUser.seiAddress}"]}' > ${allowListFile}`);
     await waitFor(1);
-    await execCommandAndReturnJson(`seid tx tokenfactory create-denom test --from ${sender.seiAddress} --fees 24200usei --allow-list ${allowListFile} --broadcast-mode block -y`);
+    await execCommandAndReturnJson(`seid tx tokenfactory create-denom test --from ${sender.seiAddress} --fees 50000usei --allow-list ${allowListFile} --broadcast-mode block -y`);
     return `factory/${sender.seiAddress}/test`;
 }
 

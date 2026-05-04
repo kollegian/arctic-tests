@@ -1,25 +1,118 @@
-import { coins } from '@cosmjs/stargate';
+import { coins, createProtobufRpcClient } from '@cosmjs/stargate';
 import { execCommandAndReturnJson } from '../../../shared/utils/cliUtils';
 import { Querier } from '@sei-js/cosmos/rest';
 
 import { SeiUser, UserFactory } from '../../../shared/User';
-import testConfig from '../../../config/testConfig.json';
 import { BasicAllowance } from 'cosmjs-types/cosmos/feegrant/v1beta1/feegrant';
 import { MsgGrantAllowance } from 'cosmjs-types/cosmos/feegrant/v1beta1/tx';
+import { QueryClientImpl as FeegrantQueryClientImpl } from 'cosmjs-types/cosmos/feegrant/v1beta1/query';
 import ExpectStatic = Chai.ExpectStatic;
+import { expectTxSuccess, expectUseiCoin } from '../moduleTestUtils';
+import { getRpcQueryClient, moduleRestEndpoint, toSnakeCase, withRestFallback } from '../utils/rpcQueryClient';
 
 let expect: ExpectStatic;
-const restEndpoint = testConfig.restEndpoint;
-const fee = { amount: coins(24000, 'usei'), gas: '500000' };
+const fee = { amount: coins(50000, 'usei'), gas: '500000' };
 const CLI_FEE = '24200usei';
 const FEE_GRANT_GAS = '500000';
-const FEE_GRANT_FEE_AMOUNT = 24000;
+const FEE_GRANT_FEE_AMOUNT = 50000;
 const BASIC_SPEND_LIMIT = '300000';
 const CROSS_RUNTIME_SPEND_LIMIT = '500000';
 const SMALL_SPEND_LIMIT = '1000';
 const SEND_AMOUNT = '1000';
 const MICRO_SEND_AMOUNT = '100';
 const USEI_DENOM = 'usei';
+
+function feegrantGrant(result: any) {
+  return result.allowance?.granter ? result.allowance : result;
+}
+
+function basicAllowance(grant: any) {
+  return grant.allowance?.spend_limit ? grant.allowance : grant.allowance?.allowance;
+}
+
+// cosmjs returns the inner `allowance` field as a raw protobuf `Any`
+// (`{ typeUrl, value: Uint8Array }`); REST decodes it into a JSON object with
+// `spend_limit`, `expiration`, etc. This decodes the Any into the REST-shaped
+// BasicAllowance so downstream assertions work for both code paths.
+function decodeGrantAllowance(grant: any): any {
+  if (!grant || !grant.allowance) return grant;
+  const inner = grant.allowance;
+  if (inner.value instanceof Uint8Array) {
+    grant.allowance = toSnakeCase(BasicAllowance.decode(inner.value));
+  }
+  return grant;
+}
+
+const queryAllowance = (granter: string, grantee: string) =>
+  withRestFallback(
+    'feegrant.allowance',
+    async () => {
+      // cosmjs's feegrant.allowance already returns the full RPC response
+      // ({ allowance: Grant | undefined }), not the unwrapped Grant — so we
+      // only need to decode the inner Any and snake-case the keys.
+      const resp = await (await getRpcQueryClient()).feegrant.allowance(granter, grantee);
+      if (resp?.allowance) decodeGrantAllowance(resp.allowance);
+      return toSnakeCase(resp);
+    },
+    () =>
+      Querier.cosmos.feegrant.v1beta1.Allowance(
+        { granter, grantee },
+        { pathPrefix: moduleRestEndpoint },
+      ),
+  );
+
+const queryAllowances = (grantee: string) =>
+  withRestFallback(
+    'feegrant.allowances',
+    async () => {
+      const resp = await (await getRpcQueryClient()).feegrant.allowances(grantee);
+      const allowances = (resp.allowances ?? []).map((g: any) => decodeGrantAllowance(g));
+      return toSnakeCase({ allowances, pagination: resp.pagination });
+    },
+    () =>
+      Querier.cosmos.feegrant.v1beta1.Allowances(
+        { grantee },
+        { pathPrefix: moduleRestEndpoint },
+      ),
+  );
+
+const queryAllowancesByGranter = (granter: string) =>
+  withRestFallback(
+    'feegrant.allowancesByGranter',
+    async () => {
+      // cosmjs's setupFeegrantExtension does not expose AllowancesByGranter, so
+      // fall back to the raw protobuf RPC client built on top of our base
+      // QueryClient. Same Tendermint connection — no extra REST hop.
+      const client = await getRpcQueryClient();
+      const rpc = createProtobufRpcClient(client);
+      const queryService = new FeegrantQueryClientImpl(rpc);
+      const resp = await queryService.AllowancesByGranter({ granter });
+      const allowances = (resp.allowances ?? []).map((g: any) => decodeGrantAllowance(g));
+      return toSnakeCase({ allowances, pagination: resp.pagination });
+    },
+    () =>
+      Querier.cosmos.feegrant.v1beta1.AllowancesByGranter(
+        { granter },
+        { pathPrefix: moduleRestEndpoint },
+      ),
+  );
+
+async function queryBalance(address: string, denom: string): Promise<{ denom: string; amount: string }> {
+  return withRestFallback(
+    'bank.balance',
+    async () => {
+      const coin = await (await getRpcQueryClient()).bank.balance(address, denom);
+      return { denom: coin?.denom ?? denom, amount: coin?.amount ?? '0' };
+    },
+    async () => {
+      const resp = await Querier.cosmos.bank.v1beta1.Balance(
+        { address, denom },
+        { pathPrefix: moduleRestEndpoint },
+      );
+      return { denom: resp.balance?.denom ?? denom, amount: resp.balance?.amount ?? '0' };
+    },
+  );
+}
 
 describe('Feegrant Module Tests', function () {
   this.timeout(4 * 60 * 1000);
@@ -47,10 +140,12 @@ describe('Feegrant Module Tests', function () {
       const result = await execCommandAndReturnJson(
         `seid q feegrant grant ${payer.seiAddress} ${payee.seiAddress}`
       );
-      expect(result.allowance.granter).to.be.eq(payer.seiAddress);
-      expect(result.allowance.grantee).to.be.eq(payee.seiAddress);
-      expect(result.allowance.allowance.spend_limit[0].denom).to.be.eq(USEI_DENOM);
-      expect(result.allowance.allowance.spend_limit[0].amount).to.be.eq(BASIC_SPEND_LIMIT);
+      const grant = feegrantGrant(result);
+      const allowance = basicAllowance(grant);
+      expect(grant.granter).to.be.eq(payer.seiAddress);
+      expect(grant.grantee).to.be.eq(payee.seiAddress);
+      expect(allowance.spend_limit[0].denom).to.be.eq(USEI_DENOM);
+      expect(allowance.spend_limit[0].amount).to.be.eq(BASIC_SPEND_LIMIT);
     });
 
     it('Query grants-by-grantee via seid CLI', async () => {
@@ -108,18 +203,12 @@ describe('Feegrant Module Tests', function () {
       const result = await payer.seiWallet.signingClient.signAndBroadcast(
         payer.seiAddress, [grantMsg], fee, 'fee grant'
       );
-      expect(result.code).to.be.eq(0);
+      expectTxSuccess(result, 'fee grant');
     });
 
     it('Granter pays for grantee fee', async () => {
-      const payeePreBalance = await Querier.cosmos.bank.v1beta1.Balance({
-        address: payee.seiAddress,
-        denom: 'usei'
-      }, { pathPrefix: restEndpoint });
-      const payerPreBalance = await Querier.cosmos.bank.v1beta1.Balance({
-        address: payer.seiAddress,
-        denom: 'usei'
-      }, { pathPrefix: restEndpoint });
+      const payeePreBalance = await queryBalance(payee.seiAddress, 'usei');
+      const payerPreBalance = await queryBalance(payer.seiAddress, 'usei');
 
       const msgSend = {
         typeUrl: '/cosmos.bank.v1beta1.MsgSend',
@@ -137,26 +226,19 @@ describe('Feegrant Module Tests', function () {
       const result = await payee.seiWallet.signingClient.signAndBroadcast(
         payee.seiAddress, [msgSend], grantedFee, 'feegrant tx'
       );
-      expect(result.code).to.be.eq(0);
+      expectTxSuccess(result, 'fee-granted send');
 
-      const payeeAfterBalance = await Querier.cosmos.bank.v1beta1.Balance({
-        address: payee.seiAddress,
-        denom: 'usei'
-      }, { pathPrefix: restEndpoint });
-      const payerAfterBalance = await Querier.cosmos.bank.v1beta1.Balance({
-        address: payer.seiAddress,
-        denom: 'usei'
-      }, { pathPrefix: restEndpoint });
+      const payeeAfterBalance = await queryBalance(payee.seiAddress, 'usei');
+      const payerAfterBalance = await queryBalance(payer.seiAddress, 'usei');
 
-      expect(Number(payeePreBalance.balance!.amount) - Number(payeeAfterBalance.balance!.amount)).to.be.eq(Number(SEND_AMOUNT));
-      expect(Number(payerPreBalance.balance!.amount) - Number(payerAfterBalance.balance!.amount)).to.be.eq(FEE_GRANT_FEE_AMOUNT);
+      expect(Number(payeePreBalance.amount) - Number(payeeAfterBalance.amount)).to.be.eq(Number(SEND_AMOUNT));
+      expect(Number(payerPreBalance.amount) - Number(payerAfterBalance.amount)).to.be.eq(FEE_GRANT_FEE_AMOUNT);
+      expectUseiCoin(payeeAfterBalance);
+      expectUseiCoin(payerAfterBalance);
     });
 
     it('Query allowance via Querier', async () => {
-      const response = await Querier.cosmos.feegrant.v1beta1.Allowance({
-        granter: payer.seiAddress,
-        grantee: payee.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response = await queryAllowance(payer.seiAddress, payee.seiAddress);
       expect(response.allowance!.granter).to.be.eq(payer.seiAddress);
       expect(response.allowance!.grantee).to.be.eq(payee.seiAddress);
       expect(response.allowance!.allowance!.spend_limit).to.have.length(1);
@@ -166,9 +248,7 @@ describe('Feegrant Module Tests', function () {
     });
 
     it('Query allowances via Querier', async () => {
-      const response = await Querier.cosmos.feegrant.v1beta1.Allowances({
-        grantee: payee.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response = await queryAllowances(payee.seiAddress);
       expect(response.allowances[0].granter).to.be.eq(payer.seiAddress);
       expect(response.allowances[0].grantee).to.be.eq(payee.seiAddress);
       expect(response.allowances[0].allowance!.spend_limit).to.have.length(1);
@@ -177,9 +257,7 @@ describe('Feegrant Module Tests', function () {
     });
 
     it('Query by granter via Querier', async () => {
-      const response = await Querier.cosmos.feegrant.v1beta1.AllowancesByGranter({
-        granter: payer.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response = await queryAllowancesByGranter(payer.seiAddress);
       expect(response.allowances[0].granter).to.be.eq(payer.seiAddress);
       expect(response.allowances[0].grantee).to.be.eq(payee.seiAddress);
       expect(response.allowances[0].allowance!.spend_limit).to.have.length(1);
@@ -201,16 +279,12 @@ describe('Feegrant Module Tests', function () {
     });
 
     it('Query allowances after revoke', async () => {
-      const response = await Querier.cosmos.feegrant.v1beta1.Allowances({
-        grantee: payee.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response = await queryAllowances(payee.seiAddress);
       expect(response.allowances).to.have.length(0);
     });
 
     it('Query by granter after revoke', async () => {
-      const response = await Querier.cosmos.feegrant.v1beta1.AllowancesByGranter({
-        granter: payer.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response = await queryAllowancesByGranter(payer.seiAddress);
       expect(response.allowances).to.have.length(0);
     });
 
@@ -273,10 +347,14 @@ describe('Feegrant Module Tests', function () {
           allowance: selfAllowance,
         }),
       };
-      const result = await payer.seiWallet.signingClient.signAndBroadcast(
-        payer.seiAddress, [grantMsg], fee, 'self grant'
-      );
-      expect(result.code).to.not.be.eq(0);
+      try {
+        const result = await payer.seiWallet.signingClient.signAndBroadcast(
+          payer.seiAddress, [grantMsg], fee, 'self grant'
+        );
+        expect(result.code).to.not.be.eq(0);
+      } catch (e: any) {
+        expect(e.message).to.contain('cannot self-grant fee authorization');
+      }
     });
 
     it('Cannot grant with zero spend limit (CosmJS)', async () => {
@@ -446,19 +524,13 @@ describe('Feegrant Module Tests', function () {
       );
       expect(sendResult.code).to.be.eq(0);
 
-      const response = await Querier.cosmos.feegrant.v1beta1.Allowance({
-        granter: bvPayer.seiAddress,
-        grantee: bvPayee.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response = await queryAllowance(bvPayer.seiAddress, bvPayee.seiAddress);
       const remaining = Number(response.allowance!.allowance!.spend_limit[0].amount);
       expect(remaining).to.be.eq(Number(BASIC_SPEND_LIMIT) - FEE_GRANT_FEE_AMOUNT);
     });
 
     it('Multiple fee uses deplete allowance', async () => {
-      const response1 = await Querier.cosmos.feegrant.v1beta1.Allowance({
-        granter: bvPayer.seiAddress,
-        grantee: bvPayee.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response1 = await queryAllowance(bvPayer.seiAddress, bvPayee.seiAddress);
       const remainingBefore = Number(response1.allowance!.allowance!.spend_limit[0].amount);
 
       const msgSend = {
@@ -480,10 +552,7 @@ describe('Feegrant Module Tests', function () {
       );
       expect(result1.code).to.be.eq(0);
 
-      const response2 = await Querier.cosmos.feegrant.v1beta1.Allowance({
-        granter: bvPayer.seiAddress,
-        grantee: bvPayee.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response2 = await queryAllowance(bvPayer.seiAddress, bvPayee.seiAddress);
       const remainingAfterFirst = Number(response2.allowance!.allowance!.spend_limit[0].amount);
       expect(remainingAfterFirst).to.be.eq(remainingBefore - FEE_GRANT_FEE_AMOUNT);
 
@@ -492,10 +561,7 @@ describe('Feegrant Module Tests', function () {
       );
       expect(result2.code).to.be.eq(0);
 
-      const response3 = await Querier.cosmos.feegrant.v1beta1.Allowance({
-        granter: bvPayer.seiAddress,
-        grantee: bvPayee.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const response3 = await queryAllowance(bvPayer.seiAddress, bvPayee.seiAddress);
       const remainingAfterSecond = Number(response3.allowance!.allowance!.spend_limit[0].amount);
       expect(remainingAfterSecond).to.be.eq(remainingAfterFirst - FEE_GRANT_FEE_AMOUNT);
     });
@@ -518,19 +584,17 @@ describe('Feegrant Module Tests', function () {
       const cliResult = await execCommandAndReturnJson(
         `seid q feegrant grant ${xrPayer.seiAddress} ${xrPayee.seiAddress}`
       );
-      const restResponse = await Querier.cosmos.feegrant.v1beta1.Allowance({
-        granter: xrPayer.seiAddress,
-        grantee: xrPayee.seiAddress
-      }, { pathPrefix: restEndpoint });
+      const restResponse = await queryAllowance(xrPayer.seiAddress, xrPayee.seiAddress);
 
       expect(restResponse.allowance!.granter).to.be.eq(xrPayer.seiAddress);
       expect(restResponse.allowance!.grantee).to.be.eq(xrPayee.seiAddress);
 
-      const cliAllowance = cliResult.allowance;
+      const cliAllowance = feegrantGrant(cliResult);
+      const cliSpendLimit = basicAllowance(cliAllowance).spend_limit;
       expect(cliAllowance.granter).to.be.eq(xrPayer.seiAddress);
       expect(cliAllowance.grantee).to.be.eq(xrPayee.seiAddress);
-      expect(cliAllowance.allowance.spend_limit[0].denom).to.be.eq(USEI_DENOM);
-      expect(cliAllowance.allowance.spend_limit[0].amount).to.be.eq(CROSS_RUNTIME_SPEND_LIMIT);
+      expect(cliSpendLimit[0].denom).to.be.eq(USEI_DENOM);
+      expect(cliSpendLimit[0].amount).to.be.eq(CROSS_RUNTIME_SPEND_LIMIT);
 
       const restSpendLimit = restResponse.allowance!.allowance!.spend_limit;
       expect(restSpendLimit).to.be.an('array');

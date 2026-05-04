@@ -1,0 +1,15 @@
+{
+  "require": ["tsx"],
+  "timeout": 600000,
+  "exit": true,
+  "reporter": "mochawesome",
+  "reporter-option": [
+    "reportDir=reports/precompiles",
+    "reportFilename=precompiles-report",
+    "html=true",
+    "json=true",
+    "overwrite=true"
+  ],
+  "spec": ["tests/precompiles/*.spec.ts"],
+  "ignore": ["tests/precompiles/gov.spec.ts"]
+}

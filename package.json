@@ -1,6 +1,17 @@
 {
   "name": "arctic_tests",
   "packageManager": "yarn@4.6.0",
+  "scripts": {
+    "test:modules": "mocha --config tests/modules/.mocharc.json",
+    "test:precompiles": "mocha --config tests/precompiles/.mocharc.json",
+    "test:precompiles:gov": "mocha --config tests/precompiles/.mocharc.json --reporter-option reportFilename=precompiles-gov-report tests/precompiles/gov.spec.ts",
+    "test:tokens": "mocha --config tests/tokens/.mocharc.json",
+    "test:rpc-node": "mocha --config tests/rpc_node_tests/.mocharc.json",
+    "test:evm-rpc": "mocha --config tests/evm_rpc/.mocharc.json",
+    "test:chain": "mocha --config tests/chain_tests/.mocharc.json",
+    "test:reports:merge": "mochawesome-merge \"reports/*/*.json\" -o reports/combined/combined-report.json && marge reports/combined/combined-report.json -o reports/combined --reportFilename combined-report",
+    "test:reported": "(npm run test:precompiles; npm run test:tokens; npm run test:rpc-node; npm run test:evm-rpc; npm run test:modules; npm run test:chain); npm run test:reports:merge"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/contracts": "^5.4.0",
@@ -15,6 +26,7 @@
     "ethers": "^6.13.5",
     "hardhat": "^2.23.0",
     "lodash": "^4.17.21",
+    "mochawesome-merge": "^5.1.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",

@@ -15,6 +15,7 @@ import ERC20_ARTIFACT from '../artifacts/contracts/TestERC20.sol/TestERC20.json'
 import ERC721_ARTIFACT from '../artifacts/contracts/TestNFT.sol/TestNFT.json';
 import ERC1155_ARTIFACT from '../artifacts/contracts/TestERC1155.sol/TestERC1155.json';
 import DEBUG_ARTIFACT from '../artifacts/contracts/DebugContract.sol/DebugContract.json';
+import SIMPLE_ACCOUNT_7702_ARTIFACT from '../artifacts/contracts/SimpleAccount7702.sol/SimpleAccount7702.json';
 import {calculateFee} from "@cosmjs/stargate";
 import {DebugContract} from "../typechain-types";
 
@@ -140,5 +141,26 @@ export class TokenDeployer {
         const debugContract = await contract.waitForDeployment() as DebugContract;
         console.log('Contract deployed to ', contract.target);
         return debugContract;
+    }
+
+    /**
+     * Deploys the minimal SimpleAccount7702 contract used as the delegation
+     * target for EIP-7702 SetCode (type-4) transactions. The contract takes no
+     * constructor args and exposes `executeBatch` / `execute`.
+     */
+    async deploySimpleAccount7702(): Promise<ethers.Contract> {
+        const factory = new ethers.ContractFactory(
+            SIMPLE_ACCOUNT_7702_ARTIFACT.abi,
+            SIMPLE_ACCOUNT_7702_ARTIFACT.bytecode,
+            this.user.evmWallet.wallet,
+        );
+        const contract = await factory.deploy();
+        await contract.waitForDeployment();
+        console.log('SimpleAccount7702 deployed to', contract.target);
+        return new ethers.Contract(
+            contract.target as string,
+            SIMPLE_ACCOUNT_7702_ARTIFACT.abi,
+            this.user.evmWallet.wallet,
+        );
     }
 }

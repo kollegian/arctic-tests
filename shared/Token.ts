@@ -139,6 +139,28 @@ export class Cw20Token implements IFungibleToken {
         return sender.seiWallet.cosmWasmSigningClient.broadcastTxSync(txRawBinary);
     }
 
+    // Pre-signs a CW20 `transfer` so it can be broadcast later in parallel with
+    // an EVM tx via `AtomicTxSender.sendAtomicSameBlock`.
+    signTransfer(signer: SeiUser, recipient: string, amount: string | number): Promise<TxRaw> {
+        const msg = this.returnEncodedTransfer(signer, recipient, amount.toString());
+        return this.sign(signer, msg);
+    }
+
+    // Pre-signs multiple `transfer` messages (equivalent of execMultiple).
+    signExecMultiple(signer: SeiUser, msgs: ExecuteInstruction[]): Promise<TxRaw> {
+        const encoded: EncodeObject[] = msgs.map((m) => ({
+            typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+            value: {
+                sender: signer.seiAddress,
+                contract: m.contractAddress,
+                msg: Buffer.from(JSON.stringify(m.msg)),
+                funds: m.funds ?? [],
+            },
+        }));
+        const fee = calculateFee(4500000, '1usei');
+        return signer.seiWallet.cosmWasmSigningClient.sign(signer.seiAddress, encoded, fee, "memo");
+    }
+
     execMultiple(msgs: ExecuteInstruction[], memo = ""): Promise<ExecuteResult> {
         const fee = calculateFee(4500000, '1usei');
         return this.user.seiWallet.cosmWasmSigningClient.executeMultiple(

@@ -8,7 +8,7 @@ import {
 } from '@cosmjs/stargate';
 import {DirectSecp256k1HdWallet, Registry} from '@cosmjs/proto-signing';
 import { Encoder } from '@sei-js/cosmos/encoding';
-import { seiProtoRegistry } from '@sei-js/cosmos/encoding/stargate';
+import { seiProtoRegistry } from '@sei-js/cosmos/encoding';
 import {SigningCosmWasmClient} from '@cosmjs/cosmwasm-stargate';
 import fs from 'node:fs';
 import { Any } from 'cosmjs-types/google/protobuf/any';
@@ -17,7 +17,7 @@ import {MsgSubmitProposal} from 'cosmjs-types/cosmos/gov/v1/tx';
 import {CometClient, Tendermint34Client} from '@cosmjs/tendermint-rpc';
 
 const fee = {
-  amount: coins(24500, "usei"),
+  amount: coins(50000, "usei"),
   gas: "200000",
 };
 
@@ -68,8 +68,8 @@ export async function createSeiWasmProvider(rpcUrl: string, wallet: DirectSecp25
 }
 
 export async function deployWasmContract(client: SigningCosmWasmClient, seiAddress: string){
-  const wasm = fs.readFileSync("./artifacts/cw_nameservice.wasm");
-  const uploadFee = calculateFee(25000000, '0.4usei');
+  const wasm = fs.readFileSync("./tests/modules/module_artifacts/cw_nameservice.wasm");
+  const uploadFee = calculateFee(4000000, '0.1usei');
   const result = await client.upload(seiAddress, wasm, uploadFee)
   return result.codeId;
 }
@@ -84,7 +84,7 @@ export async function registerName(client: SigningCosmWasmClient, seiAddress: st
   const registerMessage = {"register": {"name": name}};
   const purchaseFee = coin('110', 'usei')
   const tx = await client.execute(seiAddress, contractAddress, registerMessage, fee, '', [purchaseFee]);
-  console.log(tx);
+  return tx;
 }
 
 export async function createSeiProvider(rpcUrl: string, wallet: DirectSecp256k1HdWallet){

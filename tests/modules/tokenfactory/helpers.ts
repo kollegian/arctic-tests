@@ -28,7 +28,7 @@ export async function fundAddress(receiverWallet: DirectSecp256k1HdWallet | stri
   let { stdout } = await exec('seid keys show admin --address');
   const senderAddress: string = stdout.trim().replace(/\s+/g, '');
   console.log('Funding sei address');
-  ({stdout} = await exec(`seid tx bank send ${senderAddress} ${address} 170000000${token} --from admin --fees 24200usei -y`));
+  ({stdout} = await exec(`seid tx bank send ${senderAddress} ${address} 170000000${token} --from admin --fees 50000usei -y`));
 }
 
 /**
@@ -191,7 +191,7 @@ export async function generateValidAddressWithoutFunds(): Promise<string> {
  * @param fullDenom - The full denomination to register.
  */
 export async function deployPointer(fullDenom: string): Promise<void> {
-  await exec(`seid tx evm register-evm-pointer NATIVE ${fullDenom} --from=admin --fees 24000usei --evm-rpc=${evmRpc}`);
+  await exec(`seid tx evm register-evm-pointer NATIVE ${fullDenom} --from=admin --fees 50000usei --evm-rpc=${evmRpc}`);
 }
 
 /**

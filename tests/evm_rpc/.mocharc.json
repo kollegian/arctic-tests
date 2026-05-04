@@ -1,0 +1,14 @@
+{
+  "require": ["tsx"],
+  "timeout": 600000,
+  "exit": true,
+  "reporter": "mochawesome",
+  "reporter-option": [
+    "reportDir=reports/evm_rpc",
+    "reportFilename=evm-rpc-report",
+    "html=true",
+    "json=true",
+    "overwrite=true"
+  ],
+  "spec": ["tests/evm_rpc/**/*.spec.ts"]
+}

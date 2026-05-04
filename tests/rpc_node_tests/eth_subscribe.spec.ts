@@ -1,50 +1,63 @@
 import {ethers, WebSocketProvider} from "ethers";
 import WebSocket from 'ws';
+import {expect} from "chai";
 
 describe('Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
-    let expect: Chai.ExpectStatic;
     let provider: WebSocketProvider;
-    const wsEndpoints = 'wss://evm-ws-testnet.sei-apis.com';
-    let ws: WebSocket;
+    const wsEndpoints = 'wss://evm-ws.arctic-1.seinetwork.io';
     before('Initializes', async () => {
         provider = new ethers.WebSocketProvider(wsEndpoints);
-        ws = new WebSocket(wsEndpoints);
+    });
+
+    after(async () => {
+        await provider.destroy();
     });
 
     it('should subscribe to newHeads and receive a block header', async () => {
+        const ws = new WebSocket(wsEndpoints);
+        const header = await new Promise<any>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                ws.close();
+                reject(new Error('Timed out waiting for newHeads subscription event'));
+            }, 120_000);
 
-        ws.on('open', () => {
-            console.log(`Connected to ${wsEndpoints}`);
-            const subscriptionRequest = {
-                jsonrpc: '2.0',
-                id: 2,
-                method: 'eth_subscribe',
-                params: ['newHeads'],
-            };
-            ws.send(JSON.stringify(subscriptionRequest));
-        });
+            ws.on('open', () => {
+                ws.send(JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 2,
+                    method: 'eth_subscribe',
+                    params: ['newHeads'],
+                }));
+            });
 
-        ws.on('message', (data) => {
-            try {
+            ws.on('message', (data) => {
                 const message = JSON.parse(data.toString());
-                console.log('Received message:', message);
-            } catch (error) {
-                console.error('Error parsing message:', error);
-            }
+                if (message.result && message.id === 2) {
+                    expect(message.result).to.match(/^0x[0-9a-fA-F]+$/);
+                    return;
+                }
+                if (message.method === 'eth_subscription') {
+                    clearTimeout(timeout);
+                    ws.close();
+                    resolve(message.params.result);
+                }
+            });
+
+            ws.on('error', reject);
         });
 
-        ws.on('error', (error) => {
-            console.error('WebSocket error:', error);
-        });
-
-        ws.on('close', () => {
-            console.log('WebSocket connection closed.');
-        });
+        expect(header.hash).to.match(/^0x[0-9a-fA-F]{64}$/);
+        expect(header.number).to.match(/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/);
+        expect(header.parentHash).to.match(/^0x[0-9a-fA-F]{64}$/);
     });
 
-    it('Should subscribe to newBlockHeaders and receive a block header', async () => {
-        console.log(await provider.getBlock('0x4016ef0e8e96a53e90eaf39d33c0c82719c196a561914239c78c5d8aad284898'));
+    it('WebSocket provider can query the latest block by hash', async () => {
+        const latest = await provider.getBlock('latest');
+        expect(latest).to.not.eq(null);
+        const byHash = await provider.getBlock(latest!.hash!);
+        expect(byHash?.hash).to.eq(latest!.hash);
+        expect(byHash?.number).to.eq(latest!.number);
     });
 
 });

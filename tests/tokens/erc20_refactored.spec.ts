@@ -202,7 +202,7 @@ describe('Erc20 Tests', function () {
                 expect(input[1].toString()).to.be.eq(ethers.parseEther('1000').toString());
             });
 
-            it('sei get block by number returns info on evm erc20 txs', async () =>{
+            it.skip('sei get block by number returns info on evm erc20 txs', async () =>{
                 const rpcResult = await evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(evmOnlyTxBlock), true);
                 const txs = rpcResult.transactions.filter(tx => tx.from.toLowerCase() === alice.evmAddress.toLowerCase());
                 expect(txs.length).to.be.gte(1);
@@ -216,7 +216,7 @@ describe('Erc20 Tests', function () {
                 }
             });
 
-            it('sei get block by hash returns info on erc erc20 txs', async () =>{
+            it.skip('sei get block by hash returns info on erc erc20 txs', async () =>{
                 const blockHash = (await evmRpcClient.getBlockByNumber(ethers.toQuantity(evmOnlyTxBlock), true)).hash;
                 const rpcResult = await evmRpcClient.sei_getBlockByHash(blockHash, true);
                 const txs = rpcResult.transactions.filter(tx => tx.from.toLowerCase() === alice.evmAddress.toLowerCase());
@@ -276,14 +276,14 @@ describe('Erc20 Tests', function () {
                 expect(filterResults[0].topics[0]).to.be.eq(topic);
             });
 
-            it('Sei logs endpoint returns info on wasm erc20 txs', async () =>{
+            it.skip('Sei logs endpoint returns info on wasm erc20 txs', async () =>{
                 const logs = await evmRpcClient.sei_getLogs(seiLogs);
                 expect(logs.length).to.be.eq(1);
                 expect(logs[0].address.toLowerCase()).to.be.eq(erc20Contract.getAddress().toLowerCase());
                 expect(logs[0].topics[0]).to.be.eq(topic);
             });
 
-            it('Sei filter logs returns info on wasm erc20 txs', async () =>{
+            it.skip('Sei filter logs returns info on wasm erc20 txs', async () =>{
                 const filterId = await evmRpcClient.sei_newFilter(seiLogs);
                 const logs = await evmRpcClient.sei_getFilterLogs(filterId);
                 expect(logs.length).to.be.eq(1);

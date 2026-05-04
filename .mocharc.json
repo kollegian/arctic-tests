@@ -1,0 +1,6 @@
+{
+  "require": ["tsx"],
+  "timeout": 600000,
+  "exit": true,
+  "spec": []
+}

@@ -20,37 +20,62 @@ import {returnQueryClient} from "../../precompiles/utils";
 import {QueryClient, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
 import {TokenDeployer} from "../../../shared/Deployer";
 import {waitFor} from "../../../shared/utils/helpers";
-//atlantic 2 address
-// const SIMPLE_ACCOUNT_CONTRACT_ADDRESS = "0xa0F15a2f09F3BD4E289cd2DAa0CADA239b11b88C";
 
-// arctic 1 address
-const SIMPLE_ACCOUNT_CONTRACT_ADDRESS = "0x514a27D2D9FA4E16bAFAf0540afE7b45E4ae1549";
-const PAYMASTER_ADDRESS = "0x28AC01985c5f64c761BE0C22b054566A0829467a";
+/**
+ * EIP-7702 delegation designator: SetCode authorizes an EOA to delegate to an
+ * implementation contract. The on-chain code becomes `0xef0100 || implAddress`
+ * (24 bytes total). We compute it from the freshly-deployed account address.
+ */
+function delegationDesignator(implementationAddress: string): string {
+    return '0xef0100' + implementationAddress.replace(/^0x/, '').toLowerCase();
+}
 
 describe('7702 Account Abstraction Tests', function () {
     this.timeout(10 * 60 * 1000);
     let alice: SeiUser;
     let bob: SeiUser;
     let simpleAccountContract: Contract;
+    let simpleAccountAddress: string;
+    let expectedDelegatedCode: string;
     let erc20: Erc20Token;
     let chainId: bigint;
     let rpcClient: EvmRpcClient;
     let erc721: Erc721Token;
     let cw721: Cw721Token;
 
-    before('Initializes clients and users', async () => {
+    before('Initializes clients, users and deploys contracts', async () => {
         const admin = await UserFactory.createAdminUser();
-        // await UserFactory.fundAdminOnSei();
         [alice, bob] = await UserFactory.createSeiUsers(admin, 2, false);
-        console.log('Bob added');
-        console.log(admin.evmWallet.wallet.privateKey);
-        simpleAccountContract = new Contract(SIMPLE_ACCOUNT_CONTRACT_ADDRESS, getAccountAbi(), alice.evmWallet.wallet);
-        erc20 = new Erc20Token(alice, '0x4b4508fb35c8963951E1D9Cd83340c9283Ac67dB');
         chainId = BigInt((await alice.evmWallet.signingClient.getNetwork()).chainId);
         rpcClient = new EvmRpcClient(alice.evmRpcEndpoint, alice.evmWallet.signingClient);
-        const deployer = new TokenDeployer(alice);
-        erc721 = new Erc721Token(alice, '0x17BA1f9cBa8f616E30eE1be1dC9b30c73eB233Da');
-        cw721 = new Cw721Token(admin, 'sei1t8pnq7euch96fzuqt0p52x3v5dnue2fd0axf9kqk6q3qgzsecmessn0gu5');
+
+        // Deploy fresh contracts each run so the suite isn't pinned to a
+        // specific chain/deployment. Admin pays for deployments so alice/bob
+        // start with clean nonces (the 7702 paths are sensitive to nonces).
+        const deployer = new TokenDeployer(admin);
+
+        const simpleAccountInstance = await deployer.deploySimpleAccount7702();
+        simpleAccountAddress = simpleAccountInstance.target as string;
+        // Re-bind the deployed contract to alice's wallet using the minimal
+        // BaseAccount ABI (executeBatch only) so encoded calldata matches the
+        // existing helpers in ./utils.
+        simpleAccountContract = new Contract(simpleAccountAddress, getAccountAbi(), alice.evmWallet.wallet);
+        expectedDelegatedCode = delegationDesignator(simpleAccountAddress);
+
+        const erc20Token = await deployer.deployErc20();
+        erc20 = new Erc20Token(alice, erc20Token.getAddress() as string);
+
+        const erc721Token = await deployer.deployErc721('PectraEOA', 'P7702', '');
+        erc721 = new Erc721Token(alice, erc721Token.getAddress() as string);
+
+        cw721 = await deployer.deployCw721(
+            'wasm_store/cw2981_royalties.wasm',
+            { name: 'pectra-eoa-cw721', symbol: 'PEOA', minter: admin.seiAddress },
+            'pectra-eoa-cw721',
+        );
+        cw721.setSigner(admin);
+
+        await waitFor(2);
     });
 
     /**
@@ -250,7 +275,7 @@ describe('7702 Account Abstraction Tests', function () {
             expect(setCodeReceipt?.type.toString()).to.equal('4');
             await waitFor(1);
             const setCode = await alice.evmWallet.signingClient.getCode(alice.evmAddress);
-            expect(setCode).to.eq('0xef0100514a27d2d9fa4e16bafaf0540afe7b45e4ae1549');
+            expect(setCode.toLowerCase()).to.eq(expectedDelegatedCode);
         });
 
         let usedAuth: ethers.Authorization;
@@ -348,7 +373,7 @@ describe('7702 Account Abstraction Tests', function () {
             expect(setCodeTx?.type.toString()).to.equal('4');
             const ferdieCode = await ferdie.evmWallet.signingClient.getCode(ferdie.evmAddress);
             expect(ferdieCode).to.not.equal('0x');
-            expect(ferdieCode).to.eq('0xef0100514a27d2d9fa4e16bafaf0540afe7b45e4ae1549');
+            expect(ferdieCode.toLowerCase()).to.eq(expectedDelegatedCode);
 
             //ferdie can call batch txs on his code now
             const ferdiePreBalance = await erc20.balanceOf(ferdie.evmAddress);
@@ -641,12 +666,19 @@ describe('7702 Account Abstraction Tests', function () {
         let batchBlockNumberHex: string;
         let batchBlockHash: string;
 
-        before('Prepare user and RPC client', async () => {
+        before('Prepare user, RPC client and deployed contracts', async () => {
             const admin = await UserFactory.createAdminUser();
             [alice, bob] = await UserFactory.createSeiUsers(admin, 2, false);
-            simpleAccountContract = new Contract(SIMPLE_ACCOUNT_CONTRACT_ADDRESS, getAccountAbi(), alice.evmWallet.wallet);
+            const deployer = new TokenDeployer(admin);
+            const accountInstance = await deployer.deploySimpleAccount7702();
+            simpleAccountContract = new Contract(
+                accountInstance.target as string,
+                getAccountAbi(),
+                alice.evmWallet.wallet,
+            );
             rpcClient = new EvmRpcClient(alice.evmRpcEndpoint, alice.evmWallet.signingClient);
-            erc20ForRpc = new Erc20Token(alice, '0x202fE99BBCf0B17B19f96562c340e91e5b27013b');
+            const erc20Token = await deployer.deployErc20();
+            erc20ForRpc = new Erc20Token(alice, erc20Token.getAddress() as string);
         });
 
         it('Estimates gas for a SetCode tx (type 0x4) via eth_estimateGas', async () => {

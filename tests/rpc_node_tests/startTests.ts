@@ -1,5 +1,4 @@
 import {SeiUser, UserFactory} from "../../shared/User";
-import {EvmRpcClient} from "../../shared/RpcClient";
 import {Cw20Token, Erc20Token} from "../../shared/Token";
 import {DebugContract} from "../../typechain-types";
 import TestConfig from "../../config/testConfig.json";
@@ -7,18 +6,15 @@ import {TokenDeployer} from "../../shared/Deployer";
 import fs from "fs";
 import {waitFor} from "../../shared/utils/helpers";
 import {ethers} from "ethers";
+import {expect} from "chai";
 
 describe('Deploys the contracts and records addresses', function () {
     this.timeout(10 * 60 * 1000);
     let users: SeiUser[];
     let admin: SeiUser;
-    let expect: Chai.ExpectStatic;
     let erc20: Erc20Token;
-    let rpcClient: EvmRpcClient;
     let cwPointerAddress: string;
-    let cwContractAddress: string;
     let ercPointerAddress: string;
-    let pointerCw20: Cw20Token;
     let baseCw20: Cw20Token;
     let debugContract: DebugContract;
 
@@ -58,7 +54,6 @@ describe('Deploys the contracts and records addresses', function () {
         await baseCw20.deployPointer(TestConfig.evmRpcEndpoint);
         await waitFor(1);
         ercPointerAddress = await baseCw20.queryPointerAddress();
-        pointerCw20 = new Cw20Token(admin, ercPointerAddress);
         await (await erc20.contract.mint(admin.evmAddress, ethers.parseEther('100000'))).wait();
         await baseCw20.mint(admin.seiAddress, '100000000000');
         debugContract = await deployer.deployDebugContract();

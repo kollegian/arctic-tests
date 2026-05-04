@@ -150,19 +150,15 @@ describe('Evm Rpc Tests', function () {
         }
     });
 
-    it('should return an error when calling a non-existent contract', async () => {
+    it('returns empty data when calling an address with no contract code', async () => {
         const callData = erc20.contract.interface.encodeFunctionData('balanceOf', [users[0].evmAddress]);
         const callObject = {
             from: users[0].evmAddress,
             to: '0x0000000000000000000000000000000000000000',
             data: callData,
         };
-        try{
-            const rpcResult = await rpcClient.callTx(callObject, 'latest');
-            console.log(rpcResult);
-        } catch(e: any){
-            console.log(e);
-        }
+        const rpcResult = await rpcClient.callTx(callObject, 'latest');
+        expect(rpcResult).to.eq('0x');
     });
 
     it('should revert when calling a non-existent function', async () => {

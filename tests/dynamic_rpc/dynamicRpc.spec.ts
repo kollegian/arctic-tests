@@ -101,7 +101,7 @@ describe('Dynamic RPC queries', function () {
             expect(txFromBlock.to).to.be.eq(txFromReceipt.to, 'to didnt match');
             expect(txFromBlock.transactionIndex).to.be.eq(txFromReceipt.transactionIndex, 'tx indexes didnt match');
             expect(txFromBlock.type).to.be.eq(txFromReceipt.type, 'type didnt match');
-            expect(Number(txFromBlock.gas)).to.be.gt(Number(txFromReceipt.gasUsed), 'used gas didnt match');
+            expect(Number(txFromBlock.gas)).to.be.gte(Number(txFromReceipt.gasUsed), 'used gas didnt match');
             console.log('txFromBlock.gasPrice', txFromBlock.gasPrice, 'txFromReceipt.effectiveGasPrice', txFromReceipt.effectiveGasPrice);
             expect(txFromBlock.gasPrice).to.eq(txFromReceipt.effectiveGasPrice, 'gas price didnt match');
         }

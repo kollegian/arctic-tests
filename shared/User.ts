@@ -268,7 +268,9 @@ export class UserFactory {
                 for (let i = 0; i < count; i++) {
                     users.push(new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint));
                 }
+                console.log('Users created here');
                 await Promise.all(users.map(u => u.initialize('', '', false)));
+                console.log('Users initialized here');
                 await UserFactory.fundAllUsers(users);
                 await waitFor(5);
                 await UserFactory.associateAll(users);

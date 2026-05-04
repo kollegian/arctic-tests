@@ -1,0 +1,20 @@
+{
+  "require": ["tsx"],
+  "timeout": 600000,
+  "exit": true,
+  "reporter": "mochawesome",
+  "reporter-option": [
+    "reportDir=reports/tokens",
+    "reportFilename=tokens-report",
+    "html=true",
+    "json=true",
+    "overwrite=true"
+  ],
+  "spec": [
+    "tests/tokens/startTests.ts",
+    "tests/tokens/erc20_refactored.spec.ts",
+    "tests/tokens/erc721_refactored.spec.ts",
+    "tests/tokens/cw20_refactored.spec.ts",
+    "tests/tokens/cw721_refactored.spec.ts"
+  ]
+}

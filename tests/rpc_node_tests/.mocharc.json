@@ -1,0 +1,23 @@
+{
+  "require": ["tsx"],
+  "timeout": 600000,
+  "exit": true,
+  "reporter": "mochawesome",
+  "reporter-option": [
+    "reportDir=reports/rpc_node",
+    "reportFilename=rpc-node-report",
+    "html=true",
+    "json=true",
+    "overwrite=true"
+  ],
+  "spec": [
+    "tests/rpc_node_tests/startTests.ts",
+    "tests/rpc_node_tests/eth_getBlockByNumber.ts",
+    "tests/rpc_node_tests/eth_getLogs.ts",
+    "tests/rpc_node_tests/sei_getLogs.ts",
+    "tests/rpc_node_tests/eth_getTransactionReceipt.spec.ts",
+    "tests/rpc_node_tests/eth_call.spec.ts",
+    "tests/rpc_node_tests/debug.spec.ts",
+    "tests/rpc_node_tests/eth_subscribe.spec.ts"
+  ]
+}

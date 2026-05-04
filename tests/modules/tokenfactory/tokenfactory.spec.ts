@@ -717,11 +717,14 @@ describe('Token factory extension tests', function () {
       const subdenom = 'adminTest';
       await createNewDenom(errorCreatorAddress, subdenom, errorWallet);
       const fullDenom = `factory/${errorCreatorAddress}/${subdenom}`;
-
-      const result = await execCommandAndReturnJson(
-        `seid tx tokenfactory change-admin ${fullDenom} invalidaddress --from tfErrCreator --fees ${CLI_FEE} -y --broadcast-mode block`
-      );
-      expect(result.code).to.not.be.eq(0);
+      try {
+          const result = await execCommandAndReturnJson(
+              `seid tx tokenfactory change-admin ${fullDenom} invalidaddress --from tfErrCreator --fees ${CLI_FEE} -y --broadcast-mode block`
+          );
+          throw new Error('Expected error');
+      } catch (e: any) {
+          expect(e.message).not.eq('Expected error');
+      }
     });
 
     it('After admin change, old admin cannot mint', async () => {

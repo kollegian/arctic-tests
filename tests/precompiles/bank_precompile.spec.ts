@@ -153,8 +153,12 @@ describe('Bank Precompile Tests', function () {
         });
 
         it('Reverts for usei (no denom metadata)', async () => {
-            const symbol = await bankContract.symbol('usei');
-            console.log(symbol);  
+            try{
+                const symbol = await bankContract.symbol('usei');
+                throw new Error('Should have reverted');
+            } catch (e: any) {
+                expect(e.message).to.not.contain('Should have reverted');
+            }
         });
     });
 

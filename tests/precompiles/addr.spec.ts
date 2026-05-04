@@ -14,7 +14,7 @@ describe('Addr Precompile Tests', function () {
 
     before('Initialize users and contract', async () => {
         admin = await UserFactory.createAdminUser();
-        [alice] = await UserFactory.createSeiUsers(admin, 1, true);
+        alice = await UserFactory.createSeiUser(admin, 'addrAlice');
         addrContract = new Contract(ADDR_PRECOMPILE_ADDRESS, ADDR_ABI, admin.evmWallet.wallet);
     });
 

@@ -6,7 +6,6 @@ import {Block, ContractTransactionReceipt, ethers, LogDescription} from "ethers"
 import {expect} from "chai";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {waitFor} from "../../shared/utils/helpers";
-import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
 import {TokenDeployer} from "../../shared/Deployer";
 import fs from "fs";
 
@@ -30,7 +29,7 @@ describe('Evm Rpc Tests', function () {
 
     let multipleTxReceipt: ContractTransactionReceipt;
     let txBlocks: Map<string, number> = new Map<string, number>();
-    it.only('Sends multiple evm txs', async () => {
+    it('Sends multiple evm txs', async () => {
         const responses = await erc20.sendMultipleTxs(users);
         multipleTxReceipt = responses[0];
         for (const response of responses) {
@@ -45,77 +44,80 @@ describe('Evm Rpc Tests', function () {
     });
 
     let oneSyntheticOneEvmTx: ContractTransactionReceipt;
-    it.only('Send a synthetic and evm tx', async () => {
-        const encodedData = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('1')]);
-        const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
+    it('Send a synthetic and evm tx', async () => {
         baseCw20.setSigner(users[1]);
-        const delayed = async () =>{
-            await waitFor(0.70);
-            return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
-
-        }
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.transfer(admin.seiAddress, '100000'),
-        ]);
-        oneSyntheticOneEvmTx = await rpcClient.getTransactionReceipt(results[0]);
-        console.log('evm block is ', Number(oneSyntheticOneEvmTx.blockNumber));
-        console.log('sei block is ', Number(results[1].height));
-        expect(Number(oneSyntheticOneEvmTx.blockNumber)).to.be.eq(results[1].height);
+        const { evmReceipt, blockNumber } = await AtomicTxSender.sendAtomicSameBlock(
+            admin,
+            () => {
+                const encoded = erc20.contract.interface.encodeFunctionData(
+                    'transfer', [admin.evmAddress, ethers.parseEther('1')]);
+                return AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encoded);
+            },
+            admin.evmRpcEndpoint,
+            () => baseCw20.signTransfer(users[1], admin.seiAddress, '100000'),
+            rpcClient,
+        );
+        oneSyntheticOneEvmTx = evmReceipt;
+        console.log('shared block is', blockNumber);
+        expect(Number(evmReceipt.blockNumber)).to.be.eq(blockNumber);
     });
 
-    let multipleSyntheticAndOneFailingEvmTx: ExecuteResult;
-    it.only('Sends multiple failing txs', async () => {
-        const encoded1 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('10000000000')]);
-        const signed = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
-        const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
-        const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
-        const delayed = async () => {
-            await waitFor(0.10);
-            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin)
-            return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
-        }
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.transfer(admin.seiAddress, '100000')
-        ]);
-        const receipt = await rpcClient.getTransactionReceipt(results[0]);
-        console.log('evm block is ', Number(receipt.blockNumber));
-        console.log('sei block is ', Number(results[1].height));
-        multipleSyntheticAndOneFailingEvmTx = results[1];
-
-        expect(Number(receipt.blockNumber)).to.be.eq(results[1].height);
+    let multipleSyntheticAndOneFailingEvmTx: { height: number };
+    it('Sends multiple failing txs', async () => {
+        baseCw20.setSigner(admin);
+        const { evmReceipts, blockNumber } = await AtomicTxSender.sendAtomicSameBlockBatch(
+            admin,
+            async () => {
+                const encoded1 = erc20.contract.interface.encodeFunctionData(
+                    'transfer', [users[0].evmAddress, ethers.parseEther('10000000000')]);
+                const encoded2 = erc20.contract.interface.encodeFunctionData(
+                    'transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
+                return Promise.all([
+                    AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1),
+                    AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2),
+                ]);
+            },
+            admin.evmRpcEndpoint,
+            async () => [await baseCw20.signTransfer(admin, admin.seiAddress, '100000')],
+            rpcClient,
+        );
+        multipleSyntheticAndOneFailingEvmTx = { height: blockNumber };
+        console.log('shared block is', blockNumber);
+        expect(Number(evmReceipts[0].blockNumber)).to.be.eq(blockNumber);
     });
 
     let multipleSyntheticAndEvmTx: ContractTransactionReceipt;
-    it.only('Sends multiple synthetic and multiple evm txs', async () => {
-        const signedTxs: string[] = [];
-        for (let i = 0; i < 3; i++){
-            const encoded = erc20.contract.interface.encodeFunctionData('transfer', [users[i].evmAddress, ethers.parseEther('0.01')]);
-            signedTxs.push(await AtomicTxSender.signEvmTransaction(users[i], erc20.getAddress(), encoded));
-        }
-
-        const delayed = async () =>{
-            await waitFor(0.70);
-            return Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)))
-        }
-        const msgs = [
-            {contractAddress: baseCw20.getAddress(),
-                msg: { transfer: { recipient: admin.seiAddress, amount: '100000' }}},
-            {contractAddress: baseCw20.getAddress(),
-                msg: { transfer: { recipient: admin.seiAddress, amount: '100000' }}}
-        ];
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.execMultiple(msgs),
-        ]);
-        multipleSyntheticAndEvmTx = await rpcClient.getTransactionReceipt(results[0][0]);
-        console.log('evm block is ', Number(multipleSyntheticAndEvmTx.blockNumber));
-        console.log('sei block is ', Number(results[1].height));
-        expect(Number(multipleSyntheticAndEvmTx.blockNumber)).to.be.eq(results[1].height);
+    it('Sends multiple synthetic and multiple evm txs', async () => {
+        baseCw20.setSigner(admin);
+        const { evmReceipts, blockNumber } = await AtomicTxSender.sendAtomicSameBlockBatch(
+            admin,
+            async () => {
+                const signed: string[] = [];
+                for (let i = 0; i < 3; i++) {
+                    const encoded = erc20.contract.interface.encodeFunctionData(
+                        'transfer', [users[i].evmAddress, ethers.parseEther('0.01')]);
+                    signed.push(await AtomicTxSender.signEvmTransaction(users[i], erc20.getAddress(), encoded));
+                }
+                return signed;
+            },
+            admin.evmRpcEndpoint,
+            async () => {
+                const msgs = [
+                    { contractAddress: baseCw20.getAddress(),
+                      msg: { transfer: { recipient: admin.seiAddress, amount: '100000' } } },
+                    { contractAddress: baseCw20.getAddress(),
+                      msg: { transfer: { recipient: admin.seiAddress, amount: '100000' } } },
+                ];
+                return [await baseCw20.signExecMultiple(admin, msgs)];
+            },
+            rpcClient,
+        );
+        multipleSyntheticAndEvmTx = evmReceipts[0];
+        console.log('shared block is', blockNumber);
+        expect(Number(multipleSyntheticAndEvmTx.blockNumber)).to.be.eq(blockNumber);
     });
 
-    it.only('Can read topics with multiple logs and validate indexes', async () => {
+    it('Can read topics with multiple logs and validate indexes', async () => {
         const provider = admin.evmWallet.signingClient;
         for (const blockNumber of txBlocks.keys()) {
             const blockHash = (await provider.send('eth_getBlockByNumber', [ethers.toQuantity(blockNumber), false])).hash;
@@ -182,7 +184,7 @@ describe('Evm Rpc Tests', function () {
         }
     });
 
-    it.only('Cant read topics given that there are failing txs and multiple cosmos txs from pointer on cosmos', async () => {
+    it('Cant read topics given that there are failing txs and multiple cosmos txs from pointer on cosmos', async () => {
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) -2),
             toBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) + 2),
@@ -221,7 +223,7 @@ describe('Evm Rpc Tests', function () {
         expect(logIndexes.size).to.be.eq(users.length);
     });
 
-    it.only('Can read topics with both synthetic and evm txs', async () => {
+    it('Can read topics with both synthetic and evm txs', async () => {
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) -1),
             toBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) + 1),
@@ -231,7 +233,7 @@ describe('Evm Rpc Tests', function () {
         expect(logResponses.length).to.be.eq(2);
     });
 
-    it.only('Can read topics with both erc20 and erc721 events', async () => {
+    it('Can read topics with both erc20 and erc721 events', async () => {
         const deployer = new TokenDeployer(admin);
         const erc721 = await deployer.deployErc721('TestCw721', 'TestCw721', 'http://example.com');
         await (await erc721.safeMint(admin.evmAddress, '1')).wait();
@@ -272,7 +274,7 @@ describe('Evm Rpc Tests', function () {
     });
 
     let multipleTxBlock;
-    it.only('Can return txs successfully for a span of 100 blocks', async () => {
+    it('Can return txs successfully for a span of 100 blocks', async () => {
         const encodedTx = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('0.01')]);
         const signedTxs = await Promise.all(users.map((user) => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
         const results = await Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)));
@@ -317,7 +319,7 @@ describe('Evm Rpc Tests', function () {
     let i = 0;
     const tags = ['finalized', 'safe', 'latest', 'pending'];
     for(const tag of tags) {
-        it.only(`From block ${tag} return info as expected`, async () => {
+        it(`From block ${tag} return info as expected`, async () => {
             await waitFor(2);
             const tx = erc20.transfer(users[0].evmAddress, ethers.parseEther('0.1'));
             let index = 0;
@@ -339,7 +341,7 @@ describe('Evm Rpc Tests', function () {
             throw new Error('I threw this error occurred.');
         });
 
-        it.only(`To block ${tag} return info as expected`, async () => {
+        it(`To block ${tag} return info as expected`, async () => {
             await waitFor(2);
             const blockNum = await admin.evmWallet.signingClient.getBlock('latest') as unknown as Block;
 
@@ -364,8 +366,9 @@ describe('Evm Rpc Tests', function () {
         });
     }
 
-    it.only('Eth get logs tx indexes alongside with log indexes return correct data', async () =>{
+    it('Eth get logs tx indexes alongside with log indexes return correct data', async () =>{
         const blockTxs = await rpcClient.getBlockByNumber(multipleTxBlock, true);
+        const blockReceipts = await rpcClient.getBlockReceipts(ethers.toQuantity(multipleTxBlock));
         const logParams = {
             fromBlock: ethers.toQuantity(Number(multipleTxBlock) - 1),
             toBlock: ethers.toQuantity(Number(multipleTxBlock) + 3),
@@ -376,12 +379,26 @@ describe('Evm Rpc Tests', function () {
 
         for (const tx of blockTxs.transactions) {
             const txReceipt = await rpcClient.getTransactionReceipt(tx.hash);
-            // verify that the tx index matches
-            const logTxIndex = logs.find(log => log.transactionIndex === txReceipt.transactionIndex);
+            const receiptFromBlock = blockReceipts.find((receipt: any) => receipt.transactionHash === tx.hash);
+            expect(receiptFromBlock, `missing block receipt for ${tx.hash}`).to.not.be.undefined;
+            expect(receiptFromBlock.transactionIndex).to.eq(tx.transactionIndex);
+            expect(txReceipt.transactionIndex).to.eq(tx.transactionIndex);
+            expect(txReceipt.blockHash).to.eq(blockTxs.hash);
+            expect(txReceipt.blockNumber).to.eq(blockTxs.number);
 
-            // verify that log index matches
-            console.log(logTxIndex);
-            console.log(txReceipt.logs);
+            for (const receiptLog of txReceipt.logs) {
+                const matchingLog = logs.find(log =>
+                    log.transactionHash === receiptLog.transactionHash &&
+                    log.logIndex === receiptLog.logIndex
+                );
+                expect(matchingLog, `missing log ${receiptLog.logIndex} for ${tx.hash}`).to.not.be.undefined;
+                expect(matchingLog.transactionIndex).to.eq(txReceipt.transactionIndex);
+                expect(matchingLog.blockHash).to.eq(txReceipt.blockHash);
+                expect(matchingLog.blockNumber).to.eq(txReceipt.blockNumber);
+                expect(matchingLog.address.toLowerCase()).to.eq(receiptLog.address.toLowerCase());
+                expect(matchingLog.topics).to.deep.eq(receiptLog.topics);
+                expect(matchingLog.data).to.eq(receiptLog.data);
+            }
         }
     });
 })

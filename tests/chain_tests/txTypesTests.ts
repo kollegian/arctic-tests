@@ -142,7 +142,7 @@ describe('Ethereum Transaction Types Tests', function () {
                 const nonce = await alice.evmWallet.wallet.getNonce('latest');
                 const feeData = await alice.evmWallet.signingClient.getFeeData();
                 const gasPrice = feeData.gasPrice!;
-                const overGasLimit = 35000000n;
+                const overGasLimit = 51000000n;
 
                 const txRequest = {
                     to: erc20Contract.getAddress(),
@@ -156,14 +156,24 @@ describe('Ethereum Transaction Types Tests', function () {
                 };
 
                 const signedTx = await alice.evmWallet.wallet.signTransaction(txRequest);
-                const txHash = await AtomicTxSender.sendRawTransactionWithProvider(
-                    alice.evmWallet.signingClient, signedTx
-                );
-                const receipt = await alice.evmWallet.signingClient.waitForTransaction(txHash);
-                expect(receipt).to.not.be.null;
-                expect(receipt!.status).to.equal(1);
-                expect(Number(receipt!.gasUsed)).to.be.greaterThan(0);
-                expect(Number(receipt!.gasUsed)).to.be.lessThan(Number(overGasLimit));
+
+                let caught: any = null;
+                try {
+                    await AtomicTxSender.sendRawTransactionWithProvider(
+                        alice.evmWallet.signingClient, signedTx
+                    );
+                } catch (err: any) {
+                    caught = err;
+                }
+                expect(caught, 'broadcast should have been rejected at eth_sendRawTransaction').to.not.be.null;
+                const rawMsg =
+                    caught?.info?.error?.message ??
+                    caught?.error?.message ??
+                    caught?.shortMessage ??
+                    caught?.message ??
+                    String(caught);
+                const msg = String(rawMsg).toLowerCase();
+                expect(msg).to.match(/out of gas|exceeds block gas limit|gas limit/);
             });
 
             it('All users send multiple legacy transactions in parallel and base fee increases', async () => {
@@ -436,14 +446,14 @@ describe('Ethereum Transaction Types Tests', function () {
                     ['blockNumber', normalizeHex(receipt.blockNumber), normalizeHex(found.blockNumber)],
                     ['contractAddress', normalizeAddr(receipt.contractAddress), normalizeAddr(found.contractAddress)],
                     ['cumulativeGasUsed', normalizeHex(receipt.cumulativeGasUsed), normalizeHex(found.cumulativeGasUsed)],
-                    ['effectiveGasPrice', normalizeHex((receipt as any).effectiveGasPrice), normalizeHex(found.effectiveGasPrice)],
+                    ['effectiveGasPrice', normalizeHex((receipt as any).gasPrice), normalizeHex(found.effectiveGasPrice)],
                     ['from', normalizeAddr(receipt.from), normalizeAddr(found.from)],
                     ['gasUsed', normalizeHex(receipt.gasUsed), normalizeHex(found.gasUsed)],
                     ['logsBloom', receipt.logsBloom, found.logsBloom],
                     ['status', normalizeHex(receipt.status), normalizeHex(found.status)],
                     ['to', normalizeAddr(receipt.to), normalizeAddr(found.to)],
                     ['transactionHash', normalizeHex(receipt.hash), normalizeHex(found.transactionHash)],
-                    ['transactionIndex', normalizeHex((receipt as any).transactionIndex), normalizeHex(found.transactionIndex)],
+                    ['transactionIndex', normalizeHex((receipt as any).index), normalizeHex(found.transactionIndex)],
                     ['type', normalizeHex(receipt.type), normalizeHex(found.type)],
                 ];
                 for (const [prop, a, b] of pairs) {

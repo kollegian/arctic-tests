@@ -126,7 +126,7 @@ describe("Gov Precompile Tests", function () {
             }
         });
 
-        it.only('Sending proposals with title over 140 characters will fail', async function () {
+        it('Sending proposals with title over 140 characters will fail', async function () {
             const title = "This is a test text proposal for governance".repeat(500);
             try {
                 const proposal = returnTextProposal(false, title);
@@ -215,7 +215,7 @@ describe("Gov Precompile Tests", function () {
             expect(Object.values(proposalQuery.proposal.finalTallyResult)).to.be.deep.eq(['0', '0', '0', '0']);
         });
 
-        it.only('Legacy proposals are still supported', async () => {
+        it('Legacy proposals are still supported', async () => {
             const proposal = JSON.stringify({
                 "title": "Test v1 Proposal",
                 "description": "This is a test proposal using the v1 governance module format",
@@ -769,7 +769,7 @@ describe("Gov Precompile Tests", function () {
             expect(textDecoder.decode(parameters.tallyParams.quorum)).to.be.eq('100000000000000000');
         });
 
-        it.only('Invalid proposals wont be executed', async () =>{
+        it('Invalid proposals wont be executed', async () =>{
             const paramChangeProposal = JSON.stringify({
                 "title": "Gov Param Change",
                 "description": "Update quorum to 0.90",

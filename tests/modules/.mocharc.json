@@ -1,0 +1,15 @@
+{
+  "require": ["tsx"],
+  "timeout": 600000,
+  "exit": true,
+  "reporter": "mochawesome",
+  "reporter-option": [
+    "reportDir=reports/modules",
+    "reportFilename=modules-report",
+    "html=true",
+    "json=true",
+    "overwrite=true"
+  ],
+  "spec": ["tests/modules/**/*.spec.ts"],
+  "ignore": ["tests/modules/gov/gov.spec.ts"]
+}

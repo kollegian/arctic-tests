@@ -3,21 +3,101 @@ import { execCommandAndReturnJson } from '../../../shared/utils/cliUtils';
 import { Querier } from '@sei-js/cosmos/rest';
 import { Encoder } from '@sei-js/cosmos/encoding';
 import { SeiUser, UserFactory } from '../../../shared/User';
-import testConfig from '../../../config/testConfig.json';
 import { GenericAuthorization } from 'cosmjs-types/cosmos/authz/v1beta1/authz';
 import { Any } from 'cosmjs-types/google/protobuf/any';
-import { MsgRevoke } from 'cosmjs-types/cosmos/authz/v1beta1/tx';
+import { MsgGrant, MsgRevoke } from 'cosmjs-types/cosmos/authz/v1beta1/tx';
+import { MsgSend } from 'cosmjs-types/cosmos/bank/v1beta1/tx';
 import ExpectStatic = Chai.ExpectStatic;
 import fs from 'node:fs';
+import { getRpcQueryClient, moduleRestEndpoint, withRestFallback } from '../utils/rpcQueryClient';
 
 let expect: ExpectStatic;
-const restEndpoint = testConfig.restEndpoint;
-const fee = { amount: coins(24000, 'usei'), gas: '500000' };
-const CLI_FEE = '24200usei';
+const fee = { amount: coins(50000, 'usei'), gas: '500000' };
+const CLI_FEE = '50000usei';
 const AUTHZ_SEND_AMOUNT = '100000';
 const SMALL_AUTHZ_SEND_AMOUNT = '1000';
 const LIFECYCLE_SEND_AMOUNT = '50000';
 const AUTHZ_MSG_TYPE = '/cosmos.bank.v1beta1.MsgSend';
+const AUTHZ_EXPIRATION = '2030-01-01T00:00:00Z';
+const AUTHZ_EXPIRATION_TIMESTAMP = {
+  seconds: BigInt(Math.floor(new Date(AUTHZ_EXPIRATION).getTime() / 1000)),
+  nanos: 0,
+};
+const AUTHZ_EXPIRATION_UNIX = AUTHZ_EXPIRATION_TIMESTAMP.seconds.toString();
+
+// `Querier` (REST) returns each grant's `authorization` already decoded into
+// JSON, so `authorization.msg` is populated directly. The Tendermint RPC path
+// returns it as a raw protobuf `Any` ({ typeUrl, value: Uint8Array }). This
+// helper normalises both shapes so call sites stay identical regardless of
+// which path produced the response.
+function authzMsg(grant: any): string | undefined {
+  const auth = grant?.authorization;
+  if (!auth) return undefined;
+  if (typeof auth.msg === 'string') return auth.msg;
+  if (auth.value instanceof Uint8Array) {
+    try {
+      return GenericAuthorization.decode(auth.value).msg;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+// `Querier` and cosmjs both return GrantAuthorization/Any types but bundle them
+// from different proto packages, so we widen to `any` to avoid the structural
+// mismatch noise — the runtime shape is the same in either case.
+const queryGranteeGrants = (grantee: string): Promise<any> =>
+  withRestFallback<any>(
+    'authz.granteeGrants',
+    async () => (await getRpcQueryClient()).authz.granteeGrants(grantee),
+    () => Querier.cosmos.authz.v1beta1.GranteeGrants({ grantee }, { pathPrefix: moduleRestEndpoint }) as any,
+  );
+
+const queryGranterGrants = (granter: string): Promise<any> =>
+  withRestFallback<any>(
+    'authz.granterGrants',
+    async () => (await getRpcQueryClient()).authz.granterGrants(granter),
+    () => Querier.cosmos.authz.v1beta1.GranterGrants({ granter }, { pathPrefix: moduleRestEndpoint }) as any,
+  );
+
+async function queryBalance(address: string, denom: string): Promise<{ denom: string; amount: string }> {
+  return withRestFallback(
+    'bank.balance',
+    async () => {
+      const coin = await (await getRpcQueryClient()).bank.balance(address, denom);
+      return { denom: coin?.denom ?? denom, amount: coin?.amount ?? '0' };
+    },
+    async () => {
+      const resp = await Querier.cosmos.bank.v1beta1.Balance(
+        { address, denom },
+        { pathPrefix: moduleRestEndpoint },
+      );
+      return { denom: resp.balance?.denom ?? denom, amount: resp.balance?.amount ?? '0' };
+    },
+  );
+}
+
+function genericGrantMsg(granter: string, grantee: string, msgType = AUTHZ_MSG_TYPE) {
+  return {
+    typeUrl: "/cosmos.authz.v1beta1.MsgGrant",
+    value: MsgGrant.fromPartial({
+      granter,
+      grantee,
+      grant: {
+        authorization: {
+          typeUrl: "/cosmos.authz.v1beta1.GenericAuthorization",
+          value: GenericAuthorization.encode(
+            GenericAuthorization.fromPartial({
+              msg: msgType,
+            }),
+          ).finish(),
+        },
+        expiration: AUTHZ_EXPIRATION_TIMESTAMP,
+      },
+    }),
+  };
+}
 
 describe('Authz Module Tests', function () {
   this.timeout(4 * 60 * 1000);
@@ -36,7 +116,7 @@ describe('Authz Module Tests', function () {
   describe('seid CLI Tests', function () {
     it('Grant generic authorization via seid CLI', async () => {
       const result = await execCommandAndReturnJson(
-        `seid tx authz grant ${grantee.seiAddress} generic --msg-type ${AUTHZ_MSG_TYPE} --from authzGranter --fees ${CLI_FEE} -y --broadcast-mode block`
+        `seid tx authz grant ${grantee.seiAddress} generic --msg-type ${AUTHZ_MSG_TYPE} --expiration ${AUTHZ_EXPIRATION_UNIX} --from authzGranter --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(result.code).to.be.eq(0);
     });
@@ -78,23 +158,7 @@ describe('Authz Module Tests', function () {
 
   describe('CosmJS Tests', function () {
     it('Grant with cosmjs', async () => {
-      const grantMsg = {
-        typeUrl: "/cosmos.authz.v1beta1.MsgGrant",
-        value: {
-          granter: granter.seiAddress,
-          grantee: grantee.seiAddress,
-          grant: {
-            authorization: {
-              typeUrl: "/cosmos.authz.v1beta1.GenericAuthorization",
-              value: GenericAuthorization.encode(
-                GenericAuthorization.fromPartial({
-                  msg: AUTHZ_MSG_TYPE,
-                }),
-              ).finish(),
-            },
-          },
-        },
-      };
+      const grantMsg = genericGrantMsg(granter.seiAddress, grantee.seiAddress);
       const grantResult = await granter.seiWallet.signingClient.signAndBroadcast(
         granter.seiAddress, [grantMsg], fee, 'Test grant'
       );
@@ -102,15 +166,15 @@ describe('Authz Module Tests', function () {
     });
 
     it('Execute grant', async () => {
-      const sendMsg = Encoder.cosmos.bank.v1beta1.MsgSend.fromPartial({
-        from_address: granter.seiAddress,
-        to_address: grantee.seiAddress,
+      const sendMsg = MsgSend.fromPartial({
+        fromAddress: granter.seiAddress,
+        toAddress: grantee.seiAddress,
         amount: [{ denom: 'usei', amount: AUTHZ_SEND_AMOUNT }],
       });
 
       const anyMsgSend = Any.fromPartial({
         typeUrl: '/cosmos.bank.v1beta1.MsgSend',
-        value: Encoder.cosmos.bank.v1beta1.MsgSend.encode(sendMsg).finish(),
+        value: MsgSend.encode(sendMsg).finish(),
       });
 
       const execMsg = {
@@ -123,25 +187,21 @@ describe('Authz Module Tests', function () {
       const result = await grantee.seiWallet.signingClient.signAndBroadcast(
         grantee.seiAddress, [execMsg], fee, 'exec example'
       );
-      expect(result.code).to.be.eq(0);
+      expect(result.code, result.rawLog).to.be.eq(0);
     });
 
     it('Query grantee grants via Querier', async () => {
-      const grantResponse = await Querier.cosmos.authz.v1beta1.GranteeGrants({
-        grantee: grantee.seiAddress,
-      }, { pathPrefix: restEndpoint });
+      const grantResponse = await queryGranteeGrants(grantee.seiAddress);
       expect(grantResponse.grants[0].granter).to.be.eq(granter.seiAddress);
       expect(grantResponse.grants[0].grantee).to.be.eq(grantee.seiAddress);
-      expect(grantResponse.grants[0].authorization!.msg).to.be.eq(AUTHZ_MSG_TYPE);
+      expect(authzMsg(grantResponse.grants[0])).to.be.eq(AUTHZ_MSG_TYPE);
     });
 
     it('Query granter grants via Querier', async () => {
-      const grantResponse = await Querier.cosmos.authz.v1beta1.GranterGrants({
-        granter: granter.seiAddress,
-      }, { pathPrefix: restEndpoint });
+      const grantResponse = await queryGranterGrants(granter.seiAddress);
       expect(grantResponse.grants[0].granter).to.be.eq(granter.seiAddress);
       expect(grantResponse.grants[0].grantee).to.be.eq(grantee.seiAddress);
-      expect(grantResponse.grants[0].authorization!.msg).to.be.eq(AUTHZ_MSG_TYPE);
+      expect(authzMsg(grantResponse.grants[0])).to.be.eq(AUTHZ_MSG_TYPE);
     });
 
     it('Revoke grant', async () => {
@@ -160,27 +220,23 @@ describe('Authz Module Tests', function () {
     });
 
     it('Query after revoke', async () => {
-      const granteeResponse = await Querier.cosmos.authz.v1beta1.GranteeGrants({
-        grantee: grantee.seiAddress,
-      }, { pathPrefix: restEndpoint });
+      const granteeResponse = await queryGranteeGrants(grantee.seiAddress);
       expect(granteeResponse.grants).to.have.length(0);
 
-      const granterResponse = await Querier.cosmos.authz.v1beta1.GranterGrants({
-        granter: granter.seiAddress,
-      }, { pathPrefix: restEndpoint });
+      const granterResponse = await queryGranterGrants(granter.seiAddress);
       expect(granterResponse.grants).to.have.length(0);
     });
 
     it('Cannot execute revoked grant', async () => {
-      const sendMsg = Encoder.cosmos.bank.v1beta1.MsgSend.fromPartial({
-        from_address: granter.seiAddress,
-        to_address: grantee.seiAddress,
+      const sendMsg = MsgSend.fromPartial({
+        fromAddress: granter.seiAddress,
+        toAddress: grantee.seiAddress,
         amount: [{ denom: 'usei', amount: '100' }],
       });
 
       const anyMsgSend = Any.fromPartial({
         typeUrl: '/cosmos.bank.v1beta1.MsgSend',
-        value: Encoder.cosmos.bank.v1beta1.MsgSend.encode(sendMsg).finish(),
+        value: MsgSend.encode(sendMsg).finish(),
       });
 
       const execMsg = {
@@ -214,47 +270,19 @@ describe('Authz Module Tests', function () {
 
   describe('Error Cases', function () {
     it('Cannot grant to self (CosmJS)', async () => {
-      const grantMsg = {
-        typeUrl: "/cosmos.authz.v1beta1.MsgGrant",
-        value: {
-          granter: granter.seiAddress,
-          grantee: granter.seiAddress,
-          grant: {
-            authorization: {
-              typeUrl: "/cosmos.authz.v1beta1.GenericAuthorization",
-              value: GenericAuthorization.encode(
-                GenericAuthorization.fromPartial({
-                  msg: AUTHZ_MSG_TYPE,
-                }),
-              ).finish(),
-            },
-          },
-        },
-      };
-      const result = await granter.seiWallet.signingClient.signAndBroadcast(
-        granter.seiAddress, [grantMsg], fee, 'self grant'
-      );
-      expect(result.code).to.not.be.eq(0);
+      const grantMsg = genericGrantMsg(granter.seiAddress, granter.seiAddress);
+      try {
+        await granter.seiWallet.signingClient.signAndBroadcast(
+          granter.seiAddress, [grantMsg], fee, 'self grant'
+        );
+        expect.fail('self grant should fail');
+      } catch (e: any) {
+        expect(e.message).to.contain('granter and grantee cannot be same');
+      }
     });
 
     it('Cannot execute grant for unauthorized message type', async () => {
-      const grantMsg = {
-        typeUrl: "/cosmos.authz.v1beta1.MsgGrant",
-        value: {
-          granter: granter.seiAddress,
-          grantee: grantee.seiAddress,
-          grant: {
-            authorization: {
-              typeUrl: "/cosmos.authz.v1beta1.GenericAuthorization",
-              value: GenericAuthorization.encode(
-                GenericAuthorization.fromPartial({
-                  msg: AUTHZ_MSG_TYPE,
-                }),
-              ).finish(),
-            },
-          },
-        },
-      };
+      const grantMsg = genericGrantMsg(granter.seiAddress, grantee.seiAddress);
       const grantResult = await granter.seiWallet.signingClient.signAndBroadcast(
         granter.seiAddress, [grantMsg], fee, 'grant for send only'
       );
@@ -297,36 +325,20 @@ describe('Authz Module Tests', function () {
     it('Cannot execute with wrong grantee', async () => {
       const wrongUser = await UserFactory.createSeiUser(admin, 'authzWrong');
 
-      const grantMsg = {
-        typeUrl: "/cosmos.authz.v1beta1.MsgGrant",
-        value: {
-          granter: granter.seiAddress,
-          grantee: grantee.seiAddress,
-          grant: {
-            authorization: {
-              typeUrl: "/cosmos.authz.v1beta1.GenericAuthorization",
-              value: GenericAuthorization.encode(
-                GenericAuthorization.fromPartial({
-                  msg: AUTHZ_MSG_TYPE,
-                }),
-              ).finish(),
-            },
-          },
-        },
-      };
+      const grantMsg = genericGrantMsg(granter.seiAddress, grantee.seiAddress);
       const grantResult = await granter.seiWallet.signingClient.signAndBroadcast(
         granter.seiAddress, [grantMsg], fee, 'grant for grantee'
       );
       expect(grantResult.code).to.be.eq(0);
 
-      const sendMsg = Encoder.cosmos.bank.v1beta1.MsgSend.fromPartial({
-        from_address: granter.seiAddress,
-        to_address: wrongUser.seiAddress,
+      const sendMsg = MsgSend.fromPartial({
+        fromAddress: granter.seiAddress,
+        toAddress: wrongUser.seiAddress,
         amount: [{ denom: 'usei', amount: SMALL_AUTHZ_SEND_AMOUNT }],
       });
       const anyMsgSend = Any.fromPartial({
         typeUrl: '/cosmos.bank.v1beta1.MsgSend',
-        value: Encoder.cosmos.bank.v1beta1.MsgSend.encode(sendMsg).finish(),
+        value: MsgSend.encode(sendMsg).finish(),
       });
       const execMsg = {
         typeUrl: "/cosmos.authz.v1beta1.MsgExec",
@@ -357,7 +369,7 @@ describe('Authz Module Tests', function () {
   describe('Cross-Runtime Consistency', function () {
     before(async () => {
       const grantResult = await execCommandAndReturnJson(
-        `seid tx authz grant ${grantee.seiAddress} generic --msg-type ${AUTHZ_MSG_TYPE} --from authzGranter --fees ${CLI_FEE} -y --broadcast-mode block`
+        `seid tx authz grant ${grantee.seiAddress} generic --msg-type ${AUTHZ_MSG_TYPE} --expiration ${AUTHZ_EXPIRATION_UNIX} --from authzGranter --fees ${CLI_FEE} -y --broadcast-mode block`
       );
       expect(grantResult.code).to.be.eq(0);
     });
@@ -372,24 +384,23 @@ describe('Authz Module Tests', function () {
       const cliResult = await execCommandAndReturnJson(
         `seid q authz grants ${granter.seiAddress} ${grantee.seiAddress}`
       );
-      const restResponse = await Querier.cosmos.authz.v1beta1.GranteeGrants({
-        grantee: grantee.seiAddress,
-      }, { pathPrefix: restEndpoint });
+      const queryResponse = await queryGranteeGrants(grantee.seiAddress);
 
       expect(cliResult.grants).to.be.an('array');
       expect(cliResult.grants).to.have.length.gte(1);
 
-      const restGrant = restResponse.grants.find(
+      const queryGrant = queryResponse.grants.find(
         (g: any) => g.granter === granter.seiAddress && g.grantee === grantee.seiAddress
       );
-      expect(restGrant).to.not.be.undefined;
-      expect(restGrant!.authorization!.msg).to.be.eq(AUTHZ_MSG_TYPE);
+      expect(queryGrant).to.not.be.undefined;
+      expect(authzMsg(queryGrant)).to.be.eq(AUTHZ_MSG_TYPE);
 
       const cliGrant = cliResult.grants.find(
-        (g: any) => g.authorization?.msg === AUTHZ_MSG_TYPE
+        (g: any) => authzMsg(g) === AUTHZ_MSG_TYPE
       );
       expect(cliGrant).to.not.be.undefined;
-      expect(cliGrant!.grantee).to.be.eq(grantee.seiAddress);
+      expect(queryGrant!.granter).to.be.eq(granter.seiAddress);
+      expect(queryGrant!.grantee).to.be.eq(grantee.seiAddress);
     });
   });
 
@@ -403,50 +414,29 @@ describe('Authz Module Tests', function () {
     });
 
     it('Grant -> Execute -> Verify state change -> Revoke -> Verify cannot execute', async () => {
-      const grantMsg = {
-        typeUrl: "/cosmos.authz.v1beta1.MsgGrant",
-        value: {
-          granter: lcGranter.seiAddress,
-          grantee: lcGrantee.seiAddress,
-          grant: {
-            authorization: {
-              typeUrl: "/cosmos.authz.v1beta1.GenericAuthorization",
-              value: GenericAuthorization.encode(
-                GenericAuthorization.fromPartial({
-                  msg: AUTHZ_MSG_TYPE,
-                }),
-              ).finish(),
-            },
-          },
-        },
-      };
+      const grantMsg = genericGrantMsg(lcGranter.seiAddress, lcGrantee.seiAddress);
       const grantResult = await lcGranter.seiWallet.signingClient.signAndBroadcast(
         lcGranter.seiAddress, [grantMsg], fee, 'lifecycle grant'
       );
       expect(grantResult.code).to.be.eq(0);
 
-      const grantsResponse = await Querier.cosmos.authz.v1beta1.GranteeGrants({
-        grantee: lcGrantee.seiAddress,
-      }, { pathPrefix: restEndpoint });
+      const grantsResponse = await queryGranteeGrants(lcGrantee.seiAddress);
       const activeGrant = grantsResponse.grants.find(
         (g: any) => g.granter === lcGranter.seiAddress
       );
       expect(activeGrant).to.not.be.undefined;
-      expect(activeGrant!.authorization!.msg).to.be.eq(AUTHZ_MSG_TYPE);
+      expect(authzMsg(activeGrant)).to.be.eq(AUTHZ_MSG_TYPE);
 
-      const granterPreBalance = await Querier.cosmos.bank.v1beta1.Balance({
-        address: lcGranter.seiAddress,
-        denom: 'usei'
-      }, { pathPrefix: restEndpoint });
+      const granterPreBalance = await queryBalance(lcGranter.seiAddress, 'usei');
 
-      const sendMsg = Encoder.cosmos.bank.v1beta1.MsgSend.fromPartial({
-        from_address: lcGranter.seiAddress,
-        to_address: lcGrantee.seiAddress,
+      const sendMsg = MsgSend.fromPartial({
+        fromAddress: lcGranter.seiAddress,
+        toAddress: lcGrantee.seiAddress,
         amount: [{ denom: 'usei', amount: LIFECYCLE_SEND_AMOUNT }],
       });
       const anyMsgSend = Any.fromPartial({
         typeUrl: '/cosmos.bank.v1beta1.MsgSend',
-        value: Encoder.cosmos.bank.v1beta1.MsgSend.encode(sendMsg).finish(),
+        value: MsgSend.encode(sendMsg).finish(),
       });
       const execMsg = {
         typeUrl: "/cosmos.authz.v1beta1.MsgExec",
@@ -458,14 +448,11 @@ describe('Authz Module Tests', function () {
       const execResult = await lcGrantee.seiWallet.signingClient.signAndBroadcast(
         lcGrantee.seiAddress, [execMsg], fee, 'lifecycle exec'
       );
-      expect(execResult.code).to.be.eq(0);
+      expect(execResult.code, execResult.rawLog).to.be.eq(0);
 
-      const granterPostBalance = await Querier.cosmos.bank.v1beta1.Balance({
-        address: lcGranter.seiAddress,
-        denom: 'usei'
-      }, { pathPrefix: restEndpoint });
+      const granterPostBalance = await queryBalance(lcGranter.seiAddress, 'usei');
       expect(
-        Number(granterPreBalance.balance!.amount) - Number(granterPostBalance.balance!.amount)
+        Number(granterPreBalance.amount) - Number(granterPostBalance.amount)
       ).to.be.eq(Number(LIFECYCLE_SEND_AMOUNT));
 
       const revokeMsg = {
@@ -481,9 +468,7 @@ describe('Authz Module Tests', function () {
       );
       expect(revokeResult.code).to.be.eq(0);
 
-      const postRevokeGrants = await Querier.cosmos.authz.v1beta1.GranteeGrants({
-        grantee: lcGrantee.seiAddress,
-      }, { pathPrefix: restEndpoint });
+      const postRevokeGrants = await queryGranteeGrants(lcGrantee.seiAddress);
       const revokedGrant = postRevokeGrants.grants.find(
         (g: any) => g.granter === lcGranter.seiAddress
       );
