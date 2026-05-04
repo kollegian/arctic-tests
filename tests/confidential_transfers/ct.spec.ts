@@ -11,7 +11,7 @@ import {
 import {expect} from "chai";
 import {CtAccount} from "@sei-js/cosmos/dist/types/types/confidentialtransfers";
 import {ethers} from "ethers";
-import {createCtUsers, waitFor} from "../../utils/helpers";
+import {createCtUsers, waitFor} from "../../shared/utils/helpers";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import {TokenDeployer} from "../../shared/Deployer";
 import {TestERC20} from "../../typechain-types";
