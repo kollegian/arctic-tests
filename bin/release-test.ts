@@ -4,7 +4,7 @@ import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(REPO_ROOT, 'config', 'testConfig.json');
-const REPORT_DIR = path.join(REPO_ROOT, 'qa-test-report');
+const REPORT_DIR = path.join(REPO_ROOT, 'release-test-report');
 const REPORT_PATH = path.join(REPORT_DIR, 'mochawesome.json');
 const SPEC_GLOB = 'tests/**/*.spec.ts';
 

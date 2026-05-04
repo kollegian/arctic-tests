@@ -13,7 +13,7 @@ Endpoints come from `config/testConfig.json` (testnet defaults).
 
 ## Running against an ephemeral chain via `seictl`
 
-The `qa-test` wrapper consumes seictl-emitted endpoints via env vars, runs the suite, and surfaces a typed exit code (0/1/2 per [sei-protocol/platform#235](https://github.com/sei-protocol/platform/issues/235)) plus a one-line stdout JSON summary.
+The `release-test` wrapper consumes seictl-emitted endpoints via env vars, runs the suite, and surfaces a typed exit code (0/1/2 per [sei-protocol/platform#235](https://github.com/sei-protocol/platform/issues/235)) plus a one-line stdout JSON summary.
 
 ```sh
 seictl bench up --image $IMAGE --apply -o json > endpoints.json
@@ -22,7 +22,7 @@ SEI_EVM_JSON_RPC=$(jq -r '.data.endpoints.evmJsonRpc[0]' endpoints.json) \
 SEI_TENDERMINT_RPC=$(jq -r '.data.endpoints.tendermintRpc[0]' endpoints.json) \
 SEI_CHAIN_ID=$(jq -r '.data.chainId' endpoints.json) \
 SEI_ADMIN_MNEMONIC=$ADMIN_MNEMONIC \
-  yarn qa-test
+  yarn release-test
 exit_code=$?
 
 seictl bench down --name $NAME
@@ -38,12 +38,12 @@ exit $exit_code
 | `SEI_REST_ENDPOINT` | `testConfig.restEndpoint` | optional |
 | `SEI_ADMIN_MNEMONIC` | `testConfig.adminMnemonic` | running against ephemeral chain |
 
-When no env is set, the wrapper falls back to `config/testConfig.json` defaults — `yarn qa-test` against testnet works without any env.
+When no env is set, the wrapper falls back to `config/testConfig.json` defaults — `yarn release-test` against testnet works without any env.
 
 ### Stdout summary
 
 ```json
-{"passed": 47, "failed": 0, "pending": 2, "exitCode": 0, "reportPath": "./qa-test-report/mochawesome.json"}
+{"passed": 47, "failed": 0, "pending": 2, "exitCode": 0, "reportPath": "./release-test-report/mochawesome.json"}
 ```
 
 Mocha's live output goes to stderr; the summary lands on stdout as a single line for `jq` consumption.

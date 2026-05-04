@@ -1,8 +1,7 @@
 {
   "name": "arctic_tests",
-  "packageManager": "yarn@4.6.0",
   "scripts": {
-    "qa-test": "tsx bin/qa-test.ts"
+    "release-test": "tsx bin/release-test.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
