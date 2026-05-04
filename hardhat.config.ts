@@ -11,14 +11,14 @@ const config: HardhatUserConfig = {
     },
     seiTestnet: {
       url: "https://evm-rpc-testnet.sei-apis.com",
-      accounts: ["0x2bd96f4b341d7e26afbfabafdaae89b6c67cdd8076517181d11b30faa2412f8e"],
+      accounts: process.env.SEI_TESTNET_PRIVATE_KEY ? [process.env.SEI_TESTNET_PRIVATE_KEY] : [],
       chainId: 1328,
       gasPrice: 2000000000, // 2 gwei
       gas: 210000,
     },
     local: {
         url: "http://127.0.0.1:8545",
-        accounts: ["0x2bd96f4b341d7e26afbfabafdaae89b6c67cdd8076517181d11b30faa2412f8e"],
+        accounts: process.env.LOCAL_PRIVATE_KEY ? [process.env.LOCAL_PRIVATE_KEY] : [],
         chainId: 1337,
     }
   },
