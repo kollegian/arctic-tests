@@ -35,9 +35,6 @@ describe('debug_traceCall Tests', function () {
       seiUsers.map(su => User.fromPrivateKey(su.evmWallet.wallet.privateKey, RPC_URL))
     );
 
-    console.log(`Admin EVM address: ${funder.address}`);
-    console.log(`Created ${users.length} funded users`);
-
     txBuilder = new TxBuilder(users);
 
     console.log('Deploying ERC20 contract...');
@@ -58,7 +55,6 @@ describe('debug_traceCall Tests', function () {
           await tx.wait();
         }
       }
-      console.log('Retry mints complete');
     }
 
     setupCallScenarios();
@@ -153,7 +149,6 @@ describe('debug_traceCall Tests', function () {
   describe('Trace call scenarios with callTracer', function () {
 
     it('traces all scenarios with callTracer', async () => {
-      console.log(`\nTracing ${callScenarios.length} call scenarios with callTracer...`);
 
       for (const scenario of callScenarios) {
         const result = await provider.send('debug_traceCall', [
@@ -170,8 +165,6 @@ describe('debug_traceCall Tests', function () {
         if (scenario.expectedSuccess) {
           expect(hasError, `${scenario.name} should succeed but got error: ${result.error}`).to.be.false;
         }
-
-        console.log(`  ${scenario.description}: type=${result.type}, gasUsed=${result.gasUsed}, error=${result.error || 'none'}`);
       }
     });
 
@@ -201,7 +194,6 @@ describe('debug_traceCall Tests', function () {
   describe('Trace call scenarios with prestateTracer', function () {
 
     it('traces all scenarios with prestateTracer', async () => {
-      console.log(`\nTracing ${callScenarios.length} call scenarios with prestateTracer...`);
 
       for (const scenario of callScenarios) {
         const result = await provider.send('debug_traceCall', [
@@ -213,8 +205,6 @@ describe('debug_traceCall Tests', function () {
         expect(result).to.be.an('object');
         const addresses = Object.keys(result);
         expect(addresses.length).to.be.greaterThan(0);
-
-        console.log(`  ${scenario.description}: ${addresses.length} addresses in prestate`);
       }
     });
 
@@ -241,7 +231,6 @@ describe('debug_traceCall Tests', function () {
   describe('Trace call scenarios with prestateTracer diffMode', function () {
 
     it('traces all scenarios with diffMode', async () => {
-      console.log(`\nTracing ${callScenarios.length} call scenarios with prestateTracer diffMode...`);
 
       for (const scenario of callScenarios) {
         const result = await provider.send('debug_traceCall', [
@@ -255,8 +244,6 @@ describe('debug_traceCall Tests', function () {
 
         const preCount = Object.keys(result.pre).length;
         const postCount = Object.keys(result.post).length;
-
-        console.log(`  ${scenario.description}: pre=${preCount}, post=${postCount} addresses`);
       }
     });
 
@@ -275,8 +262,6 @@ describe('debug_traceCall Tests', function () {
 
       expect(result.post[fromAddr] || result.pre[fromAddr]).to.not.be.undefined;
       expect(result.post[toAddr]).to.not.be.undefined;
-
-      console.log('Value transfer diffMode verified');
     });
 
   });
@@ -291,7 +276,6 @@ describe('debug_traceCall Tests', function () {
       ]);
 
       expect(result).to.have.property('type');
-      console.log(`latest block: gasUsed=${result.gasUsed}`);
     });
 
     it('traces with "pending" block - not supported on Sei', async () => {
@@ -304,7 +288,6 @@ describe('debug_traceCall Tests', function () {
         expect.fail('Expected error: tracing on top of pending is not supported on Sei');
       } catch (e: any) {
         expect(e.message).to.include('pending');
-        console.log(`Confirmed: Sei rejects pending block tracing`);
       }
     });
 
@@ -318,7 +301,6 @@ describe('debug_traceCall Tests', function () {
       ]);
 
       expect(result).to.have.property('type');
-      console.log(`block ${latestBlock}: gasUsed=${result.gasUsed}`);
     });
 
     it('traces with earlier block number', async () => {
@@ -332,7 +314,6 @@ describe('debug_traceCall Tests', function () {
       ]);
 
       expect(result).to.have.property('type');
-      console.log(`block ${earlierBlock}: gasUsed=${result.gasUsed}`);
     });
 
   });
@@ -361,7 +342,6 @@ describe('debug_traceCall Tests', function () {
         expect.fail('Expected error: Sei does not support state overrides');
       } catch (e: any) {
         expect(e.message).to.include('too many arguments');
-        console.log(`Confirmed: Sei rejects state override (balance)`);
       }
     });
 
@@ -384,7 +364,6 @@ describe('debug_traceCall Tests', function () {
         expect.fail('Expected error: Sei does not support state overrides');
       } catch (e: any) {
         expect(e.message).to.include('too many arguments');
-        console.log(`Confirmed: Sei rejects state override (code)`);
       }
     });
 
@@ -406,7 +385,6 @@ describe('debug_traceCall Tests', function () {
         expect.fail('Expected error: Sei does not support state overrides');
       } catch (e: any) {
         expect(e.message).to.include('too many arguments');
-        console.log(`Confirmed: Sei rejects state override (nonce)`);
       }
     });
 
@@ -429,7 +407,6 @@ describe('debug_traceCall Tests', function () {
 
       const traceGasUsed = BigInt(traceResult.gasUsed);
 
-      console.log(`Simple transfer - debug_traceCall gasUsed: ${traceGasUsed}`);
       expect(Number(traceGasUsed)).to.equal(21000);
     });
 
@@ -452,10 +429,6 @@ describe('debug_traceCall Tests', function () {
       const estimateGas = await provider.estimateGas(callParams);
 
       const traceGasUsed = BigInt(traceResult.gasUsed);
-
-      console.log(`Contract call - debug_traceCall gasUsed: ${traceGasUsed}`);
-      console.log(`Contract call - eth_estimateGas: ${estimateGas}`);
-
       expect(Number(traceGasUsed)).to.be.lte(Number(estimateGas));
     });
 
@@ -478,8 +451,6 @@ describe('debug_traceCall Tests', function () {
       expect(result).to.have.property('failed');
       expect(result).to.have.property('structLogs');
       expect(result.structLogs).to.be.an('array');
-
-      console.log(`Struct logger: gas=${result.gas}, ops=${result.structLogs.length}`);
     });
 
     it('collects opcodes from contract call', async () => {
@@ -497,15 +468,10 @@ describe('debug_traceCall Tests', function () {
       for (const log of result.structLogs) {
         uniqueOpcodes.add(log.op);
       }
-
-      console.log(`Unique opcodes (${uniqueOpcodes.size}): ${Array.from(uniqueOpcodes).sort().join(', ')}`);
     });
 
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Error Handling
-  // ─────────────────────────────────────────────────────────────────────────────
 
   describe('Error handling', function () {
 
@@ -523,7 +489,6 @@ describe('debug_traceCall Tests', function () {
       ]);
 
       expect(result).to.have.property('type');
-      console.log(`Non-existent contract: type=${result.type}, gasUsed=${result.gasUsed}`);
     });
 
     it('handles invalid block number', async () => {
@@ -538,25 +503,8 @@ describe('debug_traceCall Tests', function () {
         expect.fail('Expected error for future block number');
       } catch (e: any) {
         expect(e.message).to.include('height');
-        console.log(`Future block error: ${e.message.slice(0, 80)}`);
       }
     });
 
   });
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Summary
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  after('Print summary', function () {
-    console.log('\n' + '='.repeat(80));
-    console.log('CALL SCENARIOS SUMMARY');
-    console.log('='.repeat(80));
-    console.log(`Total scenarios: ${callScenarios.length}`);
-    for (const scenario of callScenarios) {
-      console.log(`  [${scenario.expectedSuccess ? 'SUCCESS' : 'FAIL'}] ${scenario.description}`);
-    }
-    console.log('='.repeat(80));
-  });
-
 });

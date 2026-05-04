@@ -40,9 +40,6 @@ describe('Debug Trace Block By Number Tests', function () {
       seiUsers.map(su => User.fromPrivateKey(su.evmWallet.wallet.privateKey, RPC_URL))
     );
 
-    console.log(`Admin EVM address: ${funder.address}`);
-    console.log(`Created ${users.length} funded users`);
-
     txBuilder = new TxBuilder(users);
 
     erc20 = await txBuilder.deployErc20(funder);
@@ -59,7 +56,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
     const mintResult = await txBuilder.mintToUsers(ethers.parseEther('10000'));
     await recorder.recordBlockFromReceipts(mintResult.receipts, 'ERC20 mint', 2);
-    console.log(`Minted tokens in ${mintResult.receipts.length} txs`);
   });
 
   describe('Send various transaction types', function () {
@@ -73,7 +69,6 @@ describe('Debug Trace Block By Number Tests', function () {
       expect(receipt!.type).to.equal(0);
 
       await recorder.recordBlock(receipt, 'Type 0 Legacy', 0);
-      console.log(`Type 0 tx in block ${receipt!.blockNumber}`);
     });
 
     it.skip('sends Type 1 (Access List) transactions - not supported on Sei', async () => {
@@ -97,7 +92,6 @@ describe('Debug Trace Block By Number Tests', function () {
       expect(receipt!.type).to.equal(1);
 
       await recorder.recordBlock(receipt, 'Type 1 Access List', 1);
-      console.log(`Type 1 tx in block ${receipt!.blockNumber}`);
     });
 
     it('sends Type 2 (EIP-1559) transactions', async () => {
@@ -109,7 +103,6 @@ describe('Debug Trace Block By Number Tests', function () {
       expect(receipt!.type).to.equal(2);
 
       await recorder.recordBlock(receipt, 'Type 2 EIP-1559', 2);
-      console.log(`Type 2 tx in block ${receipt!.blockNumber}`);
     });
 
     it('sends Type 4 (EIP-7702 SetCode) transactions', async () => {
@@ -123,7 +116,6 @@ describe('Debug Trace Block By Number Tests', function () {
       expect(receipt!.type).to.equal(4);
 
       await recorder.recordBlock(receipt, 'Type 4 EIP-7702', 4);
-      console.log(`Type 4 tx in block ${receipt!.blockNumber}`);
 
       await txBuilder.clearCodeForUser(user);
     });
@@ -146,7 +138,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
       expect(receipt).to.not.be.null;
       await recorder.recordBlock(receipt!, 'Contract deployment', 2);
-      console.log(`Contract deployed in block ${receipt!.blockNumber}`);
     });
 
   });
@@ -158,10 +149,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
       const result = await txBuilder.erc20TransfersRoundRobin(ethers.parseEther('1'));
       const stats = txBuilder.getBlockStats(result);
-
-      console.log(`Sent ${result.receipts.length} txs across ${stats.uniqueBlocks.length} blocks`);
-      console.log(`Max txs in single block: ${stats.maxTxsInSingleBlock}`);
-
       await recorder.recordBlockFromReceipts(result.receipts, 'Batch ERC20 transfer', 2);
 
       expect(result.successCount).to.be.greaterThan(0);
@@ -177,7 +164,6 @@ describe('Debug Trace Block By Number Tests', function () {
       const validators = await connectedStaking.validators('BOND_STATUS_BONDED', '0x');
 
       const validatorAddress = validators.validators[0].operatorAddress;
-      console.log(`Validator address: ${validatorAddress}`);
       const amount = ethers.parseEther('0.02');
       const tx = await connectedStaking.delegate(validatorAddress, { value: amount });
       const receipt = await tx.wait();
@@ -186,7 +172,6 @@ describe('Debug Trace Block By Number Tests', function () {
       expect(receipt!.status).to.equal(1);
 
       await recorder.recordBlock(receipt, 'Staking delegate precompile', 2);
-      console.log(`Delegate tx in block ${receipt!.blockNumber}`);
     });
 
   });
@@ -223,13 +208,11 @@ describe('Debug Trace Block By Number Tests', function () {
           gasLimit: 10000n,
         });
         const receipt = await tx.wait();
-        console.log(receipt);
 
         if (receipt && receipt.status === 0) {
           await recorder.recordBlock(receipt, 'Failed tx (out of gas)', 2);
         }
       } catch (e: any) {
-        console.log('Transaction failed as expected (insufficient gas)');
       }
     });
 
@@ -240,7 +223,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
     it('traces all recorded blocks with callTracer', async () => {
       const blockRecords = recorder.getBlockRecords();
-      console.log(`\nTracing ${blockRecords.length} blocks with callTracer...`);
       let index = 0;
       for (const record of blockRecords) {
         const result = await recorder.traceBlockByNumber(
@@ -248,10 +230,7 @@ describe('Debug Trace Block By Number Tests', function () {
           'callTracer',
           TRACER_OPTIONS.callTracer
         );
-        if (index === 1 || index === 2) {
-            console.log(result);
-            console.log('*****');
-        }
+
         expect(result).to.be.an('array');
         index++;
       }
@@ -259,7 +238,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
     it('traces all recorded blocks with callTracer (onlyTopCall)', async () => {
       const blockRecords = recorder.getBlockRecords();
-      console.log(`\nTracing ${blockRecords.length} blocks with callTracer (onlyTopCall)...`);
       let index = 0;
       for (const record of blockRecords) {
         const result = await recorder.traceBlockByNumber(
@@ -267,10 +245,6 @@ describe('Debug Trace Block By Number Tests', function () {
           'callTracerOnlyTopCall',
           TRACER_OPTIONS.callTracerOnlyTopCall
         );
-        if (index === 1 || index === 2) {
-            console.log(result);
-            console.log('*****');
-        }
         expect(result).to.be.an('array');
       }
     });
@@ -291,7 +265,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
     it('traces all recorded blocks with prestateTracer (diffMode)', async () => {
       const blockRecords = recorder.getBlockRecords();
-      console.log(`\nTracing ${blockRecords.length} blocks with prestateTracer (diffMode)...`);
 
       for (const record of blockRecords) {
         const result = await recorder.traceBlockByNumber(
@@ -301,13 +274,11 @@ describe('Debug Trace Block By Number Tests', function () {
         );
 
         expect(result).to.be.an('array');
-        console.log(`Block ${record.blockNumber}: ${result.length} diff traces`);
       }
     });
 
     it('traces blocks by hash', async () => {
       const blockRecords = recorder.getBlockRecords();
-      console.log(`\nTracing blocks by hash...`);
 
       for (const record of blockRecords.slice(0, 3)) {
         const result = await recorder.traceBlockByHash(
@@ -317,7 +288,6 @@ describe('Debug Trace Block By Number Tests', function () {
         );
 
         expect(result).to.be.an('array');
-        console.log(`Block hash ${record.blockHash.slice(0, 18)}...: ${result.length} traces`);
       }
     });
 
@@ -327,7 +297,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
     it('verifies debug_traceBlockByNumber and debug_traceBlockByHash return identical results', async () => {
       const blockRecords = recorder.getBlockRecords();
-      console.log(`\nVerifying consistency for ${blockRecords.length} blocks...`);
 
       for (const record of blockRecords) {
         const byNumber = await recorder.traceBlockByNumber(
@@ -342,7 +311,7 @@ describe('Debug Trace Block By Number Tests', function () {
           TRACER_OPTIONS.callTracer
         );
 
-        expect(byNumber.length).to.equal(byHash.length, 
+        expect(byNumber.length).to.equal(byHash.length,
           `Block ${record.blockNumber}: trace count mismatch (byNumber: ${byNumber.length}, byHash: ${byHash.length})`);
 
         for (let i = 0; i < byNumber.length; i++) {
@@ -373,7 +342,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
     it('verifies debug_traceBlockByNumber and debug_traceBlockByHash with prestateTracer return identical results', async () => {
       const blockRecords = recorder.getBlockRecords();
-      console.log(`\nVerifying prestateTracer consistency for ${blockRecords.length} blocks...`);
 
       for (const record of blockRecords) {
         const byNumber = await recorder.traceBlockByNumber(
@@ -413,7 +381,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
     it('verifies callTracer trace fields for each transaction', async () => {
       const blockRecords = recorder.getBlockRecords();
-      console.log(`\nVerifying trace fields for all recorded transactions...`);
 
       for (const record of blockRecords) {
         const traces = await recorder.traceBlockByNumber(
@@ -434,7 +401,7 @@ describe('Debug Trace Block By Number Tests', function () {
           expect(result).to.have.property('input');
 
           expect(result.from).to.match(/^0x[a-fA-F0-9]{40}$/, `Invalid from address in tx ${txHash}`);
-          
+
           if (result.to) {
             expect(result.to).to.match(/^0x[a-fA-F0-9]{40}$/, `Invalid to address in tx ${txHash}`);
           }
@@ -461,7 +428,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
     it('verifies debug_traceTransaction matches block trace for each tx', async () => {
       const blockRecords = recorder.getBlockRecords();
-      console.log(`\nVerifying debug_traceTransaction consistency...`);
 
       for (const record of blockRecords) {
         const blockTraces = await recorder.traceBlockByNumber(
@@ -479,7 +445,7 @@ describe('Debug Trace Block By Number Tests', function () {
 
           expect(blockResult.from.toLowerCase()).to.equal(txResult.from.toLowerCase(),
             `tx ${txHash}: from mismatch between block trace and tx trace`);
-          
+
           if (blockResult.to && txResult.to) {
             expect(blockResult.to.toLowerCase()).to.equal(txResult.to.toLowerCase(),
               `tx ${txHash}: to mismatch between block trace and tx trace`);
@@ -499,7 +465,6 @@ describe('Debug Trace Block By Number Tests', function () {
         }
       }
     });
-
   });
 
 
@@ -524,12 +489,6 @@ describe('Debug Trace Block By Number Tests', function () {
 
       const firstTrace = result[0];
       expect(firstTrace).to.have.property('result');
-
-      const prestate = firstTrace.result;
-      const addresses = Object.keys(prestate);
-
-      console.log(`Prestate contains ${addresses.length} addresses`);
-      console.log('Sample addresses:', addresses.slice(0, 5));
     });
 
     it('verifies diffMode shows state changes', async () => {
@@ -548,15 +507,8 @@ describe('Debug Trace Block By Number Tests', function () {
         const diff = result[0].result;
         const hasPre = diff.pre !== undefined;
         const hasPost = diff.post !== undefined;
-
-        console.log(`Diff mode - has pre: ${hasPre}, has post: ${hasPost}`);
       }
     });
 
   });
-
-  after('Print summary', async () => {
-    //recorder.printSummary();
-  });
-
 });

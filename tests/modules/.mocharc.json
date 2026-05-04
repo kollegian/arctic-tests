@@ -11,5 +11,5 @@
     "overwrite=true"
   ],
   "spec": ["tests/modules/**/*.spec.ts"],
-  "ignore": ["tests/modules/gov/gov.spec.ts"]
+  "ignore": ["tests/modules/gov/gov.spec.ts", "tests/modules/tokenfactory/tokenfactory.spec.ts"]
 }

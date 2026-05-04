@@ -11,13 +11,15 @@
     "overwrite=true"
   ],
   "spec": [
-    "tests/rpc_node_tests/startTests.ts",
-    "tests/rpc_node_tests/eth_getBlockByNumber.ts",
-    "tests/rpc_node_tests/eth_getLogs.ts",
-    "tests/rpc_node_tests/sei_getLogs.ts",
-    "tests/rpc_node_tests/eth_getTransactionReceipt.spec.ts",
-    "tests/rpc_node_tests/eth_call.spec.ts",
-    "tests/rpc_node_tests/debug.spec.ts",
-    "tests/rpc_node_tests/eth_subscribe.spec.ts"
-  ]
+    "tests/solo_evm/rpc_tests/state_endpoints/eth_getBalance.spec.ts",
+    "tests/solo_evm/rpc_tests/state_endpoints/eth_getCode.spec.ts",
+    "tests/solo_evm/rpc_tests/state_endpoints/eth_getStorageAt.spec.ts",
+    "tests/solo_evm/rpc_tests/state_endpoints/eth_getTransactionCount.spec.ts",
+    "tests/solo_evm/rpc_tests/state_endpoints/eth_call.spec.ts",
+    "tests/solo_evm/rpc_tests/state_endpoints/eth_estimateGas.spec.ts",
+    "tests/solo_evm/rpc_tests/debug_endpoints/debug_traceCall.spec.ts",
+    "tests/solo_evm/rpc_tests/debug_endpoints/debug_traceTx.spec.ts",
+    "tests/solo_evm/rpc_tests/debug_endpoints/debug_traceBlockByNumber.spec.ts"
+  ],
+  "sort": false
 }

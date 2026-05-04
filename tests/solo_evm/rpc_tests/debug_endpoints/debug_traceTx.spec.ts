@@ -61,9 +61,6 @@ describe('debug_traceTransaction Tests', function () {
       seiUsers.map(su => User.fromPrivateKey(su.evmWallet.wallet.privateKey, RPC_URL))
     );
 
-    console.log(`Admin EVM address: ${funder.address}`);
-    console.log(`Created ${users.length} funded users`);
-
     txBuilder = new TxBuilder(users);
 
     console.log('Deploying ERC20 contract...');
@@ -81,7 +78,6 @@ describe('debug_traceTransaction Tests', function () {
 
     console.log('Minting tokens to users...');
     const mintResult = await txBuilder.mintToUsers(ethers.parseEther('10000'));
-    console.log(`Mint results: ${mintResult.successCount} success, ${mintResult.failCount} failed`);
 
     if (mintResult.failCount > 0) {
       console.log('Retrying failed mints with higher gas limit...');
@@ -98,9 +94,6 @@ describe('debug_traceTransaction Tests', function () {
     }
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Create Various Transaction Types
-  // ─────────────────────────────────────────────────────────────────────────────
 
   describe('Create transactions for tracing', function () {
 
@@ -128,8 +121,6 @@ describe('debug_traceTransaction Tests', function () {
         recipientBalanceBefore,
         recipientBalanceAfter,
       });
-
-      console.log(`Type 0 tx: ${receipt!.hash}`);
     });
 
     it('creates Type 2 (EIP-1559) transaction', async () => {
@@ -156,8 +147,6 @@ describe('debug_traceTransaction Tests', function () {
         recipientBalanceBefore,
         recipientBalanceAfter,
       });
-
-      console.log(`Type 2 tx: ${receipt!.hash}`);
     });
 
     it('creates Type 4 (EIP-7702) transaction', async () => {
@@ -171,8 +160,6 @@ describe('debug_traceTransaction Tests', function () {
       expect(receipt!.type).to.equal(4);
 
       await recordTx(receipt!, 'Type 4 EIP-7702 SetCode', 4);
-      console.log(`Type 4 tx: ${receipt!.hash}`);
-
       await txBuilder.clearCodeForUser(user);
     });
 
@@ -188,7 +175,6 @@ describe('debug_traceTransaction Tests', function () {
       expect(receipt).to.not.be.null;
 
       await recordTx(receipt!, 'ERC20 transfer', 2);
-      console.log(`ERC20 transfer tx: ${receipt!.hash}`);
     });
 
     it('creates contract deployment transaction', async () => {
@@ -206,7 +192,6 @@ describe('debug_traceTransaction Tests', function () {
       expect(receipt!.contractAddress).to.not.be.null;
 
       await recordTx(receipt!, 'Contract deployment', 2);
-      console.log(`Contract deployment tx: ${receipt!.hash}`);
     });
 
     it('creates failed transaction (revert)', async () => {
@@ -230,21 +215,17 @@ describe('debug_traceTransaction Tests', function () {
       } catch (e: any) {
         if (e.receipt) {
           await recordTx(e.receipt, 'Failed ERC20 transfer (revert)', 2);
-          console.log(`Failed tx: ${e.receipt.hash}`);
         } else {
-          console.log('Transaction reverted without receipt');
         }
       }
     });
 
     it('creates gas burner transaction (~5M gas)', async () => {
       const user = users[10];
-      
+
       const iterations = 66n;
       const gasLimit = 6000000n;
-      
-      console.log(`Burning gas with ${iterations} SSTORE iterations...`);
-      
+
       const tx = await txBuilder.burnGasWithIterations(user, iterations, BigInt(Date.now()), gasLimit);
       const receipt = await tx.wait();
 
@@ -252,20 +233,14 @@ describe('debug_traceTransaction Tests', function () {
       expect(receipt!.status).to.equal(1);
 
       await recordTx(receipt!, `Gas burner (${iterations} iterations)`, 2);
-      console.log(`Gas burner tx: ${receipt!.hash}`);
-      console.log(`Gas used: ${receipt!.gasUsed} (${(Number(receipt!.gasUsed) / 1000000).toFixed(2)}M)`);
     });
 
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Trace with Different Tracers
-  // ─────────────────────────────────────────────────────────────────────────────
 
   describe('Trace transactions with callTracer', function () {
 
     it('traces all recorded transactions with callTracer', async () => {
-      console.log(`\nTracing ${recordedTxs.length} transactions with callTracer...`);
       let index = 0;
       for (const tx of recordedTxs) {
         const trace = await provider.send('debug_traceTransaction', [tx.hash, TRACER_OPTIONS.callTracer]);
@@ -282,8 +257,6 @@ describe('debug_traceTransaction Tests', function () {
         if (tx.to) {
           expect(trace.to.toLowerCase()).to.equal(tx.to.toLowerCase());
         }
-
-        console.log(`  ${tx.description}: type=${trace.type}, gasUsed=${trace.gasUsed}`);
       }
     });
 
@@ -302,8 +275,6 @@ describe('debug_traceTransaction Tests', function () {
           Number(traceGasUsed),
           `${tx.description}: trace gasUsed should be > 0`
         ).to.be.greaterThan(0);
-
-        console.log(`  ${tx.description}: trace=${traceGasUsed}, receipt=${tx.gasUsed}`);
       }
     });
 
@@ -315,12 +286,10 @@ describe('debug_traceTransaction Tests', function () {
         ]);
 
         expect(trace).to.have.property('type');
-        
+
         if (trace.calls) {
           expect(trace.calls).to.be.an('array');
         }
-
-        console.log(`  ${tx.description}: type=${trace.type}, has calls=${!!trace.calls}`);
       }
     });
 
@@ -329,7 +298,6 @@ describe('debug_traceTransaction Tests', function () {
   describe('Trace transactions with prestateTracer', function () {
 
     it('traces all recorded transactions with prestateTracer', async () => {
-      console.log(`\nTracing ${recordedTxs.length} transactions with prestateTracer...`);
 
       for (const tx of recordedTxs) {
         const trace = await provider.send('debug_traceTransaction', [tx.hash, TRACER_OPTIONS.prestateTracer]);
@@ -340,8 +308,6 @@ describe('debug_traceTransaction Tests', function () {
 
         const fromInPrestate = addresses.some(addr => addr.toLowerCase() === tx.from.toLowerCase());
         expect(fromInPrestate).to.be.true;
-
-        console.log(`  ${tx.description}: ${addresses.length} addresses in prestate`);
       }
     });
 
@@ -357,8 +323,6 @@ describe('debug_traceTransaction Tests', function () {
 
         const prestateBalance = BigInt(trace[fromAddr].balance);
         expect(prestateBalance).to.equal(tx.balanceBefore);
-
-        console.log(`  ${tx.description}: prestate balance matches (${ethers.formatEther(prestateBalance)} SEI)`);
       }
     });
 
@@ -367,8 +331,6 @@ describe('debug_traceTransaction Tests', function () {
   describe('Trace transactions with prestateTracer diffMode', function () {
 
     it('traces all recorded transactions with diffMode', async () => {
-      console.log(`\nTracing ${recordedTxs.length} transactions with prestateTracer diffMode...`);
-
       for (const tx of recordedTxs) {
         const trace = await provider.send('debug_traceTransaction', [
           tx.hash,
@@ -380,8 +342,6 @@ describe('debug_traceTransaction Tests', function () {
 
         const preAddresses = Object.keys(trace.pre);
         const postAddresses = Object.keys(trace.post);
-
-        console.log(`  ${tx.description}: pre=${preAddresses.length}, post=${postAddresses.length} addresses`);
       }
     });
 
@@ -405,8 +365,6 @@ describe('debug_traceTransaction Tests', function () {
           const postBalance = BigInt(trace.post[fromAddr].balance);
           expect(postBalance).to.equal(tx.balanceAfter);
         }
-
-        console.log(`  ${tx.description}: pre/post balances verified`);
       }
     });
 
@@ -424,21 +382,15 @@ describe('debug_traceTransaction Tests', function () {
         if (trace.post[toAddr]) {
           const postBalance = BigInt(trace.post[toAddr].balance);
           expect(postBalance).to.equal(tx.recipientBalanceAfter);
-          console.log(`  ${tx.description}: recipient post balance verified`);
         }
       }
     });
 
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Struct Logger Tests
-  // ─────────────────────────────────────────────────────────────────────────────
-
   describe('Trace transactions with struct logger (default)', function () {
 
     it('traces all recorded transactions with default struct logger', async () => {
-      console.log(`\nTracing ${recordedTxs.length} transactions with struct logger...`);
 
       for (const tx of recordedTxs) {
         const trace = await provider.send('debug_traceTransaction', [tx.hash, {}]);
@@ -451,8 +403,6 @@ describe('debug_traceTransaction Tests', function () {
 
         const failed = tx.status === 0;
         expect(trace.failed).to.equal(failed);
-
-        console.log(`  ${tx.description}: gas=${trace.gas}, failed=${trace.failed}, ops=${trace.structLogs.length}`);
       }
     });
 
@@ -466,8 +416,6 @@ describe('debug_traceTransaction Tests', function () {
       if (trace.structLogs.length > 0) {
         expect(trace.structLogs[0].storage).to.be.undefined;
       }
-
-      console.log(`disableStorage: structLogs=${trace.structLogs.length}, storage disabled`);
     });
 
     it('verifies struct logger options: disableStack', async () => {
@@ -480,8 +428,6 @@ describe('debug_traceTransaction Tests', function () {
       if (trace.structLogs.length > 0) {
         expect(trace.structLogs[0].stack).to.be.undefined;
       }
-
-      console.log(`disableStack: structLogs=${trace.structLogs.length}, stack disabled`);
     });
 
     it('verifies struct logger options: enableMemory', async () => {
@@ -491,7 +437,6 @@ describe('debug_traceTransaction Tests', function () {
       const trace = await provider.send('debug_traceTransaction', [tx.hash, { enableMemory: true }]);
 
       expect(trace.structLogs).to.be.an('array');
-      console.log(`enableMemory: structLogs=${trace.structLogs.length}`);
     });
 
     it('verifies struct logger options: enableReturnData', async () => {
@@ -501,14 +446,11 @@ describe('debug_traceTransaction Tests', function () {
       const trace = await provider.send('debug_traceTransaction', [tx.hash, { enableReturnData: true }]);
 
       expect(trace.structLogs).to.be.an('array');
-      console.log(`enableReturnData: structLogs=${trace.structLogs.length}`);
     });
 
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Opcode Gas Analysis
-  // ─────────────────────────────────────────────────────────────────────────────
+
 
   describe.skip('Opcode gas analysis', function () {
 
@@ -533,15 +475,11 @@ describe('debug_traceTransaction Tests', function () {
         opcodeGasCosts.get(op)!.push(gasCost);
       }
 
-      console.log(`\nOpcodes found: ${opcodeGasCosts.size}`);
-      console.log('Opcode gas costs:');
-
       const sortedOpcodes = Array.from(opcodeGasCosts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
       for (const [op, costs] of sortedOpcodes) {
         const min = Math.min(...costs);
         const max = Math.max(...costs);
         const avg = costs.reduce((a, b) => a + b, 0) / costs.length;
-        console.log(`  ${op.padEnd(15)} count: ${costs.length.toString().padStart(4)}, min: ${min.toString().padStart(6)}, max: ${max.toString().padStart(6)}, avg: ${avg.toFixed(0).padStart(6)}`);
       }
     });
 
@@ -574,13 +512,11 @@ describe('debug_traceTransaction Tests', function () {
         'STOP': { min: 0, max: 0 },
       };
 
-      console.log('\nOpcode gas verification:');
       for (const [op, gas] of Object.entries(opGas)) {
         if (expectedGasCosts[op]) {
           const { min, max } = expectedGasCosts[op];
           expect(gas).to.be.gte(min, `${op} gas ${gas} below expected min ${min}`);
           expect(gas).to.be.lte(max, `${op} gas ${gas} above expected max ${max}`);
-          console.log(`  ${op}: ${gas} ✓`);
         }
       }
     });
@@ -610,25 +546,14 @@ describe('debug_traceTransaction Tests', function () {
         'Logging': ['LOG0', 'LOG1', 'LOG2', 'LOG3', 'LOG4'],
         'Hashing': ['SHA3', 'KECCAK256'],
       };
-
-      console.log(`\nUnique opcodes (${uniqueOpcodes.size}):`);
-      for (const [category, ops] of Object.entries(categories)) {
-        const found = ops.filter(op => uniqueOpcodes.has(op));
-        if (found.length > 0) {
-          console.log(`  ${category}: ${found.join(', ')}`);
-        }
-      }
     });
 
-    it('analyzes gas burner transaction opcodes in detail', async () => {
+    it.skip('analyzes gas burner transaction opcodes in detail', async () => {
       const tx = recordedTxs.find(t => t.description.includes('Gas burner'));
       if (!tx) {
         console.log('No gas burner tx found, skipping');
         return;
       }
-
-      console.log(`\nAnalyzing gas burner tx: ${tx.hash}`);
-      console.log(`Gas used: ${tx.gasUsed}`);
 
       const trace = await provider.send('debug_traceTransaction', [tx.hash, {}]);
 
@@ -646,14 +571,6 @@ describe('debug_traceTransaction Tests', function () {
         opcodeGasCosts.get(op)!.push(gasCost);
       }
 
-      console.log(`\nTotal ops: ${trace.structLogs.length}`);
-      console.log(`Total gas from opcodes: ${totalGasFromOpcodes}`);
-
-      console.log('\n' + '─'.repeat(80));
-      console.log('GAS BURNER OPCODE BREAKDOWN');
-      console.log('─'.repeat(80));
-      console.log(`${'OPCODE'.padEnd(15)} ${'COUNT'.padStart(8)} ${'MIN'.padStart(10)} ${'MAX'.padStart(10)} ${'TOTAL'.padStart(12)} ${'%'.padStart(8)}`);
-      console.log('─'.repeat(80));
 
       const sortedByTotal = Array.from(opcodeGasCosts.entries())
         .map(([op, costs]) => ({
@@ -665,106 +582,13 @@ describe('debug_traceTransaction Tests', function () {
         }))
         .sort((a, b) => b.total - a.total);
 
-      for (const { op, count, min, max, total } of sortedByTotal) {
-        const percentage = ((total / totalGasFromOpcodes) * 100).toFixed(2);
-        console.log(
-          `${op.padEnd(15)} ${count.toString().padStart(8)} ${min.toString().padStart(10)} ${max.toString().padStart(10)} ${total.toString().padStart(12)} ${percentage.padStart(7)}%`
-        );
-      }
-      console.log('─'.repeat(80));
 
       const sstoreCount = opcodeGasCosts.get('SSTORE')?.length || 0;
       const sstoreTotal = opcodeGasCosts.get('SSTORE')?.reduce((a, b) => a + b, 0) || 0;
       const sstoreCosts = opcodeGasCosts.get('SSTORE') || [];
-      
-      console.log(`\nSSTORE Analysis:`);
-      console.log(`  Count: ${sstoreCount}`);
-      console.log(`  Total gas: ${sstoreTotal}`);
-      console.log(`  Percentage of total: ${((sstoreTotal / totalGasFromOpcodes) * 100).toFixed(2)}%`);
-      if (sstoreCosts.length > 0) {
-        const uniqueSstoreCosts = [...new Set(sstoreCosts)].sort((a, b) => a - b);
-        console.log(`  Unique costs: ${uniqueSstoreCosts.join(', ')}`);
-      }
     });
-
-    it('writes opcode gas costs to JSON file', async () => {
-      const opcodeGasCosts: Map<string, number[]> = new Map();
-
-      for (const tx of recordedTxs) {
-        try {
-          const trace = await provider.send('debug_traceTransaction', [tx.hash, {}]);
-          
-          for (const log of trace.structLogs) {
-            const op = log.op;
-            const gasCost = log.gasCost;
-
-            if (!opcodeGasCosts.has(op)) {
-              opcodeGasCosts.set(op, []);
-            }
-            opcodeGasCosts.get(op)!.push(gasCost);
-          }
-        } catch (e) {
-          console.log(`Skipping tx ${tx.hash}: ${(e as Error).message.slice(0, 50)}`);
-        }
-      }
-
-      const opcodeStats: Record<string, {
-        min: number;
-        max: number;
-        avg: number;
-        count: number;
-        samples: number[];
-      }> = {};
-
-      const sortedOpcodes = Array.from(opcodeGasCosts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-      
-      for (const [op, costs] of sortedOpcodes) {
-        const min = Math.min(...costs);
-        const max = Math.max(...costs);
-        const avg = costs.reduce((a, b) => a + b, 0) / costs.length;
-        const uniqueCosts = [...new Set(costs)].sort((a, b) => a - b);
-
-        opcodeStats[op] = {
-          min,
-          max,
-          avg: Math.round(avg * 100) / 100,
-          count: costs.length,
-          samples: uniqueCosts.slice(0, 10),
-        };
-      }
-
-      const output = {
-        timestamp: new Date().toISOString(),
-        transactionCount: recordedTxs.length,
-        totalOpcodes: Array.from(opcodeGasCosts.values()).reduce((sum, arr) => sum + arr.length, 0),
-        uniqueOpcodeCount: opcodeGasCosts.size,
-        opcodes: opcodeStats,
-      };
-
-      const outputPath = path.join(__dirname, 'opcode_gas_costs.json');
-      fs.writeFileSync(outputPath, JSON.stringify(output, null, 2));
-      console.log(`\nOpcode gas costs written to: ${outputPath}`);
-      console.log(`Total opcodes analyzed: ${output.totalOpcodes}`);
-      console.log(`Unique opcodes: ${output.uniqueOpcodeCount}`);
-
-      console.log('\nOpcode Gas Summary:');
-      console.log('─'.repeat(70));
-      console.log(`${'OPCODE'.padEnd(15)} ${'MIN'.padStart(8)} ${'MAX'.padStart(8)} ${'AVG'.padStart(8)} ${'COUNT'.padStart(8)}`);
-      console.log('─'.repeat(70));
-      
-      for (const [op, stats] of Object.entries(opcodeStats)) {
-        console.log(
-          `${op.padEnd(15)} ${stats.min.toString().padStart(8)} ${stats.max.toString().padStart(8)} ${stats.avg.toString().padStart(8)} ${stats.count.toString().padStart(8)}`
-        );
-      }
-      console.log('─'.repeat(70));
-    });
-
   });
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Error Handling
-  // ─────────────────────────────────────────────────────────────────────────────
 
   describe('Error handling', function () {
 
@@ -790,6 +614,5 @@ describe('debug_traceTransaction Tests', function () {
         console.log(`Malformed hash error: ${e.message.slice(0, 80)}`);
       }
     });
-
   });
 });
