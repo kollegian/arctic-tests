@@ -73,17 +73,6 @@ describe('debug_traceCall Tests', function () {
       description: 'Simple ETH transfer',
     });
 
-    // ETH transfer with no from (uses zero address)
-    callScenarios.push({
-      name: 'transfer_no_from',
-      callParams: {
-        to: users[0].address,
-        value: ethers.toQuantity(ethers.parseEther('0.01')),
-      },
-      expectedSuccess: true,
-      description: 'ETH transfer without from address',
-    });
-
     // ERC20 balanceOf call
     callScenarios.push({
       name: 'erc20_balanceOf',

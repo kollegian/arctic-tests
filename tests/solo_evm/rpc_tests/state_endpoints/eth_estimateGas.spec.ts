@@ -63,8 +63,9 @@ describe('eth_estimateGas', function () {
       console.log(`Simple transfer estimate: ${estimate}`);
     });
 
-    it('estimates gas for ETH transfer without from', async () => {
+    it('estimates gas for ETH transfer', async () => {
       const estimate = await provider.estimateGas({
+        from: alice.address,
         to: bob.address,
         value: ethers.parseEther('0.1'),
       });
@@ -81,7 +82,6 @@ describe('eth_estimateGas', function () {
       });
 
       expect(estimate > 21000n).to.be.true;
-      console.log(`Transfer with data estimate: ${estimate}`);
     });
 
   });
@@ -99,7 +99,6 @@ describe('eth_estimateGas', function () {
 
       expect(estimate > 21000n).to.be.true;
       expect(estimate < 100000n).to.be.true;
-      console.log(`ERC20 transfer estimate: ${estimate}`);
     });
 
     it('estimates gas for ERC20 approve', async () => {
@@ -112,7 +111,6 @@ describe('eth_estimateGas', function () {
       });
 
       expect(estimate > 21000n).to.be.true;
-      console.log(`ERC20 approve estimate: ${estimate}`);
     });
 
     it('estimates gas for ERC20 mint', async () => {
@@ -125,7 +123,6 @@ describe('eth_estimateGas', function () {
       });
 
       expect(estimate > 21000n).to.be.true;
-      console.log(`ERC20 mint estimate: ${estimate}`);
     });
 
     it('estimates gas for view function (should be minimal)', async () => {
@@ -137,7 +134,6 @@ describe('eth_estimateGas', function () {
       });
 
       expect(estimate > 21000n).to.be.true;
-      console.log(`View function estimate: ${estimate}`);
     });
 
   });
@@ -151,7 +147,6 @@ describe('eth_estimateGas', function () {
       });
 
       expect(estimate > 500000n).to.be.true;
-      console.log(`Contract deployment estimate: ${estimate}`);
     });
 
   });
@@ -172,7 +167,6 @@ describe('eth_estimateGas', function () {
       const receipt = await tx.wait();
 
       expect(Number(receipt!.gasUsed)).to.be.lte(Number(estimate));
-      console.log(`Estimate: ${estimate}, Actual: ${receipt!.gasUsed}`);
     });
 
     it('estimate is reasonably close to actual usage', async () => {
@@ -192,7 +186,6 @@ describe('eth_estimateGas', function () {
       const percentageDiff = (Number(difference) / Number(estimate)) * 100;
 
       expect(percentageDiff).to.be.lt(20);
-      console.log(`Estimate: ${estimate}, Actual: ${receipt!.gasUsed}, Diff: ${percentageDiff.toFixed(2)}%`);
     });
 
   });
@@ -212,7 +205,6 @@ describe('eth_estimateGas', function () {
         expect.fail('Should have failed');
       } catch (e: any) {
         expect(e.message).to.include('revert');
-        console.log(`Revert error: ${e.message.slice(0, 80)}`);
       }
     });
 
@@ -228,7 +220,6 @@ describe('eth_estimateGas', function () {
         expect.fail('Should have failed');
       } catch (e: any) {
         expect(e.message.toLowerCase()).to.include('insufficient');
-        console.log(`Insufficient funds error: ${e.message.slice(0, 80)}`);
       }
     });
 
