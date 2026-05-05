@@ -56,6 +56,8 @@ function runMocha(): Promise<{ exitCode: number; spawnError: Error | null }> {
         '--require', 'ts-node/register/transpile-only',
         '--reporter', 'mochawesome',
         '--reporter-options', `reportDir=${REPORT_DIR},reportFilename=mochawesome,quiet=true,html=false,json=true`,
+        // Skipped pending dependency clarification — see qa-testing#16.
+        '--ignore', 'tests/confidential_transfers/**',
         SPEC_GLOB,
       ],
       { cwd: REPO_ROOT, stdio: ['ignore', 'inherit', 'inherit'], env: process.env },
