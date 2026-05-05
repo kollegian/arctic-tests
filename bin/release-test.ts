@@ -54,6 +54,8 @@ function runMocha(): Promise<{ exitCode: number; spawnError: Error | null }> {
       [
         'mocha',
         '--require', 'ts-node/register/transpile-only',
+        '--parallel',
+        '--jobs', '4',
         '--reporter', 'mochawesome',
         '--reporter-options', `reportDir=${REPORT_DIR},reportFilename=mochawesome,quiet=true,html=false,json=true`,
         // Skipped pending dependency clarification — see qa-testing#16.
