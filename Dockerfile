@@ -14,8 +14,10 @@ RUN npx hardhat compile
 FROM node:20-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
-RUN groupadd -r app && useradd -r -g app -u 10001 app && \
-    mkdir -p /app/release-test-report && chown -R app:app /app
+RUN groupadd -r app && useradd -r -g app -u 10001 -d /home/app app && \
+    mkdir -p /app/release-test-report /home/app && \
+    chown -R app:app /app /home/app
+ENV HOME=/home/app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --chown=app:app . .
 COPY --chown=app:app --from=build /app/artifacts ./artifacts
