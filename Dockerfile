@@ -30,7 +30,7 @@ COPY --from=seid-cli /usr/bin/seid /usr/local/bin/seid
 COPY --from=seid-cli /usr/lib/libwasmvm*.so /usr/lib/
 # `seid keys add` defaults to keyring backend `os` which prompts for a
 # password — non-TTY containers hang. Pin to file-based test backend.
-ENV KEYRING_BACKEND=test
+ENV SEID_KEYRING_BACKEND=test
 USER 10001:10001
 # tsx runs the wrapper directly; bypasses npm/yarn PID-1 signal-forwarding subtleties.
 ENTRYPOINT ["node", "node_modules/.bin/tsx", "bin/release-test.ts"]
