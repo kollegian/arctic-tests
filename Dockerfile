@@ -27,6 +27,7 @@ COPY --chown=app:app . .
 COPY --chown=app:app --from=build /app/artifacts ./artifacts
 COPY --chown=app:app --from=build /app/typechain-types ./typechain-types
 COPY --from=seid-cli /usr/bin/seid /usr/local/bin/seid
+COPY --from=seid-cli /usr/lib/libwasmvm*.so /usr/lib/
 # `seid keys add` defaults to keyring backend `os` which prompts for a
 # password — non-TTY containers hang. Pin to file-based test backend.
 ENV KEYRING_BACKEND=test
