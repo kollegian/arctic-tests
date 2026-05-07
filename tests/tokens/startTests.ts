@@ -19,7 +19,7 @@ describe('Deploy contracts and fund users here', function(){
 
         const deployer = new TokenDeployer(admin);
         const initialBalances = users.map(user => ({address: user.seiAddress, amount: '100000000'}));
-        const cw20 = await deployer.deployCw20('wasm_store/cw20_base_1.wasm', {
+        const cw20 = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
             "name": 'myCwSolo',
             "symbol": 'mycwSolo',
             "decimals": 6,
