@@ -30,7 +30,7 @@ describe('Evm Rpc Tests', function () {
 
     let multipleTxReceipt: ContractTransactionReceipt;
     let txBlocks: Map<string, number> = new Map<string, number>();
-    it.only('Sends multiple evm txs', async () => {
+    it('Sends multiple evm txs', async () => {
         const responses = await erc20.sendMultipleTxs(users);
         multipleTxReceipt = responses[0];
         for (const response of responses) {
@@ -45,7 +45,7 @@ describe('Evm Rpc Tests', function () {
     });
 
     let oneSyntheticOneEvmTx: ContractTransactionReceipt;
-    it.only('Send a synthetic and evm tx', async () => {
+    it('Send a synthetic and evm tx', async () => {
         const encodedData = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('1')]);
         const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
         baseCw20.setSigner(users[1]);
@@ -65,7 +65,7 @@ describe('Evm Rpc Tests', function () {
     });
 
     let multipleSyntheticAndOneFailingEvmTx: ExecuteResult;
-    it.only('Sends multiple failing txs', async () => {
+    it('Sends multiple failing txs', async () => {
         const encoded1 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('10000000000')]);
         const signed = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
         const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
@@ -88,7 +88,7 @@ describe('Evm Rpc Tests', function () {
     });
 
     let multipleSyntheticAndEvmTx: ContractTransactionReceipt;
-    it.only('Sends multiple synthetic and multiple evm txs', async () => {
+    it('Sends multiple synthetic and multiple evm txs', async () => {
         const signedTxs: string[] = [];
         for (let i = 0; i < 3; i++){
             const encoded = erc20.contract.interface.encodeFunctionData('transfer', [users[i].evmAddress, ethers.parseEther('0.01')]);
@@ -115,7 +115,7 @@ describe('Evm Rpc Tests', function () {
         expect(Number(multipleSyntheticAndEvmTx.blockNumber)).to.be.eq(results[1].height);
     });
 
-    it.only('Can read topics with multiple logs and validate indexes', async () => {
+    it('Can read topics with multiple logs and validate indexes', async () => {
         const provider = admin.evmWallet.signingClient;
         for (const blockNumber of txBlocks.keys()) {
             const blockHash = (await provider.send('eth_getBlockByNumber', [ethers.toQuantity(blockNumber), false])).hash;
@@ -182,7 +182,7 @@ describe('Evm Rpc Tests', function () {
         }
     });
 
-    it.only('Cant read topics given that there are failing txs and multiple cosmos txs from pointer on cosmos', async () => {
+    it('Cant read topics given that there are failing txs and multiple cosmos txs from pointer on cosmos', async () => {
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) -2),
             toBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) + 2),
@@ -221,7 +221,7 @@ describe('Evm Rpc Tests', function () {
         expect(logIndexes.size).to.be.eq(users.length);
     });
 
-    it.only('Can read topics with both synthetic and evm txs', async () => {
+    it('Can read topics with both synthetic and evm txs', async () => {
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) -1),
             toBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) + 1),
@@ -231,7 +231,7 @@ describe('Evm Rpc Tests', function () {
         expect(logResponses.length).to.be.eq(2);
     });
 
-    it.only('Can read topics with both erc20 and erc721 events', async () => {
+    it('Can read topics with both erc20 and erc721 events', async () => {
         const deployer = new TokenDeployer(admin);
         const erc721 = await deployer.deployErc721('TestCw721', 'TestCw721', 'http://example.com');
         await (await erc721.safeMint(admin.evmAddress, '1')).wait();
@@ -272,7 +272,7 @@ describe('Evm Rpc Tests', function () {
     });
 
     let multipleTxBlock;
-    it.only('Can return txs successfully for a span of 100 blocks', async () => {
+    it('Can return txs successfully for a span of 100 blocks', async () => {
         const encodedTx = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('0.01')]);
         const signedTxs = await Promise.all(users.map((user) => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
         const results = await Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)));
@@ -317,7 +317,7 @@ describe('Evm Rpc Tests', function () {
     let i = 0;
     const tags = ['finalized', 'safe', 'latest', 'pending'];
     for(const tag of tags) {
-        it.only(`From block ${tag} return info as expected`, async () => {
+        it(`From block ${tag} return info as expected`, async () => {
             await waitFor(2);
             const tx = erc20.transfer(users[0].evmAddress, ethers.parseEther('0.1'));
             let index = 0;
@@ -339,7 +339,7 @@ describe('Evm Rpc Tests', function () {
             throw new Error('I threw this error occurred.');
         });
 
-        it.only(`To block ${tag} return info as expected`, async () => {
+        it(`To block ${tag} return info as expected`, async () => {
             await waitFor(2);
             const blockNum = await admin.evmWallet.signingClient.getBlock('latest') as unknown as Block;
 
@@ -364,7 +364,7 @@ describe('Evm Rpc Tests', function () {
         });
     }
 
-    it.only('Eth get logs tx indexes alongside with log indexes return correct data', async () =>{
+    it('Eth get logs tx indexes alongside with log indexes return correct data', async () =>{
         const blockTxs = await rpcClient.getBlockByNumber(multipleTxBlock, true);
         const logParams = {
             fromBlock: ethers.toQuantity(Number(multipleTxBlock) - 1),

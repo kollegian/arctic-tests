@@ -72,7 +72,7 @@ describe('Solo precompile tests', function () {
         await cw20.mint(admin.seiAddress, '10000000');
     });
 
-    it.only('Given that a user has cw20 tokens, they can transfer all with solo to an evm address before pointers', async () => {
+    it('Given that a user has cw20 tokens, they can transfer all with solo to an evm address before pointers', async () => {
         const userBalance = await cw20.balanceOf(admin.seiAddress);
         const pointer = await cw20.deployPointer(admin.evmRpcEndpoint);
         await waitFor(1);
@@ -531,7 +531,7 @@ describe('Solo precompile tests', function () {
         expect(aliceErc721OwnerAfter).to.equal(alice.evmAddress);
     });
 
-    it.only('Cannot forge claim for another user (chain validates signature)', async () => {
+    it('Cannot forge claim for another user (chain validates signature)', async () => {
         // Preconditions: Give Bob some CW20 and CW721 on Sei so there is something to steal
         cw20.setSigner(admin);
         await cw20.mint(bob.seiAddress, '5000000');

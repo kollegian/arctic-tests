@@ -312,7 +312,7 @@ describe('Tests', function () {
         console.log(synth);
     });
 
-    it.only('Lets try transfer ', async () =>{
+    it('Lets try transfer ', async () =>{
         const owner = await erc721Token.ownerOf('200');
         console.log(owner);
         console.log(alice.evmAddress);

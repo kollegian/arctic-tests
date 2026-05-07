@@ -46,7 +46,7 @@ describe('Staking Precompile Tests', function () {
     });
 
     describe('delegate()', function () {
-        it.only('Given that users have sufficient funds, users can delegate successfully to a valid validator', async () => {
+        it('Given that users have sufficient funds, users can delegate successfully to a valid validator', async () => {
             const amount = ethers.parseEther("0.02");
             const tx = await stakingContract.connect(alice.evmWallet.wallet)
                 .delegate(validatorAddress1, {value: amount});
@@ -71,7 +71,7 @@ describe('Staking Precompile Tests', function () {
             expect(Number(delegation.delegationResponse?.balance.amount)).to.be.gt(0);
         });
 
-        it.only('Given that users have sufficient funds, they cant delegate to an invalid validator', async () => {
+        it('Given that users have sufficient funds, they cant delegate to an invalid validator', async () => {
             const amount = ethers.parseEther("0.01");
             let error = null;
             try {
@@ -83,7 +83,7 @@ describe('Staking Precompile Tests', function () {
             expect(error).to.not.be.null;
         });
 
-        it.only('Given that users have insufficient funds, the delegation to a validator fails', async () => {
+        it('Given that users have insufficient funds, the delegation to a validator fails', async () => {
             const hugeAmount = ethers.parseEther("1000000000");
             let error = null;
             try {
@@ -95,7 +95,7 @@ describe('Staking Precompile Tests', function () {
             expect(error).to.not.be.null;
         });
 
-        it.only('Given that users have sufficient funds, users can stake into multiple validators', async () => {
+        it('Given that users have sufficient funds, users can stake into multiple validators', async () => {
             const amount = ethers.parseEther("0.02");
             const tx = await stakingContract.connect(alice.evmWallet.wallet)
                 .delegate(validatorAddress2, {value: amount});
@@ -122,7 +122,7 @@ describe('Staking Precompile Tests', function () {
             expect(Number(delegation.delegationResponse?.balance.amount)).to.be.eq(20000);
         });
 
-        it.only('Given that users have sufficient funds, users can stake into the same validator in multiple txs', async () =>{
+        it('Given that users have sufficient funds, users can stake into the same validator in multiple txs', async () =>{
             const amount = ethers.parseEther("0.02");
             const tx = await stakingContract.connect(alice.evmWallet.wallet)
                 .delegate(validatorAddress1, {value: amount});
@@ -180,7 +180,7 @@ describe('Staking Precompile Tests', function () {
     });
 
     describe('redelegate()', function () {
-        it.only('Given that users have delegations to validator1, they can redelegate validator2', async () => {
+        it('Given that users have delegations to validator1, they can redelegate validator2', async () => {
             const amount = '5000';
             const delegatedAmount = await stakingQueryClient.staking.delegation(alice.seiAddress, validatorAddress1);
             const delegation2 = await stakingContract.delegation(alice.evmAddress, validatorAddress1);
@@ -208,7 +208,7 @@ describe('Staking Precompile Tests', function () {
             expect(Number(delegation.delegationResponse?.balance.amount)).to.be.gte(Number(amount));
         });
 
-        it.only('Given that users have delegations, redelegations from invalid source validator fails', async () => {
+        it('Given that users have delegations, redelegations from invalid source validator fails', async () => {
             const amount = ethers.parseEther("0.001");
             let error = null;
             try {
@@ -220,7 +220,7 @@ describe('Staking Precompile Tests', function () {
             expect(error).to.not.be.null;
         });
 
-        it.only('Given that user has delegations, redelegations to invalid validators fails', async () => {
+        it('Given that user has delegations, redelegations to invalid validators fails', async () => {
             const amount = ethers.parseEther("0.001");
             let error = null;
             try {
@@ -232,7 +232,7 @@ describe('Staking Precompile Tests', function () {
             expect(error).to.not.be.null;
         });
 
-        it.only('Given that user has delegations, redelegations more than user staked amount fails', async () =>{
+        it('Given that user has delegations, redelegations more than user staked amount fails', async () =>{
             const amount = ethers.parseEther("100");
             let error = null;
             try {
@@ -246,7 +246,7 @@ describe('Staking Precompile Tests', function () {
     });
 
     describe('undelegate()', function () {
-        it.only('User can undelegate successfully from validator2', async () => {
+        it('User can undelegate successfully from validator2', async () => {
             const amount = '1000';
             const tx = await stakingContract.connect(alice.evmWallet.wallet)
                 .undelegate(validatorAddress2, amount);
@@ -270,7 +270,7 @@ describe('Staking Precompile Tests', function () {
             expect(Number(delegation.unbond.entries[0].balance)).to.be.eq(Number(amount));
         });
 
-        it.only('Given that users have undelegations, they cant undelegate from invalid validators', async () => {
+        it('Given that users have undelegations, they cant undelegate from invalid validators', async () => {
             const amount = ethers.parseEther("0.001");
             let error = null;
             try {
@@ -286,7 +286,7 @@ describe('Staking Precompile Tests', function () {
     describe('createValidator()', function () {
 
         let operatorAddress: string;
-        it.only('Bonded users can create a validator (positive flow)', async () => {
+        it('Bonded users can create a validator (positive flow)', async () => {
             const ed = require('ed25519-supercop');
             const minSelfDelegation = "100000";
             const seed = Buffer.alloc(32);
@@ -330,7 +330,7 @@ describe('Staking Precompile Tests', function () {
             expect(newValidator?.commission.commissionRates.maxChangeRate).to.be.eq((0.05 * 10 ** 18).toString());
         });
 
-        it.only('should fail with insufficient self delegation', async () => {
+        it('should fail with insufficient self delegation', async () => {
             const minSelfDelegation = ethers.parseEther("10");
             const seed = Buffer.alloc(32);
             const ed = require('ed25519-supercop');
@@ -360,7 +360,7 @@ describe('Staking Precompile Tests', function () {
     });
 
     describe('editValidator()', function () {
-        it.only('Cant change commission rate in 24h', async () => {
+        it('Cant change commission rate in 24h', async () => {
             const minSelfDelegation = '200000';
             let error = null;
             try {
@@ -378,7 +378,7 @@ describe('Staking Precompile Tests', function () {
             expect(error).to.not.be.null;
         });
 
-        it.only('Can update moniker name', async () => {
+        it('Can update moniker name', async () => {
             const tx = await stakingContract.connect(bob.evmWallet.wallet)
                 .editValidator(
                     "MyMoniker2",
@@ -407,7 +407,7 @@ describe('Staking Precompile Tests', function () {
             expect(newValidator?.status).to.be.eq(3);
         });
         let operatorAddress: string;
-        it.only('Can increase min self delegation', async () => {
+        it('Can increase min self delegation', async () => {
             const minSelfDelegation = '200000';
             const tx = await stakingContract.connect(bob.evmWallet.wallet)
                 .editValidator(
@@ -435,7 +435,7 @@ describe('Staking Precompile Tests', function () {
             expect(newValidator?.minSelfDelegation).to.be.eq(minSelfDelegation);
         });
 
-        it.only('Cant decrease min self delegation', async () => {
+        it('Cant decrease min self delegation', async () => {
             const minSelfDelegation = '1000';
             let error = null;
             try {
@@ -453,7 +453,7 @@ describe('Staking Precompile Tests', function () {
             expect(error).to.not.be.null;
         });
 
-        it.only('should fail to edit with invalid commission rate', async () => {
+        it('should fail to edit with invalid commission rate', async () => {
             let error = null;
             try {
                 const tx = await stakingContract.connect(bob.evmWallet.wallet)
@@ -470,7 +470,7 @@ describe('Staking Precompile Tests', function () {
     });
 
     describe('delegation()', function () {
-        it.only('should query delegation info (positive)', async () => {
+        it('should query delegation info (positive)', async () => {
             const result = await stakingContract.delegation(alice.evmAddress, validatorAddress1);
             const balance = result[0];
             const delegation = result[1];
@@ -481,7 +481,7 @@ describe('Staking Precompile Tests', function () {
             expect(delegation.shares.toString()).to.be.eq((BigInt(35000) * BigInt(10 ** 18)).toString());
         });
 
-        it.only('should return zero for non-delegated pair', async () => {
+        it('should return zero for non-delegated pair', async () => {
             try{
                 const result = await stakingContract.delegation(bob.evmAddress, validatorAddress1);
                 throw new Error('Should fail');
@@ -490,7 +490,7 @@ describe('Staking Precompile Tests', function () {
             }
         });
 
-        it.only('should fail for invalid validator', async () => {
+        it('should fail for invalid validator', async () => {
             let error = null;
             try {
                 await stakingContract.delegation(alice.evmAddress, invalidValidator);
@@ -502,7 +502,7 @@ describe('Staking Precompile Tests', function () {
     });
 
     describe('View Functions', function () {
-        it.only('validators() should return list of validators and match cosmos query', async () => {
+        it('validators() should return list of validators and match cosmos query', async () => {
             const status = "BOND_STATUS_BONDED";
             const evmResult = await stakingContract.validators(status, "0x");
             const cosmosResult = await stakingQueryClient.staking.validators(status);
@@ -538,7 +538,7 @@ describe('Staking Precompile Tests', function () {
             }
         });
 
-        it.only('validator() should return validator info', async () => {
+        it('validator() should return validator info', async () => {
             console.log(validatorAddress1);
             const result = await stakingContract.validator(validatorAddress1);
             // result is [validator] tuple
@@ -552,7 +552,7 @@ describe('Staking Precompile Tests', function () {
             expect(validatorInfo.operatorAddress).to.eq(cosmosVal?.operatorAddress);
         });
 
-        it.only('delegatorDelegations() should return delegations', async () => {
+        it('delegatorDelegations() should return delegations', async () => {
             const result = await stakingContract.delegatorDelegations(alice.evmAddress, "0x");
             // result is [delegations, nextKey]
             const delegations = result[0];
@@ -575,7 +575,7 @@ describe('Staking Precompile Tests', function () {
             expect(Number(del2[0][0])).to.eq(24000);
         });
 
-        it.only('delegatorValidators() should return validators for delegator', async () => {
+        it('delegatorValidators() should return validators for delegator', async () => {
             const result = await stakingContract.delegatorValidators(alice.evmAddress, "0x");
             const validators = result[0];
 
@@ -585,7 +585,7 @@ describe('Staking Precompile Tests', function () {
             expect(valAddrs).to.include(validatorAddress2);
         });
 
-        it.only('delegatorUnbondingDelegations() should return unbonding delegations', async () => {
+        it('delegatorUnbondingDelegations() should return unbonding delegations', async () => {
             const result = await stakingContract.delegatorUnbondingDelegations(alice.evmAddress, "0x");
             const unbondingDelegationsRaw = result[0];
 
@@ -608,19 +608,19 @@ describe('Staking Precompile Tests', function () {
             }
         });
 
-        it.only('params() should return staking params', async () => {
+        it('params() should return staking params', async () => {
             const result = await stakingContract.params();
             const params = parseParams(result);
             expect(params.bondDenom).to.eq('usei');
         });
 
-        it.only('pool() should return staking pool info', async () => {
+        it('pool() should return staking pool info', async () => {
             const result = await stakingContract.pool();
             const pool = parsePool(result);
             expect(Number(pool.bondedTokens)).to.be.gt(0);
         });
 
-        it.only('redelegations() should return redelegations', async () => {
+        it('redelegations() should return redelegations', async () => {
             const result = await stakingContract.redelegations(alice.seiAddress, validatorAddress1, validatorAddress2, "0x");
             const redelegationsRaw = result[0];
             expect(redelegationsRaw.length).to.be.gte(1);
@@ -641,7 +641,7 @@ describe('Staking Precompile Tests', function () {
             expect(Number(entry.completionTime)).to.be.gt(0);
         });
 
-        it.only('unbondingDelegation() should return specific unbonding delegation', async () => {
+        it('unbondingDelegation() should return specific unbonding delegation', async () => {
             const result = await stakingContract.unbondingDelegation(alice.evmAddress, validatorAddress2);
             console.log(result);
             const unbondingDelegation = parseUnbondingDelegation(result);
@@ -655,7 +655,7 @@ describe('Staking Precompile Tests', function () {
             }
         });
 
-         it.only('validatorDelegations() should return delegations to a validator', async () => {
+         it('validatorDelegations() should return delegations to a validator', async () => {
             const result = await stakingContract.validatorDelegations(validatorAddress1, "0x");
             const delegations = result[0];
 
@@ -672,7 +672,7 @@ describe('Staking Precompile Tests', function () {
             expect(Number(aliceDelegation[0][0])).to.eq(35000);
         });
 
-         it.only('validatorUnbondingDelegations() should return unbonding delegations from a validator', async () => {
+         it('validatorUnbondingDelegations() should return unbonding delegations from a validator', async () => {
             const result = await stakingContract.validatorUnbondingDelegations(validatorAddress2, "0x");
             const unbondingDelegationsRaw = result[0];
 

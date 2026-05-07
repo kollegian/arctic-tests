@@ -79,7 +79,7 @@ describe('Sei debug tests', function() {
 
 
     describe('Tests debug_traceCall', function(){
-        it.only('Debug call trace succeeds in valid block with default params', async () =>{
+        it('Debug call trace succeeds in valid block with default params', async () =>{
             const validBlockNumber = await rpcClient.getBlockByNumber('finalized') as Block;
             const callParams = [
                 {
@@ -104,7 +104,7 @@ describe('Sei debug tests', function() {
             expect(firstLog.depth).to.be.gte(1);
         });
 
-        it.only('Debug trace call with unexisting block number fails', async () => {
+        it('Debug trace call with unexisting block number fails', async () => {
             const validBlockNumber = await rpcClient.getBlockByNumber('finalized') as Block;
             const callParams = [
                 {
@@ -124,7 +124,7 @@ describe('Sei debug tests', function() {
             }
         })
 
-        it.only('Debug trace call succeeds in gas price fluctuations with default setting', async () => {
+        it('Debug trace call succeeds in gas price fluctuations with default setting', async () => {
             const balance = await erc20.balanceOf(users[1].evmAddress);
             const receipts = await erc20.sendMultipleTxs(users);
             const block = receipts[0].blockNumber;
@@ -147,7 +147,7 @@ describe('Sei debug tests', function() {
             expect(debugResult.structLogs).to.have.length.gt(2);
         });
 
-        it.only('Debug trace call succeeds if provided block hash with default setting', async () =>{
+        it('Debug trace call succeeds if provided block hash with default setting', async () =>{
             const validBlockNumber = await admin.evmWallet.signingClient.getBlock('finalized') as Block;
             const callParams = [
                 {
@@ -166,7 +166,7 @@ describe('Sei debug tests', function() {
             expect(debugResult.structLogs).to.have.length.gt(10);
         });
 
-        it.only('Debug trace call fails with not existing hash', async () =>{
+        it('Debug trace call fails with not existing hash', async () =>{
             const callParams = [
                 {
                     from: admin.evmAddress,
@@ -186,7 +186,7 @@ describe('Sei debug tests', function() {
             }
         });
 
-        it.only('Debug trace call returns valid information about failing txs with default setting', async () => {
+        it('Debug trace call returns valid information about failing txs with default setting', async () => {
             const callData = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('1000000')]);
             const actualCall = debugContract.interface.encodeFunctionData('lowLevelCall', [erc20.getAddress(), callData]);
             const validBlockNumber = await provider.getBlock('finalized') as Block;
@@ -207,7 +207,7 @@ describe('Sei debug tests', function() {
             expect(debugResult.gas).to.be.gt(25000);
         });
 
-        it.only('Debug trace call returns only top call with block number', async () => {
+        it('Debug trace call returns only top call with block number', async () => {
             const callData = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('1')]);
             const actualCall = debugContract.interface.encodeFunctionData('lowLevelCall', [erc20.getAddress(), callData]);
             const validBlockNumber = await provider.getBlock('finalized') as Block;
@@ -238,7 +238,7 @@ describe('Sei debug tests', function() {
         //@todo add earliest again
         const tags = ['finalized', 'safe'];
         for(const tag of tags) {
-            it.only(`Can call debug_traceCall with block tag ${tag}`, async () => {
+            it(`Can call debug_traceCall with block tag ${tag}`, async () => {
                 const callParams = [
                     {
                         from: admin.evmAddress,
@@ -255,7 +255,7 @@ describe('Sei debug tests', function() {
                 expect(debugResult.structLogs).to.have.length.gt(10);
             });
 
-            it.only(`Can use tracer config with block tag ${tag}`, async () => {
+            it(`Can use tracer config with block tag ${tag}`, async () => {
                 const callParams = [
                     {
                         from: admin.evmAddress,
@@ -275,7 +275,7 @@ describe('Sei debug tests', function() {
                 expect(parseInt(debugResult.gas)).to.be.gt(25000);
                 expect(debugResult.type).to.be.eq('CALL');            });
 
-            it.only(`Can use pre state tracer with block tag ${tag}`, async () => {
+            it(`Can use pre state tracer with block tag ${tag}`, async () => {
                 const callParams = [
                     {
                         from: admin.evmAddress,
@@ -300,7 +300,7 @@ describe('Sei debug tests', function() {
                 }
             });
 
-            it.only(`Can use call tracer with block tag ${tag} with onlyTopCall false returns subcalls`, async () => {
+            it(`Can use call tracer with block tag ${tag} with onlyTopCall false returns subcalls`, async () => {
                 const callParams = [
                     {
                         from: admin.evmAddress,
@@ -324,7 +324,7 @@ describe('Sei debug tests', function() {
                 expect(debugResult.calls[0].to.toLowerCase()).to.be.eq(erc20.getAddress().toString().toLowerCase());
             });
 
-            it.only(`Can use with only top call true with call tracer with tag ${tag}`, async () => {
+            it(`Can use with only top call true with call tracer with tag ${tag}`, async () => {
                 const callParams = [
                     {
                         from: admin.evmAddress,
@@ -346,7 +346,7 @@ describe('Sei debug tests', function() {
             })
         }
 
-        it.only('Debug trace call prestate tracer updates with data changes', async () =>{
+        it('Debug trace call prestate tracer updates with data changes', async () =>{
             const tx = await erc20.mint(admin.evmAddress, ethers.parseEther('100').toString());
             await tx.wait();
             const callParams = [
@@ -378,7 +378,7 @@ describe('Sei debug tests', function() {
         const tracerConfigs = ['prestateTracer', 'callTracer'];
         const topCallConfigs = [true, false];
         for(const tracer of tracerConfigs) {
-            it.only(`Users can call ${tracer} to check state with debug call with blockhash with passing tx`, async () => {
+            it(`Users can call ${tracer} to check state with debug call with blockhash with passing tx`, async () => {
                 const validBlockNumber = await provider.getBlock('finalized') as Block;
                 const callParams = [
                     {
@@ -408,7 +408,7 @@ describe('Sei debug tests', function() {
                 }
             });
 
-            it.only(`Users can call ${tracer} to check state with debug call block number`, async () => {
+            it(`Users can call ${tracer} to check state with debug call block number`, async () => {
                 const validBlockNumber = await provider.getBlock('finalized') as Block;
                 const callParams = [
                     {
@@ -439,7 +439,7 @@ describe('Sei debug tests', function() {
             });
 
             for(const topCallConfig of topCallConfigs) {
-                it.only(`Users can call ${tracer} to check state with debug call with blockhash with passing tx with topCall ${topCallConfig}`, async () => {
+                it(`Users can call ${tracer} to check state with debug call with blockhash with passing tx with topCall ${topCallConfig}`, async () => {
                     const validBlockNumber = await provider.getBlock('finalized') as Block;
                     const callParams = [
                         {
@@ -469,7 +469,7 @@ describe('Sei debug tests', function() {
                     }
                 });
 
-                it.only(`Users can call ${tracer} to check state with debug call block number with top call ${topCallConfig}`, async () => {
+                it(`Users can call ${tracer} to check state with debug call block number with top call ${topCallConfig}`, async () => {
                     const validBlockNumber = await provider.getBlock('finalized') as Block;
                     const callParams = [
                         {
@@ -519,7 +519,7 @@ describe('Sei debug tests', function() {
             console.log('Sender address is ', admin.evmAddress);
         });
 
-        it.only('Can trace transaction with default parameters', async () => {
+        it('Can trace transaction with default parameters', async () => {
             const params = [
                 txHash
             ]
@@ -537,7 +537,7 @@ describe('Sei debug tests', function() {
             expect(firstLog).to.have.property('depth').that.is.a('number');
         });
 
-        it.only('Trace transaction with default parameters match with eth get block Receipt', async () =>{
+        it('Trace transaction with default parameters match with eth get block Receipt', async () =>{
             const rpcCall = await rpcClient.getTransactionReceipt(txHash);
             const params = [
                 txHash
@@ -546,7 +546,7 @@ describe('Sei debug tests', function() {
             expect(ethers.toNumber(rpcCall.gasUsed)).to.be.eq(debugResult.gas);
         });
 
-        it.only('Trace transaction data is consistent with transaction receipt call with diff mode on', async () =>{
+        it('Trace transaction data is consistent with transaction receipt call with diff mode on', async () =>{
             const params = [
                 txHash,
                 {
@@ -579,7 +579,7 @@ describe('Sei debug tests', function() {
             expect(balanceDiff === gasPaid).to.be.true;
         });
 
-        it.only('Debug trace transaction returns valid info on valid txs with prestate tracer and diff mode false', async () =>{
+        it('Debug trace transaction returns valid info on valid txs with prestate tracer and diff mode false', async () =>{
             const adminAddrLower = admin.evmAddress.toLowerCase();
             const debugContractAddr = (await debugContract.getAddress()).toLowerCase();
             const erc20Addr = erc20.getAddress().toString().toLowerCase();
@@ -622,7 +622,7 @@ describe('Sei debug tests', function() {
                 > BigInt(debugResult2['post'][adminAddrLower]['balance'])).to.be.true;
         });
 
-        it.only('Can get failing tx transactions', async () => {
+        it('Can get failing tx transactions', async () => {
             const callData = erc20.contract.interface.encodeFunctionData('transfer', [users[1].evmAddress, ethers.parseEther('1')]);
             try{
                 const tx = await (await debugContract.lowLevelCall(erc20.getAddress(), callData, {gasLimit: 100000})).wait();
@@ -650,7 +650,7 @@ describe('Sei debug tests', function() {
         const tracerConfigs = ['prestateTracer', 'callTracer'];
         const topCallConfigs = [true, false];
         for(const tracerConfig of tracerConfigs) {
-            it.only(`Can see debug trace transaction with ${tracerConfig} for successful tx`, async () => {
+            it(`Can see debug trace transaction with ${tracerConfig} for successful tx`, async () => {
                 const params = [
                     txHash,
                     {
@@ -677,7 +677,7 @@ describe('Sei debug tests', function() {
                 }
             });
 
-            it.only(`Can see debug trace transaction with ${tracerConfig} for failing tx`, async function() {
+            it(`Can see debug trace transaction with ${tracerConfig} for failing tx`, async function() {
                 requireFailingTxHash.call(this);
                 const params = [
                     failingTXHash,
@@ -700,7 +700,7 @@ describe('Sei debug tests', function() {
                 }
             });
             for(const topCallConfig of topCallConfigs) {
-                it.only(`Can see debug trace transaction with ${tracerConfig} for successful tx with top call ${topCallConfig}`, async () => {
+                it(`Can see debug trace transaction with ${tracerConfig} for successful tx with top call ${topCallConfig}`, async () => {
                     const params = [
                         txHash,
                         {
@@ -721,7 +721,7 @@ describe('Sei debug tests', function() {
                     }
                 });
 
-                it.only(`Can see debug trace transaction with ${tracerConfig} for failing tx with top call ${topCallConfig}`, async function() {
+                it(`Can see debug trace transaction with ${tracerConfig} for failing tx with top call ${topCallConfig}`, async function() {
                     requireFailingTxHash.call(this);
                     const params = [
                         failingTXHash,
@@ -753,7 +753,7 @@ describe('Sei debug tests', function() {
         let blockHash: string;
 
         let numberDebugResult: [];
-        it.only('Debugs block with 40 txs in it - block number', async () => {
+        it('Debugs block with 40 txs in it - block number', async () => {
             const txs = [];
             for (let i = 0; i<users.length; i++) {
                 txs.push(erc20.contract.connect(users[i].evmWallet.wallet).transfer(admin.evmAddress, ethers.parseEther('0.1'), {gasLimit: 500000}));
@@ -790,7 +790,7 @@ describe('Sei debug tests', function() {
         });
 
         let hashDebugResult: [];
-        it.only('Debugs block with 40 txs in it -  block hash', async () =>{
+        it('Debugs block with 40 txs in it -  block hash', async () =>{
             const params = [
                 blockHash,
             ];
@@ -807,14 +807,14 @@ describe('Sei debug tests', function() {
             expect(entry.result).to.have.property('returnValue');
         });
 
-        it.only('Debug trace block by number and debug trace by block hash returns same information', async () =>{
+        it('Debug trace block by number and debug trace by block hash returns same information', async () =>{
             expect(_.isEqual(numberDebugResult, hashDebugResult)).to.be.true;
         });
 
         const tracerConfigs = ['prestateTracer', 'callTracer'];
         const topCallConfigs = [true, false];
         for(const tracerConfig of tracerConfigs) {
-            it.only(`Queries block with hash with ${tracerConfig}`, async () =>{
+            it(`Queries block with hash with ${tracerConfig}`, async () =>{
                 const params = [
                     blockHash,
                     {
@@ -825,7 +825,7 @@ describe('Sei debug tests', function() {
                 expect(debugResult.length).to.be.gte(2);
             });
 
-            it.only(`Queries block with number ${tracerConfig}`, async () =>{
+            it(`Queries block with number ${tracerConfig}`, async () =>{
                 const params = [
                     ethers.toQuantity(blockNumber),
                     {
@@ -836,7 +836,7 @@ describe('Sei debug tests', function() {
                 expect(debugResult.length).to.be.gte(2);
             });
             for(const topCallConfig of topCallConfigs) {
-                it.only(`Queries block with number ${tracerConfig} with ${topCallConfig}`, async () =>{
+                it(`Queries block with number ${tracerConfig} with ${topCallConfig}`, async () =>{
                     const params = [
                         ethers.toQuantity(blockNumber),
                         {
@@ -848,7 +848,7 @@ describe('Sei debug tests', function() {
                     expect(debugResult.length).to.be.gt(2);
                 });
 
-                it.only(`Queries block with hash ${tracerConfig} with ${topCallConfig}`, async () =>{
+                it(`Queries block with hash ${tracerConfig} with ${topCallConfig}`, async () =>{
                     const params = [
                         blockHash,
                         {
@@ -862,7 +862,7 @@ describe('Sei debug tests', function() {
             }
         }
 
-        it.only('debug_traceBlockByNumber fails with non-existent block number', async () => {
+        it('debug_traceBlockByNumber fails with non-existent block number', async () => {
             const currentBlock = await provider.getBlockNumber();
             const params = [ethers.toQuantity(currentBlock + 10000)];
             try {
@@ -873,7 +873,7 @@ describe('Sei debug tests', function() {
             }
         });
 
-        it.only('debug_traceBlockByHash fails with non-existent block hash', async () => {
+        it('debug_traceBlockByHash fails with non-existent block hash', async () => {
             const params = ['0x0000000000000000000000000000000000000000000000000000000000000000'];
             try {
                 await provider.send('debug_traceBlockByHash', params);
@@ -885,7 +885,7 @@ describe('Sei debug tests', function() {
     });
 
     describe('Missing edge cases', function () {
-        it.only('debug_traceTransaction fails with non-existent tx hash', async () => {
+        it('debug_traceTransaction fails with non-existent tx hash', async () => {
             const fakeTxHash = '0x0000000000000000000000000000000000000000000000000000000000000000';
             try {
                 await provider.send('debug_traceTransaction', [fakeTxHash]);
@@ -895,7 +895,7 @@ describe('Sei debug tests', function() {
             }
         });
 
-        it.only('debug_traceCall works with latest block tag', async () => {
+        it('debug_traceCall works with latest block tag', async () => {
             const callParams = [
                 {
                     from: admin.evmAddress,
@@ -911,7 +911,7 @@ describe('Sei debug tests', function() {
             expect(debugResult.structLogs).to.have.length.gt(2);
         });
 
-        it.only('debug_traceCall with callTracer on latest block tag', async () => {
+        it('debug_traceCall with callTracer on latest block tag', async () => {
             const callParams = [
                 {
                     from: admin.evmAddress,
@@ -929,7 +929,7 @@ describe('Sei debug tests', function() {
             expect(parseInt(debugResult.gas)).to.be.gt(0);
         });
 
-        it.only('debug_traceCall with a simple value transfer (no contract call)', async () => {
+        it('debug_traceCall with a simple value transfer (no contract call)', async () => {
             const validBlockNumber = await provider.getBlock('finalized') as Block;
             const callParams = [
                 {
@@ -945,7 +945,7 @@ describe('Sei debug tests', function() {
             expect(debugResult.structLogs).to.be.an('array');
         });
 
-        it.only('debug_traceCall with callTracer for a simple value transfer', async () => {
+        it('debug_traceCall with callTracer for a simple value transfer', async () => {
             const validBlockNumber = await provider.getBlock('finalized') as Block;
             const callParams = [
                 {

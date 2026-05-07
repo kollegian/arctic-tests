@@ -637,7 +637,7 @@ describe('Can work on happy path for ct', function () {
         });
     })
 
-    describe.only('Account close tests', function () {
+    describe('Account close tests', function () {
         let alice: SeiUser;
         let bob: SeiUser;
 

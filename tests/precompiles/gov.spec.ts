@@ -74,7 +74,7 @@ describe("Gov Precompile Tests", function () {
     });
 
     describe("Query Functions Tests", function () {
-        it.only("should retrieve governance parameters", async function () {
+        it("should retrieve governance parameters", async function () {
             const params = await govQueryClient.gov.params("deposit");
             console.log(params);
             console.log(params.depositParams.minDeposit);
@@ -162,7 +162,7 @@ describe("Gov Precompile Tests", function () {
     });
 
     describe("Deposit Tests", function () {
-        it.only("With the deposit amount equals to min deposit, proposal enters the voting period", async function () {
+        it("With the deposit amount equals to min deposit, proposal enters the voting period", async function () {
             const proposalJSON = JSON.stringify({
                 title: "Test Text Proposal",
                 description: "This is a test text proposal for governance",
@@ -193,7 +193,7 @@ describe("Gov Precompile Tests", function () {
             expect(totalDeposit[0].denom).to.be.eq("usei");
         });
 
-        it.only('With deposit amounts lower than min deposit, proposal enters the deposit period', async function () {
+        it('With deposit amounts lower than min deposit, proposal enters the deposit period', async function () {
             const proposalJSON = JSON.stringify({
                 title: "Test Text Proposal",
                 description: "This is a test text proposal for governance",
