@@ -54,6 +54,7 @@ function runMocha(): Promise<{ exitCode: number; spawnError: Error | null }> {
       [
         'mocha',
         '--require', 'ts-node/register/transpile-only',
+        '--require', './bin/keyring-isolation.ts',
         '--parallel',
         '--jobs', '4',
         '--reporter', 'mochawesome',
