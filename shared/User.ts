@@ -175,8 +175,8 @@ export class EvmWallet extends User<HDNodeWallet> {
 }
 
 export class Cli {
-    adminAddress = "sei1dg8unurclh6p05tu64nsth5642mm6gx5nt86hk";
-    adminMnemonic = "cover brand danger absent gas worth sustain rural powder auction shadow find merge domain promote glimpse burger embody favorite lake rain plate present soda";
+    adminAddress = process.env.SEI_ADMIN_ADDRESS || "sei1dg8unurclh6p05tu64nsth5642mm6gx5nt86hk";
+    adminMnemonic = process.env.SEI_ADMIN_MNEMONIC || "cover brand danger absent gas worth sustain rural powder auction shadow find merge domain promote glimpse burger embody favorite lake rain plate present soda";
 
     async checkAdmin(){
         try{
