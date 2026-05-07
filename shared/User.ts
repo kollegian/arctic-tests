@@ -267,7 +267,7 @@ export class UserFactory {
                 }
                 await Promise.all(users.map(u => u.initialize('', '', false)));
                 await UserFactory.fundAllUsers(users);
-                await waitFor(5);
+                await UserFactory.waitForFunding(users);
                 await UserFactory.associateAll(users);
                 console.log(`${count} Users created on Sei`);
                 users.push(...await this.returnUsersFromMnemonics());
@@ -292,6 +292,7 @@ export class UserFactory {
         console.log('Creating new users');
         await Promise.all(users.map(u => u.initialize('', '', false)));
         await UserFactory.fundAllUsers(users);
+        await UserFactory.waitForFunding(users);
         await UserFactory.associateAll(users);
         console.log(`${count} Users created on Sei`);
 
@@ -327,6 +328,18 @@ export class UserFactory {
 
     static async fundAllUsers(users: SeiUser[]): Promise<void> {
         await this.funder.fundAddressesOnSei(users);
+    }
+
+    static async waitForFunding(users: SeiUser[], maxWaitSeconds = 30): Promise<void> {
+        if (users.length === 0) return;
+        const probe = users[users.length - 1];
+        const deadline = Date.now() + maxWaitSeconds * 1000;
+        while (Date.now() < deadline) {
+            const account = await probe.seiWallet.signingClient.getAccount(probe.seiAddress).catch(() => null);
+            if (account !== null) return;
+            await waitFor(0.5);
+        }
+        throw new Error(`account ${probe.seiAddress} not present on chain within ${maxWaitSeconds}s`);
     }
 
     static async associateAll(users: SeiUser[]): Promise<void> {

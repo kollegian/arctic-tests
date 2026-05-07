@@ -370,7 +370,7 @@ describe('Distribution Precompile Tests', function () {
             const currentBlock = await provider.getBlockNumber();
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
-                fromBlock: currentBlock - 1000,
+                fromBlock: Math.max(0, currentBlock - 1000),
                 toBlock: currentBlock
             });
             expect(logs.length).to.be.gte(0);
@@ -386,7 +386,7 @@ describe('Distribution Precompile Tests', function () {
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
                 topics: [EVENT_TOPICS.DelegationRewardsWithdrawn],
-                fromBlock: currentBlock - 1000,
+                fromBlock: Math.max(0, currentBlock - 1000),
                 toBlock: currentBlock
             });
 
@@ -404,7 +404,7 @@ describe('Distribution Precompile Tests', function () {
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
                 topics: [EVENT_TOPICS.DelegationRewardsWithdrawn, paddedAddress],
-                fromBlock: currentBlock - 1000,
+                fromBlock: Math.max(0, currentBlock - 1000),
                 toBlock: currentBlock
             });
 
@@ -419,7 +419,7 @@ describe('Distribution Precompile Tests', function () {
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
                 topics: [EVENT_TOPICS.WithdrawAddressSet],
-                fromBlock: currentBlock - 1000,
+                fromBlock: Math.max(0, currentBlock - 1000),
                 toBlock: currentBlock
             });
 
@@ -434,7 +434,7 @@ describe('Distribution Precompile Tests', function () {
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
                 topics: [EVENT_TOPICS.MultipleDelegationRewardsWithdrawn],
-                fromBlock: currentBlock - 1000,
+                fromBlock: Math.max(0, currentBlock - 1000),
                 toBlock: currentBlock
             });
 

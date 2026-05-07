@@ -202,7 +202,7 @@ describe('Evm Rpc Tests', function () {
     })
 
     it('Given that heavy txs base gas fee increases on block call', async () =>{
-        const resp = await erc20.sendMultipleTxFromUsers();
+        const resp = await erc20.sendMultipleTxs(users);
         const baseFeePerGases = [];
         for(let blockNum = Number(resp[0].blockNumber) -1; blockNum <= Number(resp[0].blockNumber) + 4; blockNum ++){
             const blockInfo = await rpcClient.eth_getBlockByNumber(ethers.toQuantity(blockNum), true) as Block;
@@ -217,7 +217,7 @@ describe('Evm Rpc Tests', function () {
             await waitFor(2);
             const provider = admin.evmWallet.signingClient;
             let tries = 0;
-            erc20.sendMultipleTxFromUsers();
+            erc20.sendMultipleTxs(users);
             while(tries < 400){
                 const results = await provider.send('eth_getBlockByNumber', [tag, true]);
                 if(results.transactions.length > 25){

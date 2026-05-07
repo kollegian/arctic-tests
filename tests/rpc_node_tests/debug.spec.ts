@@ -7,6 +7,7 @@ import {EvmRpcClient} from "../../shared/RpcClient";
 import {Block, ethers} from "ethers";
 import {expect} from 'chai';
 import _ from "lodash";
+import {waitFor} from "../../shared/utils/helpers";
 
 describe('Sei debug tests', function() {
     this.timeout(10 * 60 * 1000);
@@ -781,7 +782,15 @@ describe('Sei debug tests', function() {
             }
             // blockNumber = receipts[0]!.blockNumber;
             blockNumber = bestKey;
-            blockHash = (await provider.getBlock(blockNumber))!.hash as string;
+            for (let attempt = 0; attempt < 30; attempt++) {
+                const block = await provider.getBlock(blockNumber);
+                if (block?.hash) {
+                    blockHash = block.hash;
+                    break;
+                }
+                await waitFor(1);
+            }
+            expect(blockHash, 'block hash never populated for confirmed block').to.be.a('string').that.matches(/^0x[0-9a-fA-F]{64}$/);
             const params = [
                 ethers.toQuantity(blockNumber),
             ];
