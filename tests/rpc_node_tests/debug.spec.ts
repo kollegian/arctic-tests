@@ -627,8 +627,9 @@ describe('Sei debug tests', function() {
             try{
                 const tx = await (await debugContract.lowLevelCall(erc20.getAddress(), callData, {gasLimit: 100000})).wait();
             } catch(e){
-                failingTXHash = e.receipt.hash;
+                failingTXHash = e.receipt?.hash;
             }
+            expect(failingTXHash, 'failing-tx setup did not produce a tx hash; lowLevelCall may be swallowing the inner-call revert into a successful outer tx').to.be.a('string');
             const params = [
                 failingTXHash
             ]
@@ -639,6 +640,12 @@ describe('Sei debug tests', function() {
             expect(debugResult).to.have.property('returnValue').that.is.a('string');
             expect(debugResult.returnValue.length).to.be.gt(0);
         });
+
+        const requireFailingTxHash = function (this: Mocha.Context) {
+            if (!failingTXHash) {
+                this.skip();
+            }
+        };
 
         const tracerConfigs = ['prestateTracer', 'callTracer'];
         const topCallConfigs = [true, false];
@@ -670,7 +677,8 @@ describe('Sei debug tests', function() {
                 }
             });
 
-            it.only(`Can see debug trace transaction with ${tracerConfig} for failing tx`, async () => {
+            it.only(`Can see debug trace transaction with ${tracerConfig} for failing tx`, async function() {
+                requireFailingTxHash.call(this);
                 const params = [
                     failingTXHash,
                     {
@@ -713,7 +721,8 @@ describe('Sei debug tests', function() {
                     }
                 });
 
-                it.only(`Can see debug trace transaction with ${tracerConfig} for failing tx with top call ${topCallConfig}`, async () => {
+                it.only(`Can see debug trace transaction with ${tracerConfig} for failing tx with top call ${topCallConfig}`, async function() {
+                    requireFailingTxHash.call(this);
                     const params = [
                         failingTXHash,
                         {
