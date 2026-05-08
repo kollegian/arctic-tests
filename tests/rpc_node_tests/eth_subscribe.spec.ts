@@ -1,7 +1,7 @@
 import {ethers, WebSocketProvider} from "ethers";
 import WebSocket from 'ws';
 
-describe('Evm Rpc Tests', function () {
+describe('@state-required Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
     let expect: Chai.ExpectStatic;
     let provider: WebSocketProvider;

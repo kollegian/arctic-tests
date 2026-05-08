@@ -40,10 +40,31 @@ exit $exit_code
 
 When no env is set, the wrapper falls back to `config/testConfig.json` defaults — `yarn release-test` against testnet works without any env.
 
+### Test targets
+
+The suite partitions into two targets selected via `TEST_TARGET`:
+
+- `chain-agnostic` (default) — tests that set up their own state. Safe on any chain. The harness target.
+- `state-required` — tests that read pre-existing chain state (mainnet/atlantic-2 indexer data, hardcoded contracts, testnet WSS). For manual pacific-1 / atlantic-2 runs.
+
+```sh
+TEST_TARGET=state-required yarn release-test  # only state-required tests
+yarn release-test                              # chain-agnostic (default)
+```
+
+Each suite's bucket is declared in the test file itself: state-required suites have `@state-required` in their top-level `describe` name. Chain-agnostic is the default — no tag.
+
+```ts
+describe('@state-required Indexer Tests', function () { ... });   // state-required
+describe('TokenFactory Tests', function () { ... });              // chain-agnostic
+```
+
+`bin/release-test.ts` filters at the file-glob level via `STATE_REQUIRED_GLOBS` (mochawesome's grep filter has a known bug that inflates pending counts — file globs sidestep it). The tag is the in-test source of truth; the glob list mirrors it. Adding a new state-required test means: add the tag to its top-level `describe`, then add its file path to `STATE_REQUIRED_GLOBS`.
+
 ### Stdout summary
 
 ```json
-{"passed": 47, "failed": 0, "pending": 2, "exitCode": 0, "reportPath": "./release-test-report/mochawesome.json"}
+{"passed": 47, "failed": 0, "pending": 2, "exitCode": 0, "reportPath": "./release-test-report/mochawesome.json", "target": "chain-agnostic"}
 ```
 
 Mocha's live output goes to stderr; the summary lands on stdout as a single line for `jq` consumption.

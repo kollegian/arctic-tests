@@ -5,7 +5,7 @@ import {ethers} from "ethers";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import {expect} from "chai";
 import * as abi from "../../artifacts/contracts/TestERC1155.sol/TestERC1155.json";
-describe('Tests', function () {
+describe('@state-required Tests', function () {
     this.timeout(3 * 60 * 1000);
     let admin: SeiUser;
     let alice: SeiUser;

@@ -27,7 +27,7 @@ import {waitFor} from "../../../shared/utils/helpers";
 const SIMPLE_ACCOUNT_CONTRACT_ADDRESS = "0x514a27D2D9FA4E16bAFAf0540afE7b45E4ae1549";
 const PAYMASTER_ADDRESS = "0x28AC01985c5f64c761BE0C22b054566A0829467a";
 
-describe('7702 Account Abstraction Tests', function () {
+describe('@state-required 7702 Account Abstraction Tests', function () {
     this.timeout(10 * 60 * 1000);
     let alice: SeiUser;
     let bob: SeiUser;

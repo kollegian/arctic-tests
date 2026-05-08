@@ -3,7 +3,7 @@ import {GraphClient} from './graph_client';
 import {GoldSkyClient} from './goldsky_client';
 import {expect} from 'chai';
 
-describe('Indexer Tests', function () {
+describe('@state-required Indexer Tests', function () {
   this.timeout(10 * 60 * 1000);
   const duneClient = new DuneLocalClient();
   const graphClient = new GraphClient();
