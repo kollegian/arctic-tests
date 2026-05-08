@@ -3,7 +3,6 @@
 node_modules
 mochawesome-report
 release-test-report
-wasm_store
 *.iml
 README.md
 
