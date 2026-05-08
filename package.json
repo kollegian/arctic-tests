@@ -1,7 +1,9 @@
 {
   "name": "arctic_tests",
   "scripts": {
-    "release-test": "tsx bin/release-test.ts"
+    "release-test": "tsx bin/release-test.ts",
+    "release-test:chain-agnostic": "TEST_TARGET=chain-agnostic tsx bin/release-test.ts",
+    "release-test:state-required": "TEST_TARGET=state-required tsx bin/release-test.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

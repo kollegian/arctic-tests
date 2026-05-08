@@ -6,9 +6,42 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(REPO_ROOT, 'config', 'testConfig.json');
 const REPORT_DIR = path.join(REPO_ROOT, 'release-test-report');
 const REPORT_PATH = path.join(REPORT_DIR, 'mochawesome.json');
-const SPEC_GLOB = 'tests/**/*.spec.ts';
+
+// Test targets partition the suite by what the chain must provide.
+// chain-agnostic: tests that set up their own state; safe on any chain.
+// state-required: tests that read pre-existing chain state (mainnet/atlantic-2
+//   indexer data, hardcoded contract addresses on a specific chain).
+// The harness defaults to chain-agnostic. state-required is invoked manually
+// against pacific-1 / atlantic-2 by the QA team.
+const STATE_REQUIRED_GLOBS = [
+  'tests/indexers/**/*.spec.ts',
+  'tests/rpc_node_tests/eth_subscribe.spec.ts',
+  'tests/chain_tests/pectra_upgrade/**/*.spec.ts',
+  'tests/tokens/disable_pointers.spec.ts',
+];
+const TARGETS = {
+  'chain-agnostic': {
+    spec: 'tests/**/*.spec.ts',
+    ignore: ['tests/confidential_transfers/**', ...STATE_REQUIRED_GLOBS],
+  },
+  'state-required': {
+    spec: `{${STATE_REQUIRED_GLOBS.join(',')}}`,
+    ignore: [],
+  },
+} as const;
+type TargetName = keyof typeof TARGETS;
 
 const INFRA_SIGNALS = ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EAI_AGAIN'];
+
+function resolveTarget(): { name: TargetName; spec: string; ignore: readonly string[] } {
+  const raw = process.env.TEST_TARGET ?? 'chain-agnostic';
+  if (!(raw in TARGETS)) {
+    const valid = Object.keys(TARGETS).join(', ');
+    throw new Error(`unknown TEST_TARGET ${JSON.stringify(raw)}; expected one of: ${valid}`);
+  }
+  const name = raw as TargetName;
+  return { name, ...TARGETS[name] };
+}
 
 interface TestConfig {
   adminAddress: string;
@@ -34,6 +67,7 @@ interface Summary {
   pending: number;
   exitCode: number;
   reportPath: string;
+  target: TargetName;
   error?: string;
 }
 
@@ -47,8 +81,9 @@ function loadAndOverlayEnv(): { merged: TestConfig; originalRaw: string } {
   return { merged: config, originalRaw };
 }
 
-function runMocha(): Promise<{ exitCode: number; spawnError: Error | null }> {
+function runMocha(spec: string, ignore: readonly string[]): Promise<{ exitCode: number; spawnError: Error | null }> {
   return new Promise((resolve) => {
+    const ignoreArgs = ignore.flatMap((g) => ['--ignore', g]);
     const child = spawn(
       'npx',
       [
@@ -59,9 +94,8 @@ function runMocha(): Promise<{ exitCode: number; spawnError: Error | null }> {
         '--jobs', '4',
         '--reporter', 'mochawesome',
         '--reporter-options', `reportDir=${REPORT_DIR},reportFilename=mochawesome,quiet=true,html=false,json=true`,
-        // Skipped pending dependency clarification — see qa-testing#16.
-        '--ignore', 'tests/confidential_transfers/**',
-        SPEC_GLOB,
+        ...ignoreArgs,
+        spec,
       ],
       { cwd: REPO_ROOT, stdio: ['ignore', 'inherit', 'inherit'], env: process.env },
     );
@@ -101,13 +135,14 @@ function hasInfraSignal(report: MochawesomeReport): boolean {
 }
 
 async function main() {
+  const target = resolveTarget();
   const { merged, originalRaw } = loadAndOverlayEnv();
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2) + '\n');
 
   let mochaExit = 1;
   let spawnError: Error | null = null;
   try {
-    ({ exitCode: mochaExit, spawnError } = await runMocha());
+    ({ exitCode: mochaExit, spawnError } = await runMocha(target.spec, target.ignore));
   } finally {
     fs.writeFileSync(CONFIG_PATH, originalRaw);
   }
@@ -121,6 +156,7 @@ async function main() {
     pending: report?.stats?.pending ?? 0,
     exitCode: verdict.exitCode,
     reportPath: REPORT_PATH,
+    target: target.name,
     ...(verdict.reason ? { error: verdict.reason } : {}),
   };
   process.stdout.write(JSON.stringify(summary) + '\n');
@@ -128,12 +164,14 @@ async function main() {
 }
 
 main().catch((err) => {
+  const target = (process.env.TEST_TARGET ?? 'chain-agnostic') as TargetName;
   const summary: Summary = {
     passed: 0,
     failed: 0,
     pending: 0,
     exitCode: 2,
     reportPath: REPORT_PATH,
+    target,
     error: `wrapper crash: ${err}`,
   };
   process.stdout.write(JSON.stringify(summary) + '\n');
