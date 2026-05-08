@@ -336,7 +336,7 @@ describe('Evm Rpc Tests', function () {
                     index++;
                 }
             }
-            throw new Error('I threw this error occurred.');
+            throw new Error(`eth_getLogs returned no Transfer events from block ${tag} after ${index} polls`);
         });
 
         it(`To block ${tag} return info as expected`, async () => {
@@ -360,12 +360,12 @@ describe('Evm Rpc Tests', function () {
                     index++;
                 }
             }
-            throw new Error('I threw this error occurred.');
+            throw new Error(`eth_getLogs returned no Transfer events to block ${tag} after ${index} polls`);
         });
     }
 
     it('Eth get logs tx indexes alongside with log indexes return correct data', async () =>{
-        const blockTxs = await rpcClient.getBlockByNumber(multipleTxBlock, true);
+        const blockTxs = await rpcClient.getBlockByNumber(ethers.toQuantity(multipleTxBlock), true);
         const logParams = {
             fromBlock: ethers.toQuantity(Number(multipleTxBlock) - 1),
             toBlock: ethers.toQuantity(Number(multipleTxBlock) + 3),
