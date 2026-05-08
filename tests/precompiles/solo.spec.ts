@@ -4,13 +4,11 @@ import {TokenDeployer} from "../../shared/Deployer";
 import {ethers} from "ethers";
 import soloAbi from "./abis/solo_abi.json"
 import {expect} from "chai";
-import * as util from "node:util";
-import {exec as execCallback} from "node:child_process";
 import {execCommandAndReturnJson, getSoloAllPayload, getSoloPayload} from "../../shared/utils/cliUtils";
+import {seidExec} from "../../shared/utils/seid";
 import { Encoder } from "@sei-js/cosmos/encoding";
 import { TxRaw } from "cosmjs-types/cosmos/tx/v1beta1/tx";
 import {hex2uint8, waitFor} from "../../shared/utils/helpers";
-const exec = util.promisify(execCallback);
 
 describe('Solo precompile tests', function () {
     this.timeout(5 * 60 * 1000);
@@ -359,7 +357,7 @@ describe('Solo precompile tests', function () {
         const bobPreBalanceCw20 = await cw20.balanceOf(bob.seiAddress);
         const bobPreBalanceCw202 = await newCw20.balanceOf(bob.seiAddress);
         const alicePreBalanceCw20 = await cw20.balanceOf(alice.seiAddress);
-        const {stdout} = await exec(`seid tx evm print-claim-specific ${alice.evmAddress} CW20 ${cw20.getAddress()} CW20 ${newCw20.getAddress()} --from bob --fees 24200usei -y`);
+        const {stdout} = await seidExec(`seid tx evm print-claim-specific ${alice.evmAddress} CW20 ${cw20.getAddress()} CW20 ${newCw20.getAddress()} --from bob --fees 24200usei -y`);
         const payloadArr = hex2uint8(stdout);
         const claimTx = await soloContract.connect(alice.evmWallet.wallet).claimSpecific(payloadArr, {gasLimit: 1000000});
         await claimTx.wait();
@@ -387,7 +385,7 @@ describe('Solo precompile tests', function () {
         await newCw721.mintTx(laterMultipleMints.toString(), alice.seiAddress);
         expect(await newCw721.ownerOf(laterMultipleMints.toString())).to.equal(alice.seiAddress);
 
-        const {stdout} = await exec(`seid tx evm print-claim-specific ${bob.evmAddress} CW721 ${cw721.getAddress()} CW721 ${newCw721.getAddress()} --from alice --fees 24500usei -y`);
+        const {stdout} = await seidExec(`seid tx evm print-claim-specific ${bob.evmAddress} CW721 ${cw721.getAddress()} CW721 ${newCw721.getAddress()} --from alice --fees 24500usei -y`);
         const payloadArr = hex2uint8(stdout);
         console.log('produced this one');
         const claimTx = await soloContract.connect(bob.evmWallet.wallet).claimSpecific(payloadArr, {gasLimit: 2000000});
@@ -404,7 +402,7 @@ describe('Solo precompile tests', function () {
         await cw721.mintTx((laterMultipleMints + 1).toString(), alice.seiAddress);
         const bobPreBalance = await cw20.balanceOf(bob.seiAddress);
 
-        const {stdout} = await exec(`seid tx evm print-claim-specific ${bob.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from alice --fees 24200usei -y`);
+        const {stdout} = await seidExec(`seid tx evm print-claim-specific ${bob.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from alice --fees 24200usei -y`);
         const payloadArr = hex2uint8(stdout);
         const claimTx = await soloContract.connect(bob.evmWallet.wallet).claimSpecific(payloadArr, {gasLimit: 1000000});
         await claimTx.wait();
@@ -416,7 +414,7 @@ describe('Solo precompile tests', function () {
 
     it('Given that a user has 0 balance on cw20 but valid balance on cw721', async () =>{
         await cw721.mintTx((laterMultipleMints + 2).toString(), alice.seiAddress);
-        const {stdout} = await exec(`seid tx evm print-claim-specific ${bob.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from alice --fees 24200usei -y`);
+        const {stdout} = await seidExec(`seid tx evm print-claim-specific ${bob.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from alice --fees 24200usei -y`);
         const bobPreBalance = await cw20.balanceOf(bob.seiAddress);
         const payloadArr = hex2uint8(stdout);
         const claimTx = await soloContract.connect(bob.evmWallet.wallet).claimSpecific(payloadArr, {gasLimit: 1000000});
@@ -443,7 +441,7 @@ describe('Solo precompile tests', function () {
             }, `MYTest${letters[i]}`))
         }
         const recip = contracts.map(c => 'CW20 ' + c.getAddress());
-        const {stdout} = await exec(`seid tx evm print-claim-specific ${bob.evmAddress} ${recip.join(' ')} --from alice --fees 24200usei -y`);
+        const {stdout} = await seidExec(`seid tx evm print-claim-specific ${bob.evmAddress} ${recip.join(' ')} --from alice --fees 24200usei -y`);
         const payloadArr = hex2uint8(stdout);
         const claimTx = await soloContract.connect(bob.evmWallet.wallet).claimSpecific(payloadArr, {gasLimit: 1000000});
         await claimTx.wait();
@@ -455,7 +453,7 @@ describe('Solo precompile tests', function () {
 
     it('Only Bob can claim what is signed by Alice', async () =>{
         await cw721.mintTx((laterMultipleMints + 3).toString(), alice.seiAddress);
-        const {stdout} = await exec(`seid tx evm print-claim-specific ${bob.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from alice --fees 24200usei -y`);
+        const {stdout} = await seidExec(`seid tx evm print-claim-specific ${bob.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from alice --fees 24200usei -y`);
         const payloadArr = hex2uint8(stdout);
         try{
             const claimTx = await soloContract.connect(admin.evmWallet.wallet).claimSpecific(payloadArr, {gasLimit: 1000000});
@@ -619,7 +617,7 @@ describe('Solo precompile tests', function () {
         const hexString = Buffer.from(validBytes).toString('hex');
         console.log(hexString);
         console.log('****');
-        const {stdout} = await exec(`seid tx evm print-claim-specific ${admin.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from bob --fees 24200usei -y`);
+        const {stdout} = await seidExec(`seid tx evm print-claim-specific ${admin.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from bob --fees 24200usei -y`);
         console.log(stdout);
         const payloadArray = hex2uint8(hexString);
         const okTx = await soloContract.connect(admin.evmWallet.wallet).claimSpecific(payloadArray, { gasLimit: 1000000 });

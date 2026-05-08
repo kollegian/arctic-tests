@@ -3,7 +3,7 @@ import {SeiUser} from './User';
 import fs from 'fs/promises';
 import {coins, StdFee} from "@cosmjs/stargate";
 import {waitFor} from "./utils/helpers";
-import {seidTxFlags} from "./utils/seid";
+import {seidExec} from "./utils/seid";
 
 const exec = util.promisify(require('node:child_process').exec);
 
@@ -21,16 +21,16 @@ export class Funder {
             ({stdout} = await exec(`docker exec sei-node-0 /bin/bash -c 'export PATH=$PATH:/root/go/bin:/root/.foundry/bin && printf "12345678\\n" | seid tx bank send ${dockerAdmin} ${this.admin.seiAddress} 1000000000000${tokenName} --fees 24500usei -y'`));
             await waitFor(1);
         } else {
-            const {stdout} = await exec(`seid keys show admin -a`);
-            await exec(`seid tx bank send ${stdout.trim()} ${this.admin.seiAddress} 100000000000000${tokenName} --fees 24500usei -y ${seidTxFlags()}`);
+            const {stdout} = await seidExec(`seid keys show admin -a`);
+            await seidExec(`seid tx bank send ${stdout.trim()} ${this.admin.seiAddress} 100000000000000${tokenName} --fees 24500usei -y`);
             await waitFor(1);
         }
         console.log('Admin wallet funded');
     }
 
     async fundAddressOnSei(address: string, tokenName = 'usei', amount = '7000000') {
-        let {stdout} = await exec(`seid keys show admin -a`);
-        const output = await exec(`seid tx bank send ${stdout.trim()} ${address} ${amount}${tokenName} --fees 24500usei -y --broadcast-mode block ${seidTxFlags()}`);
+        let {stdout} = await seidExec(`seid keys show admin -a`);
+        const output = await seidExec(`seid tx bank send ${stdout.trim()} ${address} ${amount}${tokenName} --fees 24500usei -y --broadcast-mode block`);
         await waitFor(1);
         return output;
     }

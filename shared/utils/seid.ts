@@ -4,6 +4,11 @@
 // returning empty so a missing env var fails loud instead of silently
 // falling back to localhost.
 
+import util from "node:util";
+import { exec as execCallback } from "node:child_process";
+
+const exec = util.promisify(execCallback);
+
 export function seidNodeFlag(): string {
     const node = process.env.SEI_TENDERMINT_RPC;
     if (!node) throw new Error('SEI_TENDERMINT_RPC must be set for seid CLI calls');
@@ -14,4 +19,8 @@ export function seidTxFlags(): string {
     const chainId = process.env.SEI_CHAIN_ID;
     if (!chainId) throw new Error('SEI_CHAIN_ID must be set for seid CLI broadcast calls');
     return `${seidNodeFlag()} --chain-id ${chainId}`;
+}
+
+export async function seidExec(command: string): Promise<{ stdout: string; stderr: string }> {
+    return exec(`${command} ${seidTxFlags()}`);
 }
