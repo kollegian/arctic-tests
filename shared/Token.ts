@@ -12,7 +12,7 @@ import {TestERC20, TestNFT} from "../typechain-types";
 const exec = util.promisify(require('node:child_process').exec);
 import {waitFor} from "./utils/helpers";
 import {execCommandAndReturnJson} from "./utils/cliUtils";
-import {seidExec, seidTxFlags} from "./utils/seid";
+import {seidExec, seidOnlineFlags} from "./utils/seid";
 import {EncodeObject} from "@cosmjs/proto-signing";
 import {TxRaw} from "cosmjs-types/cosmos/tx/v1beta1/tx";
 import {BroadcastTxResponse} from "cosmjs-types/cosmos/tx/v1beta1/service";
@@ -237,11 +237,11 @@ export class Cw20Token implements IFungibleToken {
         for (const msg of msgs) {
             const index = msgs.indexOf(msg);
             const fileName = fileNames[index];
-            await exec(`seid tx wasm execute ${cw20ContractAddress} '${JSON.stringify(msg)}' --from ${sender.seiAddress} --fees 24200usei -y --generate-only ${seidTxFlags()} > ${fileName}`);
+            await exec(`seid tx wasm execute ${cw20ContractAddress} '${JSON.stringify(msg)}' --from ${sender.seiAddress} --fees 24200usei -y --generate-only ${seidOnlineFlags()} > ${fileName}`);
         }
 
-        await exec(`seid tx sign ${fileNames[0]} --from ${sender.seiAddress} --chain-id ${chainId} ${seidTxFlags()} > ./tests/tokens/firstTxSigned.json`);
-        await exec(`seid tx sign ${fileNames[1]} --from ${sender.seiAddress} --chain-id ${chainId} --sequence ${Number(preSequence.sequence) + 1} --offline --account-number ${preSequence.account_number} ${seidTxFlags()} > ./tests/tokens/secondTxSigned.json`);
+        await exec(`seid tx sign ${fileNames[0]} --from ${sender.seiAddress} --chain-id ${chainId} ${seidOnlineFlags()} > ./tests/tokens/firstTxSigned.json`);
+        await exec(`seid tx sign ${fileNames[1]} --from ${sender.seiAddress} --chain-id ${chainId} --sequence ${Number(preSequence.sequence) + 1} --offline --account-number ${preSequence.account_number} ${seidOnlineFlags()} > ./tests/tokens/secondTxSigned.json`);
 
         const broadcast1 = seidExec(`seid tx broadcast ./tests/tokens/firstTxSigned.json --output json`);
         await waitFor(0.1);
