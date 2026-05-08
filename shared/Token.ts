@@ -12,6 +12,7 @@ import {TestERC20, TestNFT} from "../typechain-types";
 const exec = util.promisify(require('node:child_process').exec);
 import {waitFor} from "./utils/helpers";
 import {execCommandAndReturnJson} from "./utils/cliUtils";
+import {seidNodeFlag, seidTxFlags} from "./utils/seid";
 import {EncodeObject} from "@cosmjs/proto-signing";
 import {TxRaw} from "cosmjs-types/cosmos/tx/v1beta1/tx";
 import {BroadcastTxResponse} from "cosmjs-types/cosmos/tx/v1beta1/service";
@@ -81,9 +82,9 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
     }
     async deployPointer(evmRpcEndpoint: string){
         console.info(`Deploying pointer for ${(this.contract.target)} on ${evmRpcEndpoint}`);
-        await exec(`seid tx evm register-cw-pointer ERC20 ${(this.contract.target)} --from admin --fees 24200usei -y`);
+        await exec(`seid tx evm register-cw-pointer ERC20 ${(this.contract.target)} --from admin --fees 24200usei -y ${seidTxFlags()}`);
         await waitFor(2);
-        const {stdout} = await exec(`seid q evm pointer ERC20 ${this.contract.target} --output json`);
+        const {stdout} = await exec(`seid q evm pointer ERC20 ${this.contract.target} --output json ${seidNodeFlag()}`);
         return JSON.parse(stdout).pointer;
     }
 
@@ -219,11 +220,11 @@ export class Cw20Token implements IFungibleToken {
     }
 
     async deployPointer(evmEndpoint: string){
-        const resp = await exec(`seid tx evm register-evm-pointer CW20 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4900000 --broadcast-mode block`);
+        const resp = await exec(`seid tx evm register-evm-pointer CW20 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4900000 --broadcast-mode block ${seidTxFlags()}`);
         console.log(resp);
     }
     async queryPointerAddress(){
-        const {stdout, stderror} = await exec(`seid q evm pointer CW20 ${this.address} --output json`);
+        const {stdout, stderror} = await exec(`seid q evm pointer CW20 ${this.address} --output json ${seidNodeFlag()}`);
         console.log(stdout);
         console.log(stderror);
         return (JSON.parse(stdout)).pointer;
@@ -242,9 +243,9 @@ export class Cw20Token implements IFungibleToken {
         await exec(`seid tx sign ${fileNames[0]} --from ${sender.seiAddress} --chain-id ${chainId} > ./tests/tokens/firstTxSigned.json`);
         await exec(`seid tx sign ${fileNames[1]} --from ${sender.seiAddress} --chain-id ${chainId} --sequence ${Number(preSequence.sequence) + 1} --offline --account-number ${preSequence.account_number} > ./tests/tokens/secondTxSigned.json`);
 
-        const broadcast1 = exec(`seid tx broadcast ./tests/tokens/firstTxSigned.json --output json`);
+        const broadcast1 = exec(`seid tx broadcast ./tests/tokens/firstTxSigned.json --output json ${seidTxFlags()}`);
         await waitFor(0.1);
-        const broadcast2 = exec(`seid tx broadcast ./tests/tokens/secondTxSigned.json --output json`);
+        const broadcast2 = exec(`seid tx broadcast ./tests/tokens/secondTxSigned.json --output json ${seidTxFlags()}`);
         return await Promise.all([broadcast1, broadcast2]);
     }
 
@@ -352,9 +353,9 @@ export class Erc721Token extends EvmTokenBase implements INft721 {
     }
 
     async registerPointer() {
-        const resp = await exec(`seid tx evm register-cw-pointer ERC721 ${this.contract.target} --from admin -y --fees 24200usei --broadcast-mode block`);
+        const resp = await exec(`seid tx evm register-cw-pointer ERC721 ${this.contract.target} --from admin -y --fees 24200usei --broadcast-mode block ${seidTxFlags()}`);
         await waitFor(1);
-        const {stdout, stderr} = await exec(`seid q evm pointer ERC721 ${this.contract.target} --output json`);
+        const {stdout, stderr} = await exec(`seid q evm pointer ERC721 ${this.contract.target} --output json ${seidNodeFlag()}`);
         return (JSON.parse(stdout)).pointer;
     }
 }
@@ -422,13 +423,13 @@ export class Cw721Token implements INft721 {
         }));
         return this.execMultiple(messages, '');}
     async deployPointer(evmEndpoint: string){
-        const resp = await exec(`seid tx evm register-evm-pointer CW721 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4500000 --broadcast-mode block`);
+        const resp = await exec(`seid tx evm register-evm-pointer CW721 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4500000 --broadcast-mode block ${seidTxFlags()}`);
         await waitFor(1);
-        const {stdout, stderr} = await exec(`seid q evm pointer CW721 ${this.address} --output json`);
+        const {stdout, stderr} = await exec(`seid q evm pointer CW721 ${this.address} --output json ${seidNodeFlag()}`);
         return (JSON.parse(stdout)).pointer;
     }
     async queryPointerAddress(){
-        const {stdout, stderror} = await exec(`seid q evm pointer CW721 ${this.address} --output json`);
+        const {stdout, stderror} = await exec(`seid q evm pointer CW721 ${this.address} --output json ${seidNodeFlag()}`);
         console.log(stdout);
         return (JSON.parse(stdout)).pointer;
     }
