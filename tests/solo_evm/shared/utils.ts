@@ -1,9 +1,6 @@
 import { TransactionReceipt, JsonRpcProvider, ethers } from 'ethers';
 import { BlockRecord, TraceTiming } from './types';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { seidExec } from '../../../shared/utils/seid';
 
 export const TRACER_OPTIONS = {
   callTracer: { tracer: 'callTracer' },
@@ -18,7 +15,7 @@ export function sleep(ms: number): Promise<void> {
 }
 
 export async function getCliAdminAddress(): Promise<string> {
-  const { stdout } = await execAsync('seid keys show admin -a');
+  const { stdout } = await seidExec('seid keys show admin -a');
   return stdout.trim();
 }
 
@@ -31,7 +28,7 @@ export async function fundAddressFromCli(
   console.log(`Funding ${toAddress} from CLI admin ${adminAddress}...`);
   
   const cmd = `seid tx bank send ${adminAddress} ${toAddress} ${amount}${denom} --fees 25000usei -y --broadcast-mode block`;
-  const { stdout, stderr } = await execAsync(cmd);
+  const { stdout, stderr } = await seidExec(cmd);
   
   if (stderr && !stderr.includes('gas estimate')) {
     console.warn('CLI warning:', stderr);
@@ -46,7 +43,7 @@ export async function associateAddress(evmAddress: string): Promise<void> {
   
   const cmd = `seid tx evm associate-address --from admin --fees 25000usei -y --broadcast-mode block`;
   try {
-    await execAsync(cmd);
+    await seidExec(cmd);
     await sleep(1000);
     console.log('Association complete');
   } catch (e: any) {
