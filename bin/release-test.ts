@@ -20,30 +20,23 @@ const STATE_REQUIRED_GLOBS = [
   'tests/tokens/disable_pointers.spec.ts',
 ];
 
-// Loaded via --file (runs before the glob) and --ignore (skipped by the glob
-// so they don't run twice).
-const SETUP_SPECS = [
-  'tests/tokens/startTests.spec.ts',
-  'tests/rpc_node_tests/startTests.spec.ts',
-];
-
+// Setup runs once in the parent via mochaGlobalSetup (./bin/global-setup.ts,
+// wired through .mocharc.cjs). No --file plumbing needed here.
 const TARGETS = {
   'chain-agnostic': {
     spec: 'tests/**/*.spec.ts',
-    ignore: ['tests/confidential_transfers/**', ...STATE_REQUIRED_GLOBS, ...SETUP_SPECS],
-    files: SETUP_SPECS,
+    ignore: ['tests/confidential_transfers/**', ...STATE_REQUIRED_GLOBS],
   },
   'state-required': {
     spec: `{${STATE_REQUIRED_GLOBS.join(',')}}`,
     ignore: [],
-    files: [] as readonly string[],
   },
 } as const;
 type TargetName = keyof typeof TARGETS;
 
 const INFRA_SIGNALS = ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EAI_AGAIN'];
 
-function resolveTarget(): { name: TargetName; spec: string; ignore: readonly string[]; files: readonly string[] } {
+function resolveTarget(): { name: TargetName; spec: string; ignore: readonly string[] } {
   const raw = process.env.TEST_TARGET ?? 'chain-agnostic';
   if (!(raw in TARGETS)) {
     const valid = Object.keys(TARGETS).join(', ');
@@ -91,10 +84,9 @@ function loadAndOverlayEnv(): { merged: TestConfig; originalRaw: string } {
   return { merged: config, originalRaw };
 }
 
-function runMocha(spec: string, ignore: readonly string[], files: readonly string[]): Promise<{ exitCode: number; spawnError: Error | null }> {
+function runMocha(spec: string, ignore: readonly string[]): Promise<{ exitCode: number; spawnError: Error | null }> {
   return new Promise((resolve) => {
     const ignoreArgs = ignore.flatMap((g) => ['--ignore', g]);
-    const fileArgs = files.flatMap((f) => ['--file', f]);
     const child = spawn(
       'npx',
       [
@@ -103,7 +95,6 @@ function runMocha(spec: string, ignore: readonly string[], files: readonly strin
         '--require', './bin/keyring-isolation.ts',
         '--reporter', 'mochawesome',
         '--reporter-options', `reportDir=${REPORT_DIR},reportFilename=mochawesome,quiet=true,html=false,json=true`,
-        ...fileArgs,
         ...ignoreArgs,
         spec,
       ],
@@ -152,7 +143,7 @@ async function main() {
   let mochaExit = 1;
   let spawnError: Error | null = null;
   try {
-    ({ exitCode: mochaExit, spawnError } = await runMocha(target.spec, target.ignore, target.files));
+    ({ exitCode: mochaExit, spawnError } = await runMocha(target.spec, target.ignore));
   } finally {
     fs.writeFileSync(CONFIG_PATH, originalRaw);
   }
