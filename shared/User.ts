@@ -266,6 +266,10 @@ export class UserFactory {
                     users.push(new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint));
                 }
                 await Promise.all(users.map(u => u.initialize('', '', false)));
+                // seid keyring writes aren't safe under parallel access; serialize.
+                for (const u of users) {
+                    await u.cli.createUser(u.seiAddress, u.seiWallet.wallet.mnemonic);
+                }
                 await UserFactory.fundAllUsers(users);
                 await UserFactory.waitForFunding(users);
                 await UserFactory.associateAll(users);
@@ -291,6 +295,10 @@ export class UserFactory {
         }
         console.log('Creating new users');
         await Promise.all(users.map(u => u.initialize('', '', false)));
+        // seid keyring writes aren't safe under parallel access; serialize.
+        for (const u of users) {
+            await u.cli.createUser(u.seiAddress, u.seiWallet.wallet.mnemonic);
+        }
         await UserFactory.fundAllUsers(users);
         await UserFactory.waitForFunding(users);
         await UserFactory.associateAll(users);
