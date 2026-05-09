@@ -1,7 +1,6 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { deployFixtures } from './deploy-fixtures';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(REPO_ROOT, 'config', 'testConfig.json');
@@ -83,6 +82,18 @@ function loadAndOverlayEnv(): { merged: TestConfig; originalRaw: string } {
   return { merged: config, originalRaw };
 }
 
+function runDeployFixtures(): Promise<{ exitCode: number; spawnError: Error | null }> {
+  return new Promise((resolve) => {
+    const child = spawn(
+      'npx',
+      ['tsx', 'bin/deploy-fixtures.ts'],
+      { cwd: REPO_ROOT, stdio: ['ignore', 'inherit', 'inherit'], env: process.env },
+    );
+    child.on('exit', (code) => resolve({ exitCode: code ?? 1, spawnError: null }));
+    child.on('error', (err) => resolve({ exitCode: 2, spawnError: err }));
+  });
+}
+
 function runMocha(spec: string, ignore: readonly string[]): Promise<{ exitCode: number; spawnError: Error | null }> {
   return new Promise((resolve) => {
     const ignoreArgs = ignore.flatMap((g) => ['--ignore', g]);
@@ -145,13 +156,11 @@ async function main() {
     if (target.name === 'state-required') {
       console.log('[release-test] skipped fixture deploy: TEST_TARGET=state-required');
     } else {
-      try {
-        await deployFixtures({ evmRpcEndpoint: merged.evmRpcEndpoint });
-      } catch (err: any) {
-        // pre-mocha; mochawesome.json won't capture this. Stderr-log so the
-        // harness can distinguish from a mocha crash.
-        process.stderr.write(`[deploy-fixtures] FAILED: ${err?.stack ?? err}\n`);
-        deployError = err;
+      // Spawned: shared/User.ts caches testConfig at module load; the child
+      // loads it after the parent overlays env values.
+      const dep = await runDeployFixtures();
+      if (dep.exitCode !== 0) {
+        deployError = dep.spawnError ?? new Error(`deploy-fixtures exited ${dep.exitCode}`);
       }
     }
     if (!deployError) {

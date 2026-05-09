@@ -4,6 +4,7 @@ import {ethers} from 'ethers';
 import {SeiUser, UserFactory} from '../shared/User';
 import {TokenDeployer} from '../shared/Deployer';
 import {waitFor} from '../shared/utils/helpers';
+import TestConfig from '../config/testConfig.json';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TOKENS_JSON = path.join(REPO_ROOT, 'tests/tokens/contractAddresses.json');
@@ -14,13 +15,9 @@ const MNEMONICS_JSON = path.join(REPO_ROOT, 'config/mnemonics.json');
 // requesting fewer get the full pool back via createSeiUsers' record path.
 const USER_POOL_SIZE = 10;
 
-export interface DeployConfig {
-    evmRpcEndpoint: string;
-}
-
-// Runs in the harness wrapper, not via mochaGlobalSetup: mocha's loadFilesAsync
-// freezes every spec's top-level JSON import before any setup hook fires.
-export async function deployFixtures(config: DeployConfig) {
+// Spawned by release-test.ts after testConfig.json is overlaid; the new
+// process loads the import fresh.
+async function deployFixtures() {
     console.log('[deploy-fixtures] resetting mnemonics + contract address files');
     fs.writeFileSync(MNEMONICS_JSON, '[]');
     fs.writeFileSync(TOKENS_JSON, '{}');
@@ -36,7 +33,7 @@ export async function deployFixtures(config: DeployConfig) {
     await erc20.mintToUsers(users);
     await waitFor(2);
 
-    const cwPointerAddress = await erc20.deployPointer(config.evmRpcEndpoint);
+    const cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
 
     const initialBalances = users.map(user => ({address: user.seiAddress, amount: '1000000000'}));
     const baseCw20 = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
@@ -46,7 +43,7 @@ export async function deployFixtures(config: DeployConfig) {
         initial_balances: initialBalances,
         mint: {minter: admin.seiAddress},
     }, 'myCwSolo');
-    await baseCw20.deployPointer(config.evmRpcEndpoint);
+    await baseCw20.deployPointer(TestConfig.evmRpcEndpoint);
     // 1s raced the indexer write on cold runners.
     await waitFor(2);
     const ercPointerAddress = await baseCw20.queryPointerAddress();
@@ -91,3 +88,8 @@ export async function deployFixtures(config: DeployConfig) {
         ercPointerOnEvm: ercPointerAddress,
     });
 }
+
+deployFixtures().catch((err: any) => {
+    process.stderr.write(`[deploy-fixtures] FAILED: ${err?.stack ?? err}\n`);
+    process.exit(1);
+});
