@@ -101,8 +101,6 @@ function runMocha(spec: string, ignore: readonly string[], files: readonly strin
         'mocha',
         '--require', 'ts-node/register/transpile-only',
         '--require', './bin/keyring-isolation.ts',
-        '--parallel',
-        '--jobs', '4',
         '--reporter', 'mochawesome',
         '--reporter-options', `reportDir=${REPORT_DIR},reportFilename=mochawesome,quiet=true,html=false,json=true`,
         ...fileArgs,
