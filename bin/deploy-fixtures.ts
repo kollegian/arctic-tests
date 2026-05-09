@@ -60,8 +60,26 @@ async function deployFixtures() {
     await cw721.mintMultiple(nftIds, users.map(user => user.seiAddress));
 
     const erc721 = await deployer.deployErc721('TestNFT', 'TNFT', 'https://example.com/');
-    for (let i = 0; i < users.length; i++) {
-        await erc721.safeMint(users[i].evmAddress, i.toString());
+    // Parallel + per-tx timeout: sequential await wedged on a dead ethers
+    // keep-alive socket. Throw on any reject so bootstrap failures hard-fail.
+    const SAFE_MINT_TIMEOUT_MS = 30_000;
+    const mintResults = await Promise.allSettled(
+        users.map((u, i) => Promise.race([
+            erc721.safeMint(u.evmAddress, i.toString()) as Promise<unknown>,
+            new Promise<never>((_, rej) => setTimeout(
+                () => rej(new Error(`safeMint(${i}) timed out after ${SAFE_MINT_TIMEOUT_MS}ms`)),
+                SAFE_MINT_TIMEOUT_MS,
+            )),
+        ])),
+    );
+    const mintFailures = mintResults
+        .map((r, i) => ({r, i}))
+        .filter(({r}) => r.status === 'rejected');
+    if (mintFailures.length > 0) {
+        throw new Error(
+            `safeMint: ${mintFailures.length}/${users.length} failed: ` +
+            mintFailures.map(({r, i}) => `[${i}] ${(r as PromiseRejectedResult).reason?.message}`).join('; '),
+        );
     }
 
     const debugContract = await deployer.deployDebugContract();
