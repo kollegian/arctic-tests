@@ -11,12 +11,28 @@ const TOKENS_JSON = path.join(REPO_ROOT, 'tests/tokens/contractAddresses.json');
 const RPC_JSON = path.join(REPO_ROOT, 'tests/rpc_node_tests/contractAddresses.json');
 const MNEMONICS_JSON = path.join(REPO_ROOT, 'config/mnemonics.json');
 
-// Total user pool. cw721_refactored.spec.ts indexes users[5] while requesting 2;
-// works because createSeiUsers(_, _, true) returns ALL recorded mnemonics. Pool
-// must cover the highest index any consumer reads (eth_getBlockByNumber: users[9]).
+// Highest index any consumer reads is users[9] (eth_getBlockByNumber). Specs
+// requesting fewer get the full pool back via createSeiUsers' record path.
 const USER_POOL_SIZE = 10;
 
 exports.mochaGlobalSetup = async function mochaGlobalSetup() {
+    // state-required uses hardcoded mainnet fixtures; deploying would burn admin.
+    if (process.env.TEST_TARGET === 'state-required') {
+        console.log('[global-setup] skipped: TEST_TARGET=state-required');
+        return;
+    }
+
+    try {
+        await deployFixtures();
+    } catch (err: any) {
+        // globalSetup throws don't make it into mochawesome.json; stderr-log so
+        // the harness can distinguish a deploy failure from a mocha crash.
+        process.stderr.write(`[global-setup] FAILED: ${err?.stack ?? err}\n`);
+        throw err;
+    }
+};
+
+async function deployFixtures() {
     console.log('[global-setup] resetting mnemonics + contract address files');
     fs.writeFileSync(MNEMONICS_JSON, '[]');
     fs.writeFileSync(TOKENS_JSON, '{}');
@@ -43,7 +59,8 @@ exports.mochaGlobalSetup = async function mochaGlobalSetup() {
         mint: {minter: admin.seiAddress},
     }, 'myCwSolo');
     await baseCw20.deployPointer(TestConfig.evmRpcEndpoint);
-    await waitFor(1);
+    // 1s raced the indexer write on cold runners.
+    await waitFor(2);
     const ercPointerAddress = await baseCw20.queryPointerAddress();
 
     await (await erc20.contract.mint(admin.evmAddress, ethers.parseEther('100000'))).wait();
@@ -71,9 +88,7 @@ exports.mochaGlobalSetup = async function mochaGlobalSetup() {
         erc721Address: erc721.getAddress(),
     }, null, 2));
 
-    // ercPointerOnCosmos preserves the literal-string value the prior setup wrote;
-    // no consumer reads it as an address, so flipping it to cwPointerAddress would
-    // be an unrelated behavioral change.
+    // ercPointerOnCosmos: literal preserved from prior setup; no consumer reads it.
     fs.writeFileSync(RPC_JSON, JSON.stringify({
         erc20: erc20.getAddress(),
         cw20: baseCw20.getAddress(),
@@ -87,4 +102,4 @@ exports.mochaGlobalSetup = async function mochaGlobalSetup() {
         cwPointerAddress,
         ercPointerOnEvm: ercPointerAddress,
     });
-};
+}

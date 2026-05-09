@@ -20,8 +20,6 @@ const STATE_REQUIRED_GLOBS = [
   'tests/tokens/disable_pointers.spec.ts',
 ];
 
-// Setup runs once in the parent via mochaGlobalSetup (./bin/global-setup.ts,
-// wired through .mocharc.cjs). No --file plumbing needed here.
 const TARGETS = {
   'chain-agnostic': {
     spec: 'tests/**/*.spec.ts',
@@ -87,12 +85,11 @@ function loadAndOverlayEnv(): { merged: TestConfig; originalRaw: string } {
 function runMocha(spec: string, ignore: readonly string[]): Promise<{ exitCode: number; spawnError: Error | null }> {
   return new Promise((resolve) => {
     const ignoreArgs = ignore.flatMap((g) => ['--ignore', g]);
+    // requires live in .mocharc.cjs
     const child = spawn(
       'npx',
       [
         'mocha',
-        '--require', 'ts-node/register/transpile-only',
-        '--require', './bin/keyring-isolation.ts',
         '--reporter', 'mochawesome',
         '--reporter-options', `reportDir=${REPORT_DIR},reportFilename=mochawesome,quiet=true,html=false,json=true`,
         ...ignoreArgs,
