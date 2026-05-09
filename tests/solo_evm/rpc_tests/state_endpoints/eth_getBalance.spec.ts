@@ -59,12 +59,14 @@ describe('eth_getBalance', function () {
   describe('Genesis and earliest block queries', function () {
 
     it('returns zero balance at genesis (block 0) for user address', async () => {
-      const balanceAtGenesis = await provider.getBalance(alice.address, 0);
+      const unfunded = ethers.Wallet.createRandom().address;
+      const balanceAtGenesis = await provider.getBalance(unfunded, 0);
       expect(balanceAtGenesis).to.equal(0n);
     });
 
     it('returns zero balance with "earliest" tag', async () => {
-      const balance = await provider.getBalance(alice.address, 'earliest');
+      const unfunded = ethers.Wallet.createRandom().address;
+      const balance = await provider.getBalance(unfunded, 'earliest');
       expect(balance).to.equal(0n);
     });
   });
@@ -167,7 +169,8 @@ describe('eth_getBalance', function () {
     });
 
     it('queries balance with "earliest" tag returns zero', async () => {
-      const balance = await provider.getBalance(alice.address, 'earliest');
+      const unfunded = ethers.Wallet.createRandom().address;
+      const balance = await provider.getBalance(unfunded, 'earliest');
       expect(balance).to.equal(0n);
     });
 
