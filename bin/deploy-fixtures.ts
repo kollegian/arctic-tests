@@ -4,7 +4,6 @@ import {ethers} from 'ethers';
 import {SeiUser, UserFactory} from '../shared/User';
 import {TokenDeployer} from '../shared/Deployer';
 import {waitFor} from '../shared/utils/helpers';
-import TestConfig from '../config/testConfig.json';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TOKENS_JSON = path.join(REPO_ROOT, 'tests/tokens/contractAddresses.json');
@@ -15,32 +14,21 @@ const MNEMONICS_JSON = path.join(REPO_ROOT, 'config/mnemonics.json');
 // requesting fewer get the full pool back via createSeiUsers' record path.
 const USER_POOL_SIZE = 10;
 
-exports.mochaGlobalSetup = async function mochaGlobalSetup() {
-    // state-required uses hardcoded mainnet fixtures; deploying would burn admin.
-    if (process.env.TEST_TARGET === 'state-required') {
-        console.log('[global-setup] skipped: TEST_TARGET=state-required');
-        return;
-    }
+export interface DeployConfig {
+    evmRpcEndpoint: string;
+}
 
-    try {
-        await deployFixtures();
-    } catch (err: any) {
-        // globalSetup throws don't make it into mochawesome.json; stderr-log so
-        // the harness can distinguish a deploy failure from a mocha crash.
-        process.stderr.write(`[global-setup] FAILED: ${err?.stack ?? err}\n`);
-        throw err;
-    }
-};
-
-async function deployFixtures() {
-    console.log('[global-setup] resetting mnemonics + contract address files');
+// Runs in the harness wrapper, not via mochaGlobalSetup: mocha's loadFilesAsync
+// freezes every spec's top-level JSON import before any setup hook fires.
+export async function deployFixtures(config: DeployConfig) {
+    console.log('[deploy-fixtures] resetting mnemonics + contract address files');
     fs.writeFileSync(MNEMONICS_JSON, '[]');
     fs.writeFileSync(TOKENS_JSON, '{}');
     fs.writeFileSync(RPC_JSON, '{}');
 
     const admin = await UserFactory.createAdminUser();
     const users: SeiUser[] = await UserFactory.createSeiUsers(admin, USER_POOL_SIZE, true);
-    console.log(`[global-setup] funded ${users.length} users`);
+    console.log(`[deploy-fixtures] funded ${users.length} users`);
 
     const deployer = new TokenDeployer(admin);
 
@@ -48,7 +36,7 @@ async function deployFixtures() {
     await erc20.mintToUsers(users);
     await waitFor(2);
 
-    const cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
+    const cwPointerAddress = await erc20.deployPointer(config.evmRpcEndpoint);
 
     const initialBalances = users.map(user => ({address: user.seiAddress, amount: '1000000000'}));
     const baseCw20 = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
@@ -58,7 +46,7 @@ async function deployFixtures() {
         initial_balances: initialBalances,
         mint: {minter: admin.seiAddress},
     }, 'myCwSolo');
-    await baseCw20.deployPointer(TestConfig.evmRpcEndpoint);
+    await baseCw20.deployPointer(config.evmRpcEndpoint);
     // 1s raced the indexer write on cold runners.
     await waitFor(2);
     const ercPointerAddress = await baseCw20.queryPointerAddress();
@@ -97,7 +85,7 @@ async function deployFixtures() {
         debugAddress: await debugContract.getAddress(),
     }));
 
-    console.log('[global-setup] complete', {
+    console.log('[deploy-fixtures] complete', {
         users: users.length,
         cwPointerAddress,
         ercPointerOnEvm: ercPointerAddress,

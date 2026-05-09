@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { deployFixtures } from './deploy-fixtures';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CONFIG_PATH = path.join(REPO_ROOT, 'config', 'testConfig.json');
@@ -139,14 +140,31 @@ async function main() {
 
   let mochaExit = 1;
   let spawnError: Error | null = null;
+  let deployError: Error | null = null;
   try {
-    ({ exitCode: mochaExit, spawnError } = await runMocha(target.spec, target.ignore));
+    if (target.name === 'state-required') {
+      console.log('[release-test] skipped fixture deploy: TEST_TARGET=state-required');
+    } else {
+      try {
+        await deployFixtures({ evmRpcEndpoint: merged.evmRpcEndpoint });
+      } catch (err: any) {
+        // pre-mocha; mochawesome.json won't capture this. Stderr-log so the
+        // harness can distinguish from a mocha crash.
+        process.stderr.write(`[deploy-fixtures] FAILED: ${err?.stack ?? err}\n`);
+        deployError = err;
+      }
+    }
+    if (!deployError) {
+      ({ exitCode: mochaExit, spawnError } = await runMocha(target.spec, target.ignore));
+    }
   } finally {
     fs.writeFileSync(CONFIG_PATH, originalRaw);
   }
 
   const report = readReport();
-  const verdict = classify(mochaExit, spawnError, report);
+  const verdict: Verdict = deployError
+    ? { exitCode: 2, reason: `fixture deploy failed: ${deployError.message ?? deployError}` }
+    : classify(mochaExit, spawnError, report);
 
   const summary: Summary = {
     passed: report?.stats?.passes ?? 0,
