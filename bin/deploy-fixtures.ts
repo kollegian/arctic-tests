@@ -17,7 +17,11 @@ const USER_POOL_SIZE = 10;
 
 // Pin a generous gas limit; eth_estimateGas under-counts on fresh chain.
 const FIXTURE_GAS_LIMIT = 500_000n;
-const SAFE_MINT_TIMEOUT_MS = 30_000;
+// Per-tx ceilings (broadcast + inclusion). Total deploy budget is bounded by
+// the parent runner; these are the per-iteration fail-fast knobs.
+const SAFE_MINT_BROADCAST_TIMEOUT_MS = 15_000;
+const SAFE_MINT_INCLUSION_TIMEOUT_MS = 20_000;
+const RECEIPT_POLL_INTERVAL_MS = 500;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
     let timer: NodeJS.Timeout | undefined;
@@ -27,6 +31,27 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
     return Promise.race([p, timeout]).finally(() => {
         if (timer !== undefined) clearTimeout(timer);
     });
+}
+
+// Manual receipt poll on a fresh provider. ethers' tx.wait() reuses the
+// signer's provider — a wedged keep-alive socket from the broadcast call
+// will deadlock the wait too. One fresh GET per poll sidesteps that.
+async function pollReceipt(
+    provider: ethers.JsonRpcProvider,
+    hash: string,
+    timeoutMs: number,
+    label: string,
+): Promise<ethers.TransactionReceipt> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const r = await provider.getTransactionReceipt(hash);
+        if (r) {
+            if (r.status === 0) throw new Error(`${label} reverted at block ${r.blockNumber}`);
+            return r;
+        }
+        await new Promise(res => setTimeout(res, RECEIPT_POLL_INTERVAL_MS));
+    }
+    throw new Error(`${label} not included within ${timeoutMs}ms (hash=${hash})`);
 }
 
 // Spawned by release-test.ts after testConfig.json is overlaid; the new
@@ -74,23 +99,22 @@ async function deployFixtures() {
     await cw721.mintMultiple(nftIds, users.map(user => user.seiAddress));
 
     const erc721 = await deployer.deployErc721('TestNFT', 'TNFT', 'https://example.com/');
-    // Parallel + per-tx timeout: sequential await wedged on a dead ethers
-    // keep-alive socket. Throw on any reject so bootstrap failures hard-fail.
-    const mintResults = await Promise.allSettled(
-        users.map((u, i) => withTimeout(
-            erc721.safeMint(u.evmAddress, i.toString(), {gasLimit: FIXTURE_GAS_LIMIT}),
-            SAFE_MINT_TIMEOUT_MS,
-            `safeMint(${i})`,
-        )),
-    );
-    const mintFailures = mintResults
-        .map((r, i) => ({r, i}))
-        .filter(({r}) => r.status === 'rejected');
-    if (mintFailures.length > 0) {
-        throw new Error(
-            `safeMint: ${mintFailures.length}/${users.length} failed: ` +
-            mintFailures.map(({r, i}) => `[${i}] ${(r as PromiseRejectedResult).reason?.message}`).join('; '),
-        );
+    // Sequential mints with a fresh provider per iteration so no keep-alive
+    // socket survives across mints.
+    for (let i = 0; i < users.length; i++) {
+        console.log(`[deploy-fixtures] safeMint(${i}) -> ${users[i].evmAddress}`);
+        const provider = new ethers.JsonRpcProvider(TestConfig.evmRpcEndpoint);
+        try {
+            const signer = admin.evmWallet.wallet.connect(provider);
+            const tx = await withTimeout(
+                erc721.contract.connect(signer).safeMint(users[i].evmAddress, i.toString(), {gasLimit: FIXTURE_GAS_LIMIT}),
+                SAFE_MINT_BROADCAST_TIMEOUT_MS,
+                `safeMint(${i}) broadcast`,
+            );
+            await pollReceipt(provider, tx.hash, SAFE_MINT_INCLUSION_TIMEOUT_MS, `safeMint(${i})`);
+        } finally {
+            provider.destroy?.();
+        }
     }
 
     const debugContract = await deployer.deployDebugContract();
