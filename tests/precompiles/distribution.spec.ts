@@ -370,7 +370,7 @@ describe('Distribution Precompile Tests', function () {
             const currentBlock = await provider.getBlockNumber();
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
-                fromBlock: Math.max(0, currentBlock - 1000),
+                fromBlock: Math.max(1, currentBlock - 1000),
                 toBlock: currentBlock
             });
             expect(logs.length).to.be.gte(0);
@@ -386,7 +386,7 @@ describe('Distribution Precompile Tests', function () {
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
                 topics: [EVENT_TOPICS.DelegationRewardsWithdrawn],
-                fromBlock: Math.max(0, currentBlock - 1000),
+                fromBlock: Math.max(1, currentBlock - 1000),
                 toBlock: currentBlock
             });
 
@@ -404,7 +404,7 @@ describe('Distribution Precompile Tests', function () {
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
                 topics: [EVENT_TOPICS.DelegationRewardsWithdrawn, paddedAddress],
-                fromBlock: Math.max(0, currentBlock - 1000),
+                fromBlock: Math.max(1, currentBlock - 1000),
                 toBlock: currentBlock
             });
 
@@ -419,7 +419,7 @@ describe('Distribution Precompile Tests', function () {
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
                 topics: [EVENT_TOPICS.WithdrawAddressSet],
-                fromBlock: Math.max(0, currentBlock - 1000),
+                fromBlock: Math.max(1, currentBlock - 1000),
                 toBlock: currentBlock
             });
 
@@ -434,7 +434,7 @@ describe('Distribution Precompile Tests', function () {
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
                 topics: [EVENT_TOPICS.MultipleDelegationRewardsWithdrawn],
-                fromBlock: Math.max(0, currentBlock - 1000),
+                fromBlock: Math.max(1, currentBlock - 1000),
                 toBlock: currentBlock
             });
 
@@ -474,7 +474,7 @@ describe('Distribution Precompile Tests', function () {
 
         it('should query logs within a specific block range', async () => {
             const currentBlock = await provider.getBlockNumber();
-            const fromBlock = Math.max(0, currentBlock - 100);
+            const fromBlock = Math.max(1, currentBlock - 100);
 
             const logs = await provider.getLogs({
                 address: DISTR_ADDRESS,
