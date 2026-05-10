@@ -21,7 +21,7 @@ describe('Dynamic RPC queries', function () {
     let currentBlock: Block;
     it('Gets current block', async () => {
         currentBlock = await rpcClient.getBlockByNumber('latest', false);
-        blockNumber = ethers.toQuantity(Math.max(0, Number(currentBlock.number) - 10));
+        blockNumber = ethers.toQuantity(Math.max(1, Number(currentBlock.number) - 10));
         let blockData = await rpcClient.getBlockByNumber(blockNumber, false);
         while (blockData.transactions.length < 6 && Number(blockNumber) > 0) {
             blockNumber = ethers.toQuantity(Number(blockNumber) - 1);
