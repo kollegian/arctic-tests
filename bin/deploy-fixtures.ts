@@ -15,6 +15,20 @@ const MNEMONICS_JSON = path.join(REPO_ROOT, 'config/mnemonics.json');
 // requesting fewer get the full pool back via createSeiUsers' record path.
 const USER_POOL_SIZE = 10;
 
+// Pin a generous gas limit; eth_estimateGas under-counts on fresh chain.
+const FIXTURE_GAS_LIMIT = 500_000n;
+const SAFE_MINT_TIMEOUT_MS = 30_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms);
+    });
+    return Promise.race([p, timeout]).finally(() => {
+        if (timer !== undefined) clearTimeout(timer);
+    });
+}
+
 // Spawned by release-test.ts after testConfig.json is overlaid; the new
 // process loads the import fresh.
 async function deployFixtures() {
@@ -30,7 +44,7 @@ async function deployFixtures() {
     const deployer = new TokenDeployer(admin);
 
     const erc20 = await deployer.deployErc20();
-    await erc20.mintToUsers(users);
+    await erc20.mintToUsers(users, '100', {gasLimit: FIXTURE_GAS_LIMIT});
     await waitFor(2);
 
     const cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
@@ -48,7 +62,7 @@ async function deployFixtures() {
     await waitFor(2);
     const ercPointerAddress = await baseCw20.queryPointerAddress();
 
-    await (await erc20.contract.mint(admin.evmAddress, ethers.parseEther('100000'))).wait();
+    await (await erc20.contract.mint(admin.evmAddress, ethers.parseEther('100000'), {gasLimit: FIXTURE_GAS_LIMIT})).wait();
     await baseCw20.mint(admin.seiAddress, '100000000000');
 
     const cw721 = await deployer.deployCw721('wasm_store/cw2981_royalties.wasm', {
@@ -62,15 +76,12 @@ async function deployFixtures() {
     const erc721 = await deployer.deployErc721('TestNFT', 'TNFT', 'https://example.com/');
     // Parallel + per-tx timeout: sequential await wedged on a dead ethers
     // keep-alive socket. Throw on any reject so bootstrap failures hard-fail.
-    const SAFE_MINT_TIMEOUT_MS = 30_000;
     const mintResults = await Promise.allSettled(
-        users.map((u, i) => Promise.race([
-            erc721.safeMint(u.evmAddress, i.toString()) as Promise<unknown>,
-            new Promise<never>((_, rej) => setTimeout(
-                () => rej(new Error(`safeMint(${i}) timed out after ${SAFE_MINT_TIMEOUT_MS}ms`)),
-                SAFE_MINT_TIMEOUT_MS,
-            )),
-        ])),
+        users.map((u, i) => withTimeout(
+            erc721.safeMint(u.evmAddress, i.toString(), {gasLimit: FIXTURE_GAS_LIMIT}),
+            SAFE_MINT_TIMEOUT_MS,
+            `safeMint(${i})`,
+        )),
     );
     const mintFailures = mintResults
         .map((r, i) => ({r, i}))

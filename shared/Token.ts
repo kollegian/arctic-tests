@@ -72,10 +72,10 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
     approve(spender: string, amount: BigNumberish) { return this.contract.approve(spender, amount); }
     allowance(owner: string, spender: string) { return this.contract.allowance(owner, spender); }
     mint(to: string, amount: string){return this.contract.mint(to, amount)}
-    async mintToUsers(users: SeiUser[], amount = '100'){
+    async mintToUsers(users: SeiUser[], amount = '100', overrides: ethers.Overrides = {}){
         const txs = [];
         for (const user of users) {
-            txs.push(this.contract.connect(user.evmWallet.wallet).mint(user.evmAddress, ethers.parseEther(amount)));
+            txs.push(this.contract.connect(user.evmWallet.wallet).mint(user.evmAddress, ethers.parseEther(amount), overrides));
         }
         const txRequests = await Promise.all(txs);
         return await Promise.all(txRequests.map(tx => tx.wait()));
@@ -300,8 +300,8 @@ export class Erc721Token extends EvmTokenBase implements INft721 {
         return this.contract.transferOwnership(newOwner);
     }
 
-    safeMint(to: string, tokenId: BigNumberish): Promise<any> {
-        return this.contract.safeMint(to, tokenId);
+    safeMint(to: string, tokenId: BigNumberish, overrides: ethers.Overrides = {}): Promise<any> {
+        return this.contract.safeMint(to, tokenId, overrides);
     }
 
     transferFrom(from: string, to: string, tokenId: BigNumberish): Promise<any> {
