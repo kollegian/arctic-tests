@@ -22,6 +22,7 @@ const FIXTURE_GAS_LIMIT = 500_000n;
 const SAFE_MINT_BROADCAST_TIMEOUT_MS = 15_000;
 const SAFE_MINT_INCLUSION_TIMEOUT_MS = 20_000;
 const RECEIPT_POLL_INTERVAL_MS = 500;
+const RECEIPT_POLL_TIMEOUT_MS = 3_000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
     let timer: NodeJS.Timeout | undefined;
@@ -44,7 +45,18 @@ async function pollReceipt(
 ): Promise<ethers.TransactionReceipt> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-        const r = await provider.getTransactionReceipt(hash);
+        let r: ethers.TransactionReceipt | null = null;
+        try {
+            // Per-poll timeout so a wedged socket can't deadlock past `deadline`.
+            r = await withTimeout(
+                provider.getTransactionReceipt(hash),
+                RECEIPT_POLL_TIMEOUT_MS,
+                `${label} receipt-poll`,
+            );
+        } catch (err: any) {
+            // Per-poll error (timeout or transient RPC); retry until deadline.
+            console.warn(`[deploy-fixtures] ${label} receipt-poll retry: ${err?.message ?? err}`);
+        }
         if (r) {
             if (r.status === 0) throw new Error(`${label} reverted at block ${r.blockNumber}`);
             return r;
