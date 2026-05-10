@@ -1,0 +1,37 @@
+target: release-test-harness
+target_path: bin/ shared/ + sibling platform clusters/harbor/nightly/release/
+started: "2026-05-09T16:54:41Z"
+updated: "2026-05-10T01:30:00Z"
+experts:
+  - product-engineer
+  - solidity-developer
+  - kubernetes-specialist
+  - platform-engineer
+  - sre-engineer
+pass: 1
+convergence_counter: 0
+phase: pass1-complete
+findings:
+  - {id: 1,  severity: High,     title: "testConfig.json round-trip is the IPC ABI between two processes that both treat it as static", finders: [product-engineer, platform-engineer], challenger: kubernetes-specialist, verdict: confirm, surface: A}
+  - {id: 2,  severity: Critical, title: "Hardcoded 2024-testnet admin address+mnemonic as runtime fallback in shared/User.ts",          finders: [product-engineer, solidity-developer], challenger: platform-engineer,    verdict: confirm, surface: B}
+  - {id: 3,  severity: Medium,   title: "EvmWallet.createUser constructs two separate JsonRpcProvider instances per user",                finders: [solidity-developer], challenger: kubernetes-specialist, verdict: downgrade, severity_before: High, surface: C}
+  - {id: 4,  severity: High,     title: "Three-phase orchestration straddles two repos with no schema for the env-var contract",          finders: [product-engineer], challenger: platform-engineer, verdict: confirm, surface: B}
+  - {id: 5,  severity: High,     title: "createSeiUsers has duplicated branches and self-recursive pool-grow that ignores caller's count", finders: [product-engineer], challenger: solidity-developer, verdict: confirm, surface: D}
+  - {id: 6,  severity: High,     title: "deploy-fixtures interleaves parallel ethers + parallel cosmjs + serial seid against one admin",  finders: [product-engineer], challenger: solidity-developer, verdict: confirm, surface: C}
+  - {id: 7,  severity: High,     title: "mintToUsers parallel mints with no gasLimit override; trusts Sei eth_estimateGas race",          finders: [solidity-developer], challenger: platform-engineer, verdict: confirm, surface: C}
+  - {id: 8,  severity: Medium,   title: "Parallel safeMint lacks gas hardening AND leaks 30s setTimeout timers on success",               finders: [solidity-developer], challenger: platform-engineer, verdict: confirm, surface: C}
+  - {id: 9,  severity: High,     title: "TestERC20._update unbounded _allAccounts.push SSTORE — built-in estimator-vs-execution skew",     finders: [solidity-developer], challenger: platform-engineer, verdict: confirm, surface: C}
+  - {id: 10, severity: Low,      title: "Deployer passes HDNodeWallet object as constructor address argument",                            finders: [solidity-developer], challenger: kubernetes-specialist, verdict: confirm, surface: E}
+  - {id: 11, severity: Low,      title: "Init container's /tmp/keyring lives on orchestrator's emptyDir, persists for the run",           finders: [kubernetes-specialist], challenger: product-engineer, verdict: downgrade, severity_before: High, surface: F}
+  - {id: 12, severity: High,     title: "3+ pinned versions of the seid binary coupled by YAML comment; seictl runtime-downloaded",       finders: [kubernetes-specialist, platform-engineer], challenger: sre-engineer, verdict: confirm, surface: F}
+  - {id: 13, severity: High,     title: "Cleanup trap racy with seictl child resources under SIGKILL — foreground cascade can't finish",  finders: [kubernetes-specialist], challenger: product-engineer, verdict: confirm, surface: F}
+  - {id: 14, severity: High,     title: "Inner Job mnemonic Secret reachable by every pod with workload-service-account in nightly",      finders: [kubernetes-specialist], challenger: sre-engineer, verdict: confirm, surface: F}
+  - {id: 15, severity: Medium,   title: "First-block poll uses ${SECONDS} after long --timeout=20m watches; budget overlaps grace period", finders: [kubernetes-specialist], challenger: sre-engineer, verdict: confirm, surface: F}
+  - {id: 16, severity: Medium,   title: "classify() conflates infra-during-setup with infra-during-tests; collapses pre-mocha failures",   finders: [platform-engineer, sre-engineer], challenger: product-engineer, verdict: confirm, surface: G}
+  - {id: 17, severity: Low,      title: "release-test.ts spawns children via npx (re-resolves binaries) instead of node_modules/.bin",     finders: [platform-engineer], challenger: kubernetes-specialist, verdict: downgrade, severity_before: Medium, surface: H}
+  - {id: 18, severity: High,     title: "loadAndOverlayEnv guards short-circuit on empty string; falls back to bundled testnet endpoints", finders: [platform-engineer], challenger: solidity-developer, verdict: confirm, surface: A}
+  - {id: 19, severity: Medium,   title: "deploy-fixtures rejection stack discarded by release-test.ts Summary; one-line collapse",         finders: [sre-engineer], challenger: product-engineer, verdict: confirm, surface: G}
+  - {id: 20, severity: High,     title: "orchestrate.sh release-test FAILED truncates describe; no inner-pod logs / mochawesome rescue",   finders: [sre-engineer], challenger: kubernetes-specialist, verdict: confirm, surface: G}
+  - {id: 21, severity: Medium,   title: "No liveness/heartbeat during deploy-fixtures stages; keep-alive hangs invisible until 45min",     finders: [sre-engineer], challenger: platform-engineer, verdict: confirm, surface: G}
+  - {id: 22, severity: Low,      title: "No runbook for release-test failure modes; no INFRA_SIGNALS taxonomy doc",                       finders: [sre-engineer], challenger: product-engineer, verdict: downgrade, severity_before: Medium, surface: H}
+verdicts: {}
