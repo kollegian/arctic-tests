@@ -187,15 +187,13 @@ describe('debug_traceCall Tests', function () {
 
   });
 
-  // TODO(sei-protocol/sei-chain#3418): unskip once the harness chain image is
-  // bumped to a sei-chain build with the prestateTracer fix (testnet works;
-  // current harness image returns empty {} for non-diff and diff modes).
-  describe.skip('Trace call scenarios with prestateTracer', function () {
+  describe('Trace call scenarios with prestateTracer', function () {
 
     it('traces all scenarios with prestateTracer', async () => {
-      console.log(`\nTracing ${callScenarios.length} call scenarios with prestateTracer...`);
+      const tracedScenarios = callScenarios.filter(s => s.expectedSuccess);
+      console.log(`\nTracing ${tracedScenarios.length} call scenarios with prestateTracer...`);
 
-      for (const scenario of callScenarios) {
+      for (const scenario of tracedScenarios) {
         const result = await provider.send('debug_traceCall', [
           scenario.callParams,
           'latest',
@@ -211,7 +209,7 @@ describe('debug_traceCall Tests', function () {
     });
 
     it('verifies prestate contains relevant addresses', async () => {
-      for (const scenario of callScenarios) {
+      for (const scenario of callScenarios.filter(s => s.expectedSuccess)) {
         const result = await provider.send('debug_traceCall', [
           scenario.callParams,
           'latest',
@@ -230,13 +228,13 @@ describe('debug_traceCall Tests', function () {
 
   });
 
-  // TODO(sei-protocol/sei-chain#3418): unskip with the prestateTracer fix.
-  describe.skip('Trace call scenarios with prestateTracer diffMode', function () {
+  describe('Trace call scenarios with prestateTracer diffMode', function () {
 
     it('traces all scenarios with diffMode', async () => {
-      console.log(`\nTracing ${callScenarios.length} call scenarios with prestateTracer diffMode...`);
+      const tracedScenarios = callScenarios.filter(s => s.expectedSuccess);
+      console.log(`\nTracing ${tracedScenarios.length} call scenarios with prestateTracer diffMode...`);
 
-      for (const scenario of callScenarios) {
+      for (const scenario of tracedScenarios) {
         const result = await provider.send('debug_traceCall', [
           scenario.callParams,
           'latest',
