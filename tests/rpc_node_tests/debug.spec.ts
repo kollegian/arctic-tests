@@ -8,6 +8,7 @@ import {Block, ethers} from "ethers";
 import {expect} from 'chai';
 import _ from "lodash";
 import {waitFor} from "../../shared/utils/helpers";
+import {unwrapErrorMessage} from "../../shared/utils/errors";
 
 describe('Sei debug tests', function() {
     this.timeout(10 * 60 * 1000);
@@ -183,7 +184,7 @@ describe('Sei debug tests', function() {
                 await admin.evmWallet.signingClient.send('debug_traceCall', callParams);
                 throw new Error('Should have failed');
             } catch(e: any){
-                expect(e.message).to.contain('could not find block for hash');
+                expect(unwrapErrorMessage(e)).to.contain('could not find block for hash');
             }
         });
 

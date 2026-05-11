@@ -190,12 +190,7 @@ describe('Evm Rpc Tests', function () {
 
     it('Given that there are synthetic and failing txs on a block, eth_getBlockByNumber returns gas as expected', async () => {
         const provider = admin.evmWallet.signingClient;
-        const logs = {
-            fromBlock: ethers.toQuantity(multipleSyntheticAndOneFailingEvmTx.height -1),
-            toBlock: ethers.toQuantity(multipleSyntheticAndOneFailingEvmTx.height + 1),
-            topic: ethers.id('Transfer(address,address,uint256)'),
-        }
-        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(multipleSyntheticAndOneFailingEvmTx.height), true]);
+        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx)), true]);
         expect(blockInfo.transactions.length).to.be.greaterThan(0);
         expect(ethers.toNumber(blockInfo.gasLimit)).to.be.gt(10000000);
         expect(blockInfo.transactions[0].hash).to.be.eq(failingTxHash);
@@ -205,7 +200,7 @@ describe('Evm Rpc Tests', function () {
         const resp = await erc20.sendMultipleTxs(users);
         const baseFeePerGases = [];
         for(let blockNum = Number(resp[0].blockNumber) -1; blockNum <= Number(resp[0].blockNumber) + 4; blockNum ++){
-            const blockInfo = await rpcClient.eth_getBlockByNumber(ethers.toQuantity(blockNum), true) as Block;
+            const blockInfo = await rpcClient.getBlockByNumber(ethers.toQuantity(blockNum), true) as Block;
             baseFeePerGases.push(ethers.toNumber(blockInfo.baseFeePerGas));
         }
         expect(baseFeePerGases.filter(baseFee => baseFee > 100000000).length).to.be.greaterThan(0);

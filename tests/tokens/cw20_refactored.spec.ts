@@ -7,6 +7,7 @@ import {expect} from "chai";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import {ContractTransactionReceipt, ethers, TransactionReceipt} from "ethers";
 import {AtomicTxSender} from "../../shared/TxBuilder";
+import {unwrapErrorMessage} from "../../shared/utils/errors";
 import {erc20} from "../../typechain-types/@openzeppelin/contracts/token";
 
 describe('Cw20 Tests', function () {
@@ -22,6 +23,9 @@ describe('Cw20 Tests', function () {
         const cw20Address = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8')).cw20Address;
         cw20Contract = new Cw20Token(admin, cw20Address);
         users = await UserFactory.createSeiUsers(admin, 3, true);
+        for (const u of users) {
+            await UserFactory.fundAddressOnSei(u.seiAddress, 'usei', '50000000');
+        }
         evmRpcClient = new EvmRpcClient(admin.evmRpcEndpoint, admin.evmWallet.signingClient);
     });
 
@@ -94,7 +98,7 @@ describe('Cw20 Tests', function () {
             cw20Contract.setSigner(users[1]);
             await cw20Contract.transferFrom(admin.seiAddress, users[1].seiAddress, '1000000');
         } catch(e: any){
-            expect(e.message).to.contain('No allowance');
+            expect(unwrapErrorMessage(e)).to.contain('No allowance');
         }
     });
 
@@ -170,7 +174,7 @@ describe('Cw20 Tests', function () {
             cw20Contract.setSigner(users[1]);
             await cw20Contract.transferFrom(admin.seiAddress, users[1].seiAddress, '1000000');
         } catch(e: any){
-            expect(e.message).to.contain('execute wasm contract failed');
+            expect(unwrapErrorMessage(e)).to.contain('execute wasm contract failed');
         }
     });
 

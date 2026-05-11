@@ -266,8 +266,14 @@ describe('Evm Rpc Tests', function () {
         const encodedTx = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('0.01')]);
         const signedTxs = await Promise.all(users.map((user) => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
         const results = await Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)));
-        await waitFor(0.5);
-        const txReceipt = await rpcClient.getTransactionReceipt(results[0]);
+
+        let txReceipt: any = null;
+        const deadline = Date.now() + 30_000;
+        while (Date.now() < deadline && !txReceipt) {
+            txReceipt = await rpcClient.getTransactionReceipt(results[0]);
+            if (!txReceipt) await waitFor(0.5);
+        }
+        expect(txReceipt, `receipt not produced within 30s for tx=${results[0]}`).to.not.be.null;
         for (const result of results){
             console.log(result);
         }
