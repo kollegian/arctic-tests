@@ -53,10 +53,15 @@ describe('Eth Get Transaction Receipt Tests', function () {
             const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
             const txHash = await AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin);
             console.log(`Failed transaction hash: ${txHash}`);
-            await waitFor(1);
-            failedTxReceipt = await rpcClient.getTransactionReceipt(txHash) as ContractTransactionReceipt;
+
+            const deadlineMs = Date.now() + 30_000;
+            while (Date.now() < deadlineMs) {
+                failedTxReceipt = await rpcClient.getTransactionReceipt(txHash) as ContractTransactionReceipt;
+                if (failedTxReceipt) break;
+                await waitFor(0.5);
+            }
+            expect(failedTxReceipt, `receipt not produced within 30s for txHash=${txHash}`).to.not.be.null;
             expect(Number(failedTxReceipt.status)).to.equal(0);
-            console.log(failedTxReceipt);
         });
 
         it('Creates a simple ETH transfer transaction', async () => {

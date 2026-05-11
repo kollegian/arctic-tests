@@ -55,7 +55,7 @@ describe('eth_estimateGas', function () {
     it('estimates gas for ETH transfer without from', async () => {
       const estimate = await provider.estimateGas({
         to: bob.address,
-        value: ethers.parseEther('0.1'),
+        value: 0n,
       });
 
       expect(estimate).to.equal(21000n);

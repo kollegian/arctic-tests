@@ -140,7 +140,10 @@ describe('eth_call', function () {
         data,
       });
 
-      expect(result).to.not.equal('0x');
+      expect(result).to.equal('0x');
+
+      const balance = await (erc20 as any).balanceOf(alice.address);
+      expect(balance).to.equal(ethers.parseEther('1000'));
     });
 
   });

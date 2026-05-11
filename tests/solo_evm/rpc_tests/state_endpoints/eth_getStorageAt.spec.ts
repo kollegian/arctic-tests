@@ -100,15 +100,18 @@ describe('eth_getStorageAt', function () {
     });
 
     it('tracks storage change after state modification', async () => {
-      const connectedErc20 = erc20.connect(alice.wallet) as any;
-      
-      const balanceBefore = await connectedErc20.balanceOf(alice.address);
-      
-      const tx = await connectedErc20.transfer(funder.address, ethers.parseEther('10'), { gasLimit: 100000n });
-      const receipt = await tx.wait();
-      const txBlock = receipt!.blockNumber;
+      const balanceBefore = await (erc20 as any).balanceOf(alice.address);
 
-      const balanceAfter = await connectedErc20.balanceOf(alice.address);
+      const data = erc20.interface.encodeFunctionData('transfer', [funder.address, ethers.parseEther('10')]);
+      const tx = await alice.wallet.sendTransaction({
+        to: erc20Address,
+        data,
+        gasLimit: 100000n,
+      });
+      const receipt = await tx.wait();
+      expect(receipt!.status).to.equal(1);
+
+      const balanceAfter = await (erc20 as any).balanceOf(alice.address);
 
       expect(balanceAfter).to.equal(balanceBefore - ethers.parseEther('10'));
       console.log(`Balance before: ${ethers.formatEther(balanceBefore)}`);
