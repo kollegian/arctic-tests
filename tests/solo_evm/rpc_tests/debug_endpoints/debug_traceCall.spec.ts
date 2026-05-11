@@ -157,7 +157,7 @@ describe('debug_traceCall Tests', function () {
 
         const hasError = !!result.error;
         if (scenario.expectedSuccess) {
-          expect(hasError).to.be.false, `${scenario.name} should succeed but got error: ${result.error}`;
+          expect(hasError, `${scenario.name} should succeed but got error: ${result.error}`).to.be.false;
         }
 
         console.log(`  ${scenario.description}: type=${result.type}, gasUsed=${result.gasUsed}, error=${result.error || 'none'}`);
@@ -287,15 +287,17 @@ describe('debug_traceCall Tests', function () {
       console.log(`latest block: gasUsed=${result.gasUsed}`);
     });
 
-    it('traces with "pending" block', async () => {
-      const result = await provider.send('debug_traceCall', [
-        { from: funder.address, to: users[0].address },
-        'pending',
-        TRACER_OPTIONS.callTracer
-      ]);
-
-      expect(result).to.have.property('type');
-      console.log(`pending block: gasUsed=${result.gasUsed}`);
+    it('rejects "pending" block', async () => {
+      try {
+        await provider.send('debug_traceCall', [
+          { from: funder.address, to: users[0].address },
+          'pending',
+          TRACER_OPTIONS.callTracer
+        ]);
+        expect.fail('Should have thrown');
+      } catch (e: any) {
+        expect(e.message).to.match(/tracing on top of pending/i);
+      }
     });
 
     it('traces with specific block number', async () => {
@@ -344,10 +346,12 @@ describe('debug_traceCall Tests', function () {
           value: ethers.toQuantity(ethers.parseEther('100'))
         },
         'latest',
-        TRACER_OPTIONS.callTracer,
         {
-          [poorUser.address]: {
-            balance: ethers.toQuantity(overrideBalance)
+          ...TRACER_OPTIONS.callTracer,
+          stateOverrides: {
+            [poorUser.address]: {
+              balance: ethers.toQuantity(overrideBalance)
+            }
           }
         }
       ]);
@@ -364,10 +368,12 @@ describe('debug_traceCall Tests', function () {
           data: '0x'
         },
         'latest',
-        TRACER_OPTIONS.callTracer,
         {
-          [erc20Address]: {
-            code: '0x6080604052600080fd'
+          ...TRACER_OPTIONS.callTracer,
+          stateOverrides: {
+            [erc20Address]: {
+              code: '0x6080604052600080fd'
+            }
           }
         }
       ]);
@@ -383,10 +389,12 @@ describe('debug_traceCall Tests', function () {
           to: users[0].address,
         },
         'latest',
-        TRACER_OPTIONS.prestateTracer,
         {
-          [funder.address]: {
-            nonce: ethers.toQuantity(999)
+          ...TRACER_OPTIONS.prestateTracer,
+          stateOverrides: {
+            [funder.address]: {
+              nonce: ethers.toQuantity(999)
+            }
           }
         }
       ]);

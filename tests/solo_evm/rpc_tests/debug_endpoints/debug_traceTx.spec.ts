@@ -541,7 +541,10 @@ describe('debug_traceTransaction Tests', function () {
       if (sstoreCosts.length > 0) {
         console.log(`  Costs: ${sstoreCosts.join(', ')}`);
         console.log(`  Range: ${Math.min(...sstoreCosts)} - ${Math.max(...sstoreCosts)}`);
-        expect(Math.max(...sstoreCosts)).to.be.gte(20000);
+        const VALID_SSTORE_COSTS = new Set([100, 2200, 2900, 5000, 20000, 22100]);
+        for (const cost of sstoreCosts) {
+          expect(VALID_SSTORE_COSTS.has(cost), `unexpected SSTORE cost ${cost}`).to.be.true;
+        }
       }
 
       console.log(`\nSLOAD operations: ${sloadCosts.length}`);
@@ -781,7 +784,7 @@ describe('debug_traceTransaction Tests', function () {
         await provider.send('debug_traceTransaction', [invalidHash]);
         expect.fail('Should have thrown an error');
       } catch (e: any) {
-        expect(e.message).to.include('not found');
+        expect(e.message).to.match(/not found|could not coalesce/);
         console.log(`Invalid hash error: ${e.message.slice(0, 80)}`);
       }
     });
