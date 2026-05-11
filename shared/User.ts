@@ -95,7 +95,35 @@ export class SeiWallet extends User<DirectSecp256k1HdWallet> {
         return this.wallet;
     }
 
+    // Poll auth.account until the wallet's address is visible to whichever
+    // RPC pod the signing client connects to. The 2-replica RPC fleet behind
+    // a Service LB can have state-propagation lag between when consensus
+    // commits a funding tx and when a lagging pod's auth module sees the
+    // new account; without this guard the next signAndBroadcast hits
+    // getSequence on the unsynced pod and dies with "Account does not exist".
+    async awaitAccountVisible(timeoutMs = 30_000): Promise<void> {
+        const deadline = Date.now() + timeoutMs;
+        let lastErr: unknown;
+        let warned = false;
+        while (Date.now() < deadline) {
+            try {
+                await this.signingClient.getSequence(this.walletAddress);
+                return;
+            } catch (e: any) {
+                lastErr = e;
+                if (!/Account.*does not exist on chain/i.test(String(e?.message ?? e))) throw e;
+                if (!warned) {
+                    console.warn(`awaitAccountVisible: ${this.walletAddress} not yet visible, polling`);
+                    warned = true;
+                }
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+        throw new Error(`account ${this.walletAddress} not visible within ${timeoutMs}ms (last error: ${(lastErr as any)?.message ?? lastErr})`);
+    }
+
     async signAndSend(messages: readonly EncodeObject[], memo='tx'): Promise<DeliverTxResponse> {
+        await this.awaitAccountVisible();
         return await this.signingClient.signAndBroadcast(this.walletAddress, messages, this.fee, memo);
     }
 

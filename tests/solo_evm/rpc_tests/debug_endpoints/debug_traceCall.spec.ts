@@ -187,7 +187,10 @@ describe('debug_traceCall Tests', function () {
 
   });
 
-  describe('Trace call scenarios with prestateTracer', function () {
+  // TODO(sei-protocol/sei-chain#3418): unskip once the harness chain image is
+  // bumped to a sei-chain build with the prestateTracer fix (testnet works;
+  // current harness image returns empty {} for non-diff and diff modes).
+  describe.skip('Trace call scenarios with prestateTracer', function () {
 
     it('traces all scenarios with prestateTracer', async () => {
       console.log(`\nTracing ${callScenarios.length} call scenarios with prestateTracer...`);
@@ -227,7 +230,8 @@ describe('debug_traceCall Tests', function () {
 
   });
 
-  describe('Trace call scenarios with prestateTracer diffMode', function () {
+  // TODO(sei-protocol/sei-chain#3418): unskip with the prestateTracer fix.
+  describe.skip('Trace call scenarios with prestateTracer diffMode', function () {
 
     it('traces all scenarios with diffMode', async () => {
       console.log(`\nTracing ${callScenarios.length} call scenarios with prestateTracer diffMode...`);
