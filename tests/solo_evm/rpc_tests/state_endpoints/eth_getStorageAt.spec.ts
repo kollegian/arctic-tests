@@ -106,7 +106,7 @@ describe('eth_getStorageAt', function () {
       const tx = await alice.wallet.sendTransaction({
         to: erc20Address,
         data,
-        gasLimit: 100000n,
+        gasLimit: 200000n,
       });
       const receipt = await tx.wait();
       expect(receipt!.status).to.equal(1);

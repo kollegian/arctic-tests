@@ -73,8 +73,8 @@ describe('debug_traceCall Tests', function () {
         to: users[0].address,
         value: ethers.toQuantity(ethers.parseEther('0.01')),
       },
-      expectedSuccess: true,
-      description: 'ETH transfer without from address',
+      expectedSuccess: false,
+      description: 'ETH transfer without from (zero-address has no funds)',
     });
 
     // ERC20 balanceOf call

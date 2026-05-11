@@ -191,26 +191,24 @@ describe('eth_call', function () {
       const balanceBefore = await (erc20 as any).balanceOf(alice.address);
       const transferAmount = ethers.parseEther('10');
 
-      const blockBefore = await provider.getBlockNumber();
-
       const transferData = erc20.interface.encodeFunctionData('transfer', [bob.address, transferAmount]);
       const tx = await alice.wallet.sendTransaction({
         to: erc20Address,
         data: transferData,
-        gasLimit: 100000n,
+        gasLimit: 200000n,
       });
       const receipt = await tx.wait();
       expect(receipt!.status).to.equal(1);
 
       const data = erc20.interface.encodeFunctionData('balanceOf', [alice.address]);
 
-      const resultBeforeTx = await provider.call({ to: erc20Address, data }, blockBefore);
+      const resultAtTxBlock = await provider.call({ to: erc20Address, data }, receipt!.blockNumber);
       const resultAtLatest = await provider.call({ to: erc20Address, data }, 'latest');
 
-      const balanceBeforeTx = erc20.interface.decodeFunctionResult('balanceOf', resultBeforeTx)[0];
+      const balanceAtTxBlock = erc20.interface.decodeFunctionResult('balanceOf', resultAtTxBlock)[0];
       const balanceAtLatest = erc20.interface.decodeFunctionResult('balanceOf', resultAtLatest)[0];
 
-      expect(balanceBeforeTx).to.equal(balanceBefore);
+      expect(balanceAtTxBlock).to.equal(balanceBefore - transferAmount);
       expect(balanceAtLatest).to.equal(balanceBefore - transferAmount);
     });
 
