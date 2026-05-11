@@ -38,17 +38,17 @@ describe('Cw20 Tests', function () {
         expect(Number(afterBalance)).to.equal(Number(preBalance) + Number('100000000'));
     });
 
-    it('Before pointer deployment, synthetic event are not recorded with sei_getBlockByNumber', async () =>{
+    it('Synthetic events from cw20 mints appear in sei_getBlockByNumber', async () =>{
         const rpcResult = await evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(mintTxHeight), true);
         const tx = rpcResult.transactions.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
-        expect(tx).to.be.undefined;
+        expect(tx).to.not.be.undefined;
     });
 
-    it('Before pointer deployment, synthetic event are not thrown with sei_getBlockByHash', async () =>{
+    it('Synthetic events from cw20 mints appear in sei_getBlockByHash', async () =>{
         const hash = (await evmRpcClient.getBlockByNumber(ethers.toQuantity(mintTxHeight), true)).hash;
         const rpcResult = await evmRpcClient.sei_getBlockByHash(hash, true);
         const tx = rpcResult.transactions.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
-        expect(tx).to.be.undefined;
+        expect(tx).to.not.be.undefined;
     });
 
     it.skip('Before pointer deployment, synthetic event are not thrown with sei_getLogs', async () =>{

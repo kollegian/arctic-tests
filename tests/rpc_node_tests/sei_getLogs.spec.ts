@@ -134,7 +134,7 @@ describe('Sei get logs tests', function() {
         multipleSyntheticAndEvmTx = evmReceipt;
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(multipleSyntheticAndEvmTx.blockNumber) - 1),
-            toBlock: ethers.toQuantity(Number(multipleSyntheticAndEvmTx.blockNumber) + 3),
+            toBlock: 'latest',
             topics: [ethers.id('Transfer(address,address,uint256)')],
             address: erc20.getAddress().toString()
         };

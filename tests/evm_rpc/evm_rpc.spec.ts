@@ -53,9 +53,9 @@ describe('EVM RPC Tests', function () {
             expect(parseInt(maxPriority)).to.be.gte(0);
         });
 
-        it('eth_accounts returns an array', async () => {
+        it('eth_accounts returns an array or null (Sei nodes don\'t manage accounts)', async () => {
             const accounts = await provider.send('eth_accounts', []);
-            expect(accounts).to.be.an('array');
+            expect(accounts === null || Array.isArray(accounts)).to.be.true;
         });
     });
 
