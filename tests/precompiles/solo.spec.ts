@@ -36,7 +36,7 @@ describe('Solo precompile tests', function () {
         bob = await UserFactory.createSeiUser(admin, 'bob');
         console.log(bob.evmAddress);
         deployer = new TokenDeployer(admin);
-        /*cw20 = await deployer.deployCw20('./wasm_store/cw20_base.wasm', {
+        cw20 = await deployer.deployCw20('./wasm_store/cw20_base.wasm', {
             name: "Test",
             symbol: "TEST",
             decimals: 6,
@@ -46,8 +46,8 @@ describe('Solo precompile tests', function () {
             initial_balances: [
                 {address: admin.seiAddress, amount: "10000000"},
                 {address: bob.seiAddress, amount: "30000000"}]
-        }, 'MYTest');*/
-        /*erc20 = await deployer.deployErc20();
+        }, 'MYTest');
+        erc20 = await deployer.deployErc20();
         erc721 = await deployer.deployErc721('ERC721', 'ERC721', 'https://example.com/');
         cw721 = await deployer.deployCw721('./wasm_store/cw2981_royalties.wasm', {
             name: "Test",
@@ -58,16 +58,8 @@ describe('Solo precompile tests', function () {
             name: "Test",
             symbol: "TEST",
             minter: admin.seiAddress,
-        }, 'MyTest');*/
-        // soloContract = new ethers.Contract('0x000000000000000000000000000000000000100C', soloAbi, admin.evmWallet.wallet);
-        cw20 = new Cw20Token(admin, 'sei1t8xjfyzvma2xldkz2umc2cux9weayc58m8yz6hwxu9dree4k92zstw2hm8');
-        erc20 = new Erc20Token(admin, '0xf97313ddEe90bdDAc23A453c794A6a83A2fB7f9d');
-        erc721 = new Erc721Token(admin, '0x92534F6eDe27ceeF415009405a6d5A184B818F6f');
-        cw721 = new Cw721Token(admin, 'sei127znsqfnrjvp6dfx3teqsr6zuh8n7h585payp4kf8xvmcagqd4sqfucu7j');
-        cw1155 = new Cw1155Token(admin, 'sei1gw5vmme8q9tq9wgtz6n822kzp2tlq56m7ej8qk8w90lmhuyq4d8sgmhg4j');
+        }, 'MyTest');
         soloContract = new ethers.Contract('0x000000000000000000000000000000000000100C', soloAbi, admin.evmWallet.wallet);
-        await cw20.mint(bob.seiAddress, '30000000');
-        await cw20.mint(admin.seiAddress, '10000000');
     });
 
     it('Given that a user has cw20 tokens, they can transfer all with solo to an evm address before pointers', async () => {

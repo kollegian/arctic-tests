@@ -165,8 +165,12 @@ describe('TokenFactory Tests', function () {
             const aliceBalanceBefore = await bankContract.balance(alice.evmAddress, denomName);
             const bobBalanceBefore = await bankContract.balance(bob.evmAddress, denomName);
 
-            const sendTx = await bankContract.connect(alice.evmWallet.wallet)
-                .send(alice.evmAddress, bob.evmAddress, denomName, '50000', { gasLimit: 1000000 });
+            const data = bankContract.interface.encodeFunctionData('send', [alice.evmAddress, bob.evmAddress, denomName, '50000']);
+            const sendTx = await alice.evmWallet.wallet.sendTransaction({
+                to: BANK_PRECOMPILE_ADDRESS,
+                data,
+                gasLimit: 1000000n,
+            });
             await sendTx.wait();
 
             const aliceBalanceAfter = await bankContract.balance(alice.evmAddress, denomName);

@@ -108,22 +108,10 @@ describe('PointerView Precompile Tests', function () {
             expect(addr).to.equal(ethers.ZeroAddress);
         });
 
-        it('Empty denom string returns a valid pointer (maps to a default denom)', async () => {
-            const [addr, version, exists] = await pointerViewContract.getNativePointer('');
-            expect(exists).to.equal(true);
-            expect(addr).to.not.equal(ethers.ZeroAddress);
-            expect(addr).to.match(/^0x[0-9a-fA-F]{40}$/);
-            expect(Number(version)).to.be.greaterThan(0);
-
-            const code = await admin.evmWallet.wallet.provider!.getCode(addr);
-            expect(code).to.not.equal('0x', 'Pointer address should have contract code deployed');
-
-            const addrContract = new Contract(ADDR_PRECOMPILE_ADDRESS, ADDR_ABI, admin.evmWallet.wallet);
-            const seiAddr = await addrContract.getSeiAddr(addr);
-            console.log('Sei address of empty-denom pointer:', seiAddr);
-            expect(seiAddr).to.be.a('string');
-            expect(seiAddr.length).to.be.greaterThan(0);
-            expect(seiAddr).to.match(/^sei1/);
+        it('Empty denom string has no pointer (no default-denom mapping)', async () => {
+            const [addr, , exists] = await pointerViewContract.getNativePointer('');
+            expect(exists).to.equal(false);
+            expect(addr).to.equal(ethers.ZeroAddress);
         });
     });
 

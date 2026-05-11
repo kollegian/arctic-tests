@@ -12,7 +12,7 @@ import stakingAbi from "./abis/staking_abi.json";
 import {ParameterChangeProposal} from "cosmjs-types/cosmos/params/v1beta1/params";
 
 describe("Gov Precompile Tests", function () {
-    this.timeout(10 * 60 * 1000); // Extended timeout for proposal processing
+    this.timeout(15 * 60 * 1000); // Bumped for cold-chain staking delegation in before-all
 
     let govContract: Contract;
     let stakingContract: Contract;
