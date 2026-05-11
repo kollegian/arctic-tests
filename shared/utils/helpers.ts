@@ -1,6 +1,7 @@
 import {SeiUser, UserFactory} from "../User";
 import testConfig from "../../config/testConfig.json";
 import {Funder} from "../Funder";
+import {getChainParams} from "../chainParams";
 
 export async function waitFor(seconds: number): Promise<void> {
     return new Promise(resolve => {
@@ -63,14 +64,15 @@ export function calcNewBaseFee(
     prevBaseFee: number,
     blockGasUsed: number
 ): number {
-    const blockGasLimit = 5000000000;
-    const targetGasUsed = 250000;
-    const maxUpwardAdjustment = 0.018900000000000000;
-    const maxDownwardAdjustment = 0.003900000000000000;
-    const minFeePerGas = 1000000000;
+    const {
+        blockGasLimit,
+        targetGasUsed,
+        maxUpwardAdjustment,
+        maxDownwardAdjustment,
+        minFeePerGas,
+    } = getChainParams();
 
     if (blockGasUsed > targetGasUsed) {
-        // Upward adjustment
         const numerator = blockGasUsed - targetGasUsed;
         const denominator = blockGasLimit - targetGasUsed;
         const percentageFull = numerator / denominator;
@@ -78,7 +80,6 @@ export function calcNewBaseFee(
         const newBaseFee = prevBaseFee * (1 + adjustmentFactor);
         return Math.floor(newBaseFee);
     } else {
-        // Downward adjustment
         const numerator = targetGasUsed - blockGasUsed;
         const denominator = targetGasUsed;
         const percentageEmpty = numerator / denominator;
