@@ -71,6 +71,77 @@ export class AtomicTxSender {
         );
     }
 
+    // Submit a raw EVM tx and a Cosmos tx concurrently, retrying with adaptive
+    // delay until both land in the same block. Throws if maxAttempts is
+    // exhausted. The thunks are re-invoked on each retry, so they must produce
+    // a freshly-signed tx each call (nonce-stale broadcasts are silent failures
+    // — re-sign inside the thunk).
+    //
+    // Use this when a test needs same-block cross-VM inclusion as a setup
+    // precondition (typically so a downstream log-range query can assume both
+    // events fall inside a tight window). Same-block is NOT a chain guarantee
+    // for concurrent submissions; this helper makes the harness produce the
+    // condition deterministically rather than depend on hand-tuned delays
+    // matching the chain's block cadence.
+    static async sendRawUntilSameBlock<C extends { height: number }>(
+        evmSubmit: () => Promise<string>,
+        cosmosCall: () => Promise<C>,
+        rpcClient: EvmRpcClient,
+        maxAttempts = 5,
+        delaySeconds = 1,
+    ): Promise<{ evmReceipt: TransactionReceipt; cosmosResponse: C }> {
+        let prevEvmEarlier: boolean | null = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            let evmHashPromise: Promise<string>;
+            let cosmosTxPromise: Promise<C>;
+
+            if (prevEvmEarlier === true) {
+                cosmosTxPromise = cosmosCall();
+                evmHashPromise = (async () => {
+                    await waitFor(0.1 * attempt);
+                    return evmSubmit();
+                })();
+            } else if (prevEvmEarlier === false) {
+                evmHashPromise = evmSubmit();
+                cosmosTxPromise = (async () => {
+                    await waitFor(0.1 * attempt);
+                    return cosmosCall();
+                })();
+            } else {
+                evmHashPromise = evmSubmit();
+                cosmosTxPromise = cosmosCall();
+            }
+
+            const [evmHash, cosmosResponse] = await Promise.all([
+                evmHashPromise,
+                cosmosTxPromise,
+            ]);
+
+            const evmReceipt = await rpcClient.getTransactionReceipt(evmHash);
+            const evmBlock = Number(evmReceipt.blockNumber);
+            const cosmosHeight = cosmosResponse.height;
+
+            if (evmBlock === cosmosHeight) {
+                return { evmReceipt, cosmosResponse };
+            }
+
+            console.warn(
+                `sendRawUntilSameBlock attempt ${attempt}: evm=${evmBlock} cosmos=${cosmosHeight}`,
+            );
+
+            prevEvmEarlier = evmBlock < cosmosHeight;
+
+            if (attempt < maxAttempts) {
+                await waitFor(delaySeconds);
+            }
+        }
+
+        throw new Error(
+            `sendRawUntilSameBlock: failed to co-locate EVM + Cosmos txs in the same block after ${maxAttempts} attempts`,
+        );
+    }
+
     static async sendCosmosEvmTxs(
         evmTransfer: (user: string) => Promise<TransactionResponse>,
         cosmosTransfer: (user: string) => Promise<DeliverTxResponse>,

@@ -47,72 +47,62 @@ describe('Evm Rpc Tests', function () {
     let oneSyntheticOneEvmTx: ContractTransactionReceipt;
     it('Send a synthetic and evm tx', async () => {
         const encodedData = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('1')]);
-        const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
         baseCw20.setSigner(users[1]);
-        const delayed = async () =>{
-            await waitFor(0.70);
-            return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
-
-        }
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.transfer(admin.seiAddress, '100000'),
-        ]);
-        oneSyntheticOneEvmTx = await rpcClient.getTransactionReceipt(results[0]);
-        console.log('evm block is ', Number(oneSyntheticOneEvmTx.blockNumber));
-        console.log('sei block is ', Number(results[1].height));
-        expect(Number(oneSyntheticOneEvmTx.blockNumber)).to.be.eq(results[1].height);
+        const { evmReceipt, cosmosResponse } = await AtomicTxSender.sendRawUntilSameBlock(
+            async () => {
+                const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
+                return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
+            },
+            () => baseCw20.transfer(admin.seiAddress, '100000'),
+            rpcClient,
+        );
+        oneSyntheticOneEvmTx = evmReceipt as ContractTransactionReceipt;
     });
 
     let multipleSyntheticAndOneFailingEvmTx: ExecuteResult;
     it('Sends multiple failing txs', async () => {
         const encoded1 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('10000000000')]);
-        const signed = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
         const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
-        const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
-        const delayed = async () => {
-            await waitFor(0.10);
-            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin)
-            return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
-        }
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.transfer(admin.seiAddress, '100000')
-        ]);
-        const receipt = await rpcClient.getTransactionReceipt(results[0]);
-        console.log('evm block is ', Number(receipt.blockNumber));
-        console.log('sei block is ', Number(results[1].height));
-        multipleSyntheticAndOneFailingEvmTx = results[1];
 
-        expect(Number(receipt.blockNumber)).to.be.eq(results[1].height);
+        // Pre-broadcast a second failing EVM tx so it's in the mempool when the
+        // helper runs. Its block placement is not load-bearing — the downstream
+        // assertion is "no Transfer logs from address=erc20 in the queried
+        // range," which holds regardless of where signed2 lands.
+        const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
+        AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin).catch(() => {});
+
+        const { evmReceipt, cosmosResponse } = await AtomicTxSender.sendRawUntilSameBlock(
+            async () => {
+                const signed = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
+                return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
+            },
+            () => baseCw20.transfer(admin.seiAddress, '100000'),
+            rpcClient,
+        );
+        multipleSyntheticAndOneFailingEvmTx = cosmosResponse;
     });
 
     let multipleSyntheticAndEvmTx: ContractTransactionReceipt;
     it('Sends multiple synthetic and multiple evm txs', async () => {
-        const signedTxs: string[] = [];
-        for (let i = 0; i < 3; i++){
-            const encoded = erc20.contract.interface.encodeFunctionData('transfer', [users[i].evmAddress, ethers.parseEther('0.01')]);
-            signedTxs.push(await AtomicTxSender.signEvmTransaction(users[i], erc20.getAddress(), encoded));
-        }
-
-        const delayed = async () =>{
-            await waitFor(0.70);
-            return Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)))
-        }
         const msgs = [
             {contractAddress: baseCw20.getAddress(),
                 msg: { transfer: { recipient: admin.seiAddress, amount: '100000' }}},
             {contractAddress: baseCw20.getAddress(),
                 msg: { transfer: { recipient: admin.seiAddress, amount: '100000' }}}
         ];
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.execMultiple(msgs),
-        ]);
-        multipleSyntheticAndEvmTx = await rpcClient.getTransactionReceipt(results[0][0]);
-        console.log('evm block is ', Number(multipleSyntheticAndEvmTx.blockNumber));
-        console.log('sei block is ', Number(results[1].height));
-        expect(Number(multipleSyntheticAndEvmTx.blockNumber)).to.be.eq(results[1].height);
+        const { evmReceipt, cosmosResponse } = await AtomicTxSender.sendRawUntilSameBlock(
+            async () => {
+                const hashes = await Promise.all(users.slice(0, 3).map(async (user, i) => {
+                    const encoded = erc20.contract.interface.encodeFunctionData('transfer', [user.evmAddress, ethers.parseEther('0.01')]);
+                    const signedTx = await AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encoded);
+                    return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin);
+                }));
+                return hashes[0];
+            },
+            () => baseCw20.execMultiple(msgs),
+            rpcClient,
+        );
+        multipleSyntheticAndEvmTx = evmReceipt as ContractTransactionReceipt;
     });
 
     it('Can read topics with multiple logs and validate indexes', async () => {

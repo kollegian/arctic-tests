@@ -65,20 +65,16 @@ describe('Sei get logs tests', function() {
 
     it('Send a synthetic and evm tx and validate logs', async () => {
         const encodedData = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('1')]);
-        const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
         baseCw20.setSigner(users[1]);
-        const delayed = async () =>{
-            await waitFor(0.65);
-            // The method expects 3 arguments: (rpcUrl, signedTx, sender) as per shared/TxBuilder.ts
-            const txHash: string = await AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
-            return txHash;
-        }
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.transfer(admin.seiAddress, '100000'),
-        ]);
-        oneSyntheticOneEvmTx = await rpcClient.getTransactionReceipt(results[0]);
-        expect(Number(oneSyntheticOneEvmTx.blockNumber)).to.be.eq(results[1].height);
+        const { evmReceipt } = await AtomicTxSender.sendRawUntilSameBlock(
+            async () => {
+                const signedTx = await AtomicTxSender.signEvmTransaction(users[0], erc20.getAddress(), encodedData);
+                return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, users[0]);
+            },
+            () => baseCw20.transfer(admin.seiAddress, '100000'),
+            rpcClient,
+        );
+        oneSyntheticOneEvmTx = evmReceipt;
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) - 1),
             toBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) + 1),
@@ -90,21 +86,22 @@ describe('Sei get logs tests', function() {
 
     it('Sends multiple failing txs and validates logs are empty', async () => {
         const encoded1 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('10000000000')]);
-        const signed = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
         const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
+
+        // Pre-broadcast a second failing EVM tx; its block placement is not
+        // load-bearing for the downstream "no Transfer logs from erc20" check.
         const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
-        const delayed = async () => {
-            await waitFor(0.1);
-            AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin);
-            return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
-        }
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.transfer(admin.seiAddress, '100000')
-        ]);
-        const receipt = await rpcClient.getTransactionReceipt(results[0]);
-        multipleSyntheticAndOneFailingEvmTx = results[1];
-        expect(Number(receipt.blockNumber)).to.be.eq(results[1].height);
+        AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin).catch(() => {});
+
+        const { cosmosResponse } = await AtomicTxSender.sendRawUntilSameBlock(
+            async () => {
+                const signed = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
+                return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
+            },
+            () => baseCw20.transfer(admin.seiAddress, '100000'),
+            rpcClient,
+        );
+        multipleSyntheticAndOneFailingEvmTx = cosmosResponse;
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) -2),
             toBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) + 2),
@@ -116,27 +113,25 @@ describe('Sei get logs tests', function() {
     });
 
     it('Sends multiple synthetic and multiple evm txs and validates logs', async () => {
-        const signedTxs: string[] = [];
-        for (let i = 0; i < 3; i++){
-            const encoded = erc20.contract.interface.encodeFunctionData('transfer', [users[i].evmAddress, ethers.parseEther('0.01')]);
-            signedTxs.push(await AtomicTxSender.signEvmTransaction(users[i], erc20.getAddress(), encoded));
-        }
-        const delayed = async () =>{
-            await waitFor(0.25);
-            return Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)))
-        }
         const msgs = [
             {contractAddress: baseCw20.getAddress(),
                 msg: { transfer: { recipient: admin.seiAddress, amount: '100000' }}},
             {contractAddress: baseCw20.getAddress(),
                 msg: { transfer: { recipient: admin.seiAddress, amount: '100000' }}}
         ];
-        const results = await Promise.all([
-            delayed(),
-            baseCw20.execMultiple(msgs),
-        ]);
-        multipleSyntheticAndEvmTx = await rpcClient.getTransactionReceipt(results[0][0]);
-        expect(Number(multipleSyntheticAndEvmTx.blockNumber)).to.be.eq(results[1].height);
+        const { evmReceipt } = await AtomicTxSender.sendRawUntilSameBlock(
+            async () => {
+                const hashes = await Promise.all(users.slice(0, 3).map(async (user) => {
+                    const encoded = erc20.contract.interface.encodeFunctionData('transfer', [user.evmAddress, ethers.parseEther('0.01')]);
+                    const signedTx = await AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encoded);
+                    return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin);
+                }));
+                return hashes[0];
+            },
+            () => baseCw20.execMultiple(msgs),
+            rpcClient,
+        );
+        multipleSyntheticAndEvmTx = evmReceipt;
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(multipleSyntheticAndEvmTx.blockNumber) - 1),
             toBlock: ethers.toQuantity(Number(multipleSyntheticAndEvmTx.blockNumber) + 3),
