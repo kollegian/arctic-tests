@@ -1,5 +1,4 @@
 import {SeiUser, UserFactory} from "../../shared/User";
-import * as TestConfig from "../../config/testConfig.json";
 import {
     applyPendingBalanceEthers, closeAccountEthers, confidentialTransferEthers,
     decryptAccountEthers,
@@ -29,7 +28,7 @@ describe('Confidential Transfers', function ()  {
     let rpcClient: EvmRpcClient;
 
     before('Initializes clients and users', async () => {
-        admin = await UserFactory.createAdminUser(TestConfig);
+        admin = await UserFactory.createAdminUser();
         await UserFactory.fundAdminOnSei();
         ({alice, bob} = await createCtUsers(admin));
         console.log(alice.evmWallet.wallet.mnemonic);

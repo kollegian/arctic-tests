@@ -1,7 +1,6 @@
 import {Contract, ethers, formatEther} from "ethers";
 
 import {SeiUser, UserFactory} from "../../shared/User";
-import * as TestConfig from "../../config/testConfig.json";
 import util from "node:util";
 import {
     createTokenfactoryDenom,
@@ -31,7 +30,7 @@ describe('Can work on happy path for ct', function () {
     const abiPath = "../../shared/utils/abis/ct_abi.json";
 
     before('Initializes clients and users', async () => {
-        admin = await UserFactory.createAdminUser(TestConfig);
+        admin = await UserFactory.createAdminUser();
         ({alice, bob} = await createCtUsers(admin));
         //@ts-ignore
         ctContract = new Contract(CT_CONTRACT_ADDRESS, CtAbi, admin.evmWallet.wallet);

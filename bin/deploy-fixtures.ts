@@ -4,7 +4,7 @@ import {ethers} from 'ethers';
 import {SeiUser, UserFactory} from '../shared/User';
 import {TokenDeployer} from '../shared/Deployer';
 import {waitFor} from '../shared/utils/helpers';
-import TestConfig from '../config/testConfig.json';
+import {getTestConfig} from '../shared/testConfig';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TOKENS_JSON = path.join(REPO_ROOT, 'tests/tokens/contractAddresses.json');
@@ -66,14 +66,13 @@ async function pollReceipt(
     throw new Error(`${label} not included within ${timeoutMs}ms (hash=${hash})`);
 }
 
-// Spawned by release-test.ts after testConfig.json is overlaid; the new
-// process loads the import fresh.
 async function deployFixtures() {
     console.log('[deploy-fixtures] resetting mnemonics + contract address files');
     fs.writeFileSync(MNEMONICS_JSON, '[]');
     fs.writeFileSync(TOKENS_JSON, '{}');
     fs.writeFileSync(RPC_JSON, '{}');
 
+    const cfg = getTestConfig();
     const admin = await UserFactory.createAdminUser();
     const users: SeiUser[] = await UserFactory.createSeiUsers(admin, USER_POOL_SIZE, true);
     console.log(`[deploy-fixtures] funded ${users.length} users`);
@@ -84,7 +83,7 @@ async function deployFixtures() {
     await erc20.mintToUsers(users, '100', {gasLimit: FIXTURE_GAS_LIMIT});
     await waitFor(2);
 
-    const cwPointerAddress = await erc20.deployPointer(TestConfig.evmRpcEndpoint);
+    const cwPointerAddress = await erc20.deployPointer(cfg.evmRpcEndpoint);
 
     const initialBalances = users.map(user => ({address: user.seiAddress, amount: '1000000000'}));
     const baseCw20 = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
@@ -94,7 +93,7 @@ async function deployFixtures() {
         initial_balances: initialBalances,
         mint: {minter: admin.seiAddress},
     }, 'myCwSolo');
-    await baseCw20.deployPointer(TestConfig.evmRpcEndpoint);
+    await baseCw20.deployPointer(cfg.evmRpcEndpoint);
     // 1s raced the indexer write on cold runners.
     await waitFor(2);
     const ercPointerAddress = await baseCw20.queryPointerAddress();
@@ -115,7 +114,7 @@ async function deployFixtures() {
     // socket survives across mints.
     for (let i = 0; i < users.length; i++) {
         console.log(`[deploy-fixtures] safeMint(${i}) -> ${users[i].evmAddress}`);
-        const provider = new ethers.JsonRpcProvider(TestConfig.evmRpcEndpoint);
+        const provider = new ethers.JsonRpcProvider(cfg.evmRpcEndpoint);
         try {
             const signer = admin.evmWallet.wallet.connect(provider);
             const tx = await withTimeout(

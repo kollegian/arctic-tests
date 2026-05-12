@@ -1,7 +1,7 @@
 import {SeiUser, UserFactory} from "../../shared/User";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import {Cw20Token, Erc20Token} from "../../shared/Token";
-import testConfig from "../../config/testConfig.json";
+import {getTestConfig} from "../../shared/testConfig";
 import ContractAddresses from "./contractAddresses.json";
 import {ContractTransactionReceipt, ethers} from "ethers";
 import {expect} from "chai";
@@ -21,7 +21,7 @@ describe('Evm Rpc Tests', function () {
         admin = await UserFactory.createAdminUser();
         users = await UserFactory.createSeiUsers(admin, 10, true);
         erc20 = new Erc20Token(admin, ContractAddresses.erc20);
-        rpcClient = new EvmRpcClient(testConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
+        rpcClient = new EvmRpcClient(getTestConfig().evmRpcEndpoint, admin.evmWallet.signingClient);
         baseCw20 = new Cw20Token(admin, ContractAddresses.cw20);
     })
 
@@ -50,7 +50,7 @@ describe('Evm Rpc Tests', function () {
         await waitFor(0.2);
         for (let i = 0; i < signedTxs.length; i++) {
             await waitFor(0.03);
-            const response = AtomicTxSender.sendRawTransaction(testConfig.evmRpcEndpoint, signedTxs[i], admin);
+            const response = AtomicTxSender.sendRawTransaction(getTestConfig().evmRpcEndpoint, signedTxs[i], admin);
         }
         multipleSyntheticAndEvmTxs = await txPromise;
         const txLength = await rpcClient.getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true);

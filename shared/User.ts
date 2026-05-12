@@ -13,7 +13,7 @@ import {waitFor} from "./utils/helpers";
 import {Funder} from "./Funder";
 import path from "path";
 import fs from "fs";
-import testConfig from "../config/testConfig.json";
+import {getTestConfig} from "./testConfig";
 
 const exec = util.promisify(require('node:child_process').exec);
 
@@ -244,13 +244,12 @@ export class Cli {
 
 export class UserFactory {
     static funder: Funder;
-    static testConfig: TestConfig;
     private static filePath = path.resolve(__dirname, '../config/mnemonics.json');
 
     static async createAdminUser(): Promise<SeiUser> {
-        this.testConfig = testConfig;
-        const admin = new SeiUser(testConfig.seiRpcEndpoint, testConfig.evmRpcEndpoint, testConfig.restEndpoint);
-        await admin.initialize(testConfig.adminMnemonic, 'admin', true);
+        const cfg = getTestConfig();
+        const admin = new SeiUser(cfg.seiRpcEndpoint, cfg.evmRpcEndpoint, cfg.restEndpoint);
+        await admin.initialize(cfg.adminMnemonic, 'admin', true);
         this.funder = new Funder(admin);
         return admin;
     }
@@ -352,9 +351,9 @@ export class UserFactory {
         if (mnemonics.length === 0) {
             return [];
         }
-        for (const user of mnemonics) {
-            const user = new SeiUser(this.testConfig.seiRpcEndpoint, this.testConfig.evmRpcEndpoint, this.testConfig.restEndpoint);
-            users.push(user);
+        const cfg = getTestConfig();
+        for (let i = 0; i < mnemonics.length; i++) {
+            users.push(new SeiUser(cfg.seiRpcEndpoint, cfg.evmRpcEndpoint, cfg.restEndpoint));
         }
         await Promise.all(mnemonics.map(async (mnemonic, index) => {
             await users[index].initialize(mnemonic, '', false);
@@ -388,10 +387,3 @@ export class UserFactory {
     }
 }
 
-type TestConfig = {
-    seiRpcEndpoint: string,
-    evmRpcEndpoint: string,
-    restEndpoint: string,
-    adminAddress: string,
-    adminMnemonic: string,
-}

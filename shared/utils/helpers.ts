@@ -1,5 +1,5 @@
 import {SeiUser, UserFactory} from "../User";
-import testConfig from "../../config/testConfig.json";
+import {getTestConfig} from "../testConfig";
 import {Funder} from "../Funder";
 import {getChainParams} from "../chainParams";
 
@@ -12,9 +12,10 @@ export async function waitFor(seconds: number): Promise<void> {
 }
 
 export async function createSeiUsers(admin: SeiUser, numberOfUsers: number) {
+    const cfg = getTestConfig();
     const users = [];
     for (let i = 0; i < numberOfUsers; i++) {
-        users.push(new SeiUser(testConfig.seiRpcEndpoint, testConfig.evmRpcEndpoint, testConfig.restEndpoint));
+        users.push(new SeiUser(cfg.seiRpcEndpoint, cfg.evmRpcEndpoint, cfg.restEndpoint));
     }
     await Promise.all(users.map(user => user.initialize('', '', false)));
     const funder = new Funder(admin);

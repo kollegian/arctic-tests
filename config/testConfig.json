@@ -1,7 +1,0 @@
-{
-  "adminAddress": "sei1dg8unurclh6p05tu64nsth5642mm6gx5nt86hk",
-  "seiRpcEndpoint": "http://3.133.59.72:26657",
-  "evmRpcEndpoint": "http://3.133.59.72:8545",
-  "restEndpoint": "https://testnet-1.release-6-4.dev.platform.sei.io/tm",
-  "adminMnemonic": "cover brand danger absent gas worth sustain rural powder auction shadow find merge domain promote glimpse burger embody favorite lake rain plate present soda"
-}

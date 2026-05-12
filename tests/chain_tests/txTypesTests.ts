@@ -6,7 +6,7 @@ import {EvmRpcClient} from "../../shared/RpcClient";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {expect} from "chai";
 import {waitFor, calcNewBaseFee} from "../../shared/utils/helpers";
-import testConfig from "../../config/testConfig.json";
+import {getTestConfig} from "../../shared/testConfig";
 import heavyGasAbi from "../../artifacts/contracts/GasBurner.sol/RealGasBurner.json";
 import {RealGasBurner} from "../../typechain-types";
 
@@ -38,7 +38,7 @@ describe('Ethereum Transaction Types Tests', function () {
 
         deployer = new TokenDeployer(admin);
         erc20Contract = await deployer.deployErc20();
-        rpcClient = new EvmRpcClient(testConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
+        rpcClient = new EvmRpcClient(getTestConfig().evmRpcEndpoint, admin.evmWallet.signingClient);
         console.log('All started');
         // Fund users with ERC20 token
         await erc20Contract.mint(bob.evmAddress, ethers.parseEther('1000').toString());

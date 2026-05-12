@@ -7,7 +7,7 @@ import stakingAbi from "./abis/staking_abi.json";
 import { returnQueryClient, findValidator, parseRewardsResponse, calculateTotalRewardsAmount, findEvent, waitForRewards } from "./utils";
 import { waitFor } from "../../shared/utils/helpers";
 import crypto from "crypto";
-import testConfig from "../../config/testConfig.json";
+import {getTestConfig} from "../../shared/testConfig";
 
 const STAKING_ADDRESS = "0x0000000000000000000000000000000000001005";
 const DISTR_ADDRESS = "0x0000000000000000000000000000000000001007";
@@ -33,7 +33,7 @@ describe('Distribution Precompile Tests', function () {
         admin = await UserFactory.createAdminUser();
         ([alice, bob, validatorOperator] = await UserFactory.createSeiUsers(admin, 3));
 
-        provider = new JsonRpcProvider(testConfig.evmRpcEndpoint);
+        provider = new JsonRpcProvider(getTestConfig().evmRpcEndpoint);
         distrContract = new ethers.Contract(DISTR_ADDRESS, distrAbi, admin.evmWallet.wallet);
         stakingContract = new ethers.Contract(STAKING_ADDRESS, stakingAbi, admin.evmWallet.wallet);
         console.log('Contracts created');

@@ -5,7 +5,7 @@ import {Contract, ethers} from "ethers";
 import {SeiUser} from '../../shared/User';
 import fs from 'fs';
 const exec = util.promisify(require('node:child_process').exec);
-import testConfig from "../../config/testConfig.json";
+import {getTestConfig} from "../../shared/testConfig";
 import {
   BANK_PRECOMPILE_ADDRESS,
   DIST_PRECOMPILE_ADDRESS,
@@ -29,7 +29,7 @@ export async function setMetadataOfaToken(fullDenom: string, admin: SeiUser){
 }
 
 export async function returnQueryClient(extensionSetup: any){
-  const cometClient = await Tendermint34Client.connect(testConfig.seiRpcEndpoint);
+  const cometClient = await Tendermint34Client.connect(getTestConfig().seiRpcEndpoint);
   return QueryClient.withExtensions(cometClient, extensionSetup);
 }
 

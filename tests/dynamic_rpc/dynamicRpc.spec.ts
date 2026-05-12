@@ -1,6 +1,6 @@
 import {SeiUser, UserFactory} from "../../shared/User";
 import {EvmRpcClient} from "../../shared/RpcClient";
-import * as TestConfig from "../../config/testConfig.json";
+import {getTestConfig} from "../../shared/testConfig";
 import {Block, ContractTransactionReceipt, ethers, Log, LogDescription, Transaction, TransactionReceipt} from "ethers";
 import {expect} from "chai";
 import {waitFor} from "../../shared/utils/helpers";
@@ -15,7 +15,7 @@ describe('Dynamic RPC queries', function () {
 
     before('Initializes clients', async () => {
         admin = await UserFactory.createAdminUser();
-        rpcClient = new EvmRpcClient(TestConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
+        rpcClient = new EvmRpcClient(getTestConfig().evmRpcEndpoint, admin.evmWallet.signingClient);
     });
 
     let currentBlock: Block;

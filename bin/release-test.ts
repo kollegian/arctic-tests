@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const CONFIG_PATH = path.join(REPO_ROOT, 'config', 'testConfig.json');
 const REPORT_DIR = path.join(REPO_ROOT, 'release-test-report');
 const REPORT_PATH = path.join(REPORT_DIR, 'mochawesome.json');
 
@@ -44,14 +43,6 @@ function resolveTarget(): { name: TargetName; spec: string; ignore: readonly str
   return { name, ...TARGETS[name] };
 }
 
-interface TestConfig {
-  adminAddress: string;
-  seiRpcEndpoint: string;
-  evmRpcEndpoint: string;
-  restEndpoint: string;
-  adminMnemonic: string;
-}
-
 interface MochawesomeReport {
   stats?: { passes?: number; failures?: number; pending?: number };
   results?: Array<{ suites?: Array<{ tests?: Array<{ err?: { message?: string; code?: string } }> }> }>;
@@ -70,16 +61,6 @@ interface Summary {
   reportPath: string;
   target: TargetName;
   error?: string;
-}
-
-function loadAndOverlayEnv(): { merged: TestConfig; originalRaw: string } {
-  const originalRaw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-  const config: TestConfig = JSON.parse(originalRaw);
-  if (process.env.SEI_TENDERMINT_RPC) config.seiRpcEndpoint = process.env.SEI_TENDERMINT_RPC;
-  if (process.env.SEI_EVM_JSON_RPC) config.evmRpcEndpoint = process.env.SEI_EVM_JSON_RPC;
-  if (process.env.SEI_REST_ENDPOINT) config.restEndpoint = process.env.SEI_REST_ENDPOINT;
-  if (process.env.SEI_ADMIN_MNEMONIC) config.adminMnemonic = process.env.SEI_ADMIN_MNEMONIC;
-  return { merged: config, originalRaw };
 }
 
 function runDeployFixtures(): Promise<{ exitCode: number; spawnError: Error | null }> {
@@ -146,28 +127,20 @@ function hasInfraSignal(report: MochawesomeReport): boolean {
 
 async function main() {
   const target = resolveTarget();
-  const { merged, originalRaw } = loadAndOverlayEnv();
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2) + '\n');
 
   let mochaExit = 1;
   let spawnError: Error | null = null;
   let deployError: Error | null = null;
-  try {
-    if (target.name === 'state-required') {
-      console.log('[release-test] skipped fixture deploy: TEST_TARGET=state-required');
-    } else {
-      // Spawned: shared/User.ts caches testConfig at module load; the child
-      // loads it after the parent overlays env values.
-      const dep = await runDeployFixtures();
-      if (dep.exitCode !== 0) {
-        deployError = dep.spawnError ?? new Error(`deploy-fixtures exited ${dep.exitCode}`);
-      }
+  if (target.name === 'state-required') {
+    console.log('[release-test] skipped fixture deploy: TEST_TARGET=state-required');
+  } else {
+    const dep = await runDeployFixtures();
+    if (dep.exitCode !== 0) {
+      deployError = dep.spawnError ?? new Error(`deploy-fixtures exited ${dep.exitCode}`);
     }
-    if (!deployError) {
-      ({ exitCode: mochaExit, spawnError } = await runMocha(target.spec, target.ignore));
-    }
-  } finally {
-    fs.writeFileSync(CONFIG_PATH, originalRaw);
+  }
+  if (!deployError) {
+    ({ exitCode: mochaExit, spawnError } = await runMocha(target.spec, target.ignore));
   }
 
   const report = readReport();

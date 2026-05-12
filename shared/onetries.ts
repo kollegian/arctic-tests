@@ -1,15 +1,13 @@
 import {SeiUser, UserFactory} from './User';
-import testConfig from '../config/testConfig.json'
 import {ethers} from 'ethers';
 import ERC20_ARTIFACT from '../artifacts/contracts/TestERC20.sol/TestERC20.json';
-import * as TestConfig from "../config/testConfig.json";
 import {TokenDeployer} from "./Deployer";
 import {Cw20Token, Cw721Token, Erc20Token} from "./Token";
 import { bech32 } from "bech32";
 import {EvmRpcClient} from "./RpcClient";
 
 const main = async () => {
-    const admin = await UserFactory.createAdminUser(testConfig);
+    const admin = await UserFactory.createAdminUser();
     const contractAddress = '0x3894085ef7ff0f0aedf52e2a2704928d1ec074f1';
 
     const contract = new ethers.Contract(contractAddress, ERC20_ARTIFACT.abi, admin.evmWallet.wallet);

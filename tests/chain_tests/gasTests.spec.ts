@@ -5,7 +5,7 @@ import {TokenDeployer} from "../../shared/Deployer";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {expect} from "chai";
-import testConfig from "../../config/testConfig.json";
+import {getTestConfig} from "../../shared/testConfig";
 import {RealGasBurner} from "../../typechain-types";
 import fs from "fs";
 import heavyGasAbi from "../../artifacts/contracts/GasBurner.sol/RealGasBurner.json";
@@ -32,7 +32,7 @@ describe('Gas tests', function () {
         const deploymentTx = await contractFactory.deploy();
         gasBurnerContract = await deploymentTx.waitForDeployment() as unknown as RealGasBurner;
         // Initialize RPC client
-        rpcClient = new EvmRpcClient(testConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
+        rpcClient = new EvmRpcClient(getTestConfig().evmRpcEndpoint, admin.evmWallet.signingClient);
         chainId = (await alice.evmWallet.signingClient.getNetwork()).chainId;
 
         // Load contract addresses dynamically at runtime
