@@ -102,7 +102,7 @@ export class SeiWallet extends User<DirectSecp256k1HdWallet> {
     // commits a funding tx and when a lagging pod's auth module sees the
     // new account; without this guard the next signAndBroadcast hits
     // getSequence on the unsynced pod and dies with "Account does not exist".
-    async awaitAccountVisible(timeoutMs = 30_000): Promise<void> {
+    async awaitAccountVisible(timeoutMs = 90_000): Promise<void> {
         const deadline = Date.now() + timeoutMs;
         let lastErr: unknown;
         let warned = false;
@@ -293,14 +293,16 @@ export class UserFactory {
                 for (let i = 0; i < count; i++) {
                     users.push(new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint));
                 }
-                await Promise.all(users.map(u => u.initialize('', '', false)));
+                await trace(`createSeiUsers[rec]:initialize(${count})`, () => Promise.all(users.map(u => u.initialize('', '', false))));
                 // seid keyring writes aren't safe under parallel access; serialize.
-                for (const u of users) {
-                    await u.cli.createUser(u.seiAddress, u.seiWallet.wallet.mnemonic);
-                }
-                await UserFactory.fundAllUsers(users);
-                await UserFactory.waitForFunding(users);
-                await UserFactory.associateAll(users);
+                await trace(`createSeiUsers[rec]:cli.createUser-loop(${count})`, async () => {
+                    for (const u of users) {
+                        await u.cli.createUser(u.seiAddress, u.seiWallet.wallet.mnemonic);
+                    }
+                });
+                await trace(`createSeiUsers[rec]:fundAllUsers(${count})`, () => UserFactory.fundAllUsers(users));
+                await trace(`createSeiUsers[rec]:waitForFunding(${count})`, () => UserFactory.waitForFunding(users));
+                await trace(`createSeiUsers[rec]:associateAll(${count})`, () => UserFactory.associateAll(users));
                 console.log(`${count} Users created on Sei`);
                 users.push(...await this.returnUsersFromMnemonics());
                 const mnemonics = users.map(u => u.seiWallet.wallet.mnemonic);
@@ -368,16 +370,25 @@ export class UserFactory {
         await this.funder.fundAddressesOnSei(users);
     }
 
-    static async waitForFunding(users: SeiUser[], maxWaitSeconds = 30): Promise<void> {
+    static async waitForFunding(users: SeiUser[], maxWaitSeconds = 90): Promise<void> {
         if (users.length === 0) return;
-        const probe = users[users.length - 1];
+        // Probe ALL users — RPC-pod state-prop lag means visibility lands
+        // out of order across user clients (each user's signing client
+        // may be pinned to a different pod via the Service LB).
         const deadline = Date.now() + maxWaitSeconds * 1000;
-        while (Date.now() < deadline) {
-            const account = await probe.seiWallet.signingClient.getAccount(probe.seiAddress).catch(() => null);
-            if (account !== null) return;
+        const pending = new Set(users);
+        while (Date.now() < deadline && pending.size > 0) {
+            await Promise.all([...pending].map(async u => {
+                const account = await u.seiWallet.signingClient.getAccount(u.seiAddress).catch(() => null);
+                if (account !== null) pending.delete(u);
+            }));
+            if (pending.size === 0) return;
             await waitFor(0.5);
         }
-        throw new Error(`account ${probe.seiAddress} not present on chain within ${maxWaitSeconds}s`);
+        if (pending.size > 0) {
+            const missing = [...pending].map(u => u.seiAddress).join(', ');
+            throw new Error(`${pending.size}/${users.length} accounts not visible within ${maxWaitSeconds}s: ${missing}`);
+        }
     }
 
     static async associateAll(users: SeiUser[]): Promise<void> {
