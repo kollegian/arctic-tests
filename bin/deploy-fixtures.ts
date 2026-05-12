@@ -5,6 +5,7 @@ import {SeiUser, UserFactory} from '../shared/User';
 import {TokenDeployer} from '../shared/Deployer';
 import {waitFor} from '../shared/utils/helpers';
 import {getTestConfig} from '../shared/testConfig';
+import {warmupChain} from '../shared/warmup';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TOKENS_JSON = path.join(REPO_ROOT, 'tests/tokens/contractAddresses.json');
@@ -74,6 +75,9 @@ async function deployFixtures() {
 
     const cfg = getTestConfig();
     const admin = await UserFactory.createAdminUser();
+    await warmupChain(admin, process.env.SEI_CHAIN_ID ?? '');
+    await waitFor(2);  // let the indexer settle before the next wasm broadcast
+
     const users: SeiUser[] = await UserFactory.createSeiUsers(admin, USER_POOL_SIZE, true);
     console.log(`[deploy-fixtures] funded ${users.length} users`);
 

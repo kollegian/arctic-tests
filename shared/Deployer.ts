@@ -112,15 +112,33 @@ export class TokenDeployer {
         return new Cw1155Token(this.user, instantiateRes.contractAddress);
     }
 
-    async deployWasm(wasmFilePath: string, initMsg: any, label: string) {
-        const defaultUploadFee = calculateFee(10000000, '3.5usei');
-        const wasm = fs.readFileSync(path.resolve(wasmFilePath));
+    // Lets shared/warmup.ts pre-upload a wasm via a patient client, then
+    // downstream deployWasm calls reuse that code_id. First upload from
+    // either path populates the entry.
+    private static wasmCodeCache = new Map<string, number>();
+
+    static recordWasmCode(wasmFilePath: string, codeId: number): void {
+        TokenDeployer.wasmCodeCache.set(path.resolve(wasmFilePath), codeId);
+    }
+
+    async ensureWasmStored(wasmFilePath: string, fee = calculateFee(10000000, '3.5usei')): Promise<number> {
+        const absPath = path.resolve(wasmFilePath);
+        const cached = TokenDeployer.wasmCodeCache.get(absPath);
+        if (cached !== undefined) return cached;
+
+        const wasm = fs.readFileSync(absPath);
         const uploadRes = await this.user.seiWallet.cosmWasmSigningClient.upload(
             this.user.seiAddress,
             wasm,
-            defaultUploadFee
+            fee
         );
-        const codeId = uploadRes.codeId;
+        TokenDeployer.wasmCodeCache.set(absPath, uploadRes.codeId);
+        return uploadRes.codeId;
+    }
+
+    async deployWasm(wasmFilePath: string, initMsg: any, label: string) {
+        const defaultUploadFee = calculateFee(10000000, '3.5usei');
+        const codeId = await this.ensureWasmStored(wasmFilePath, defaultUploadFee);
         return await this.user.seiWallet.cosmWasmSigningClient.instantiate(
             this.user.seiAddress,
             codeId,

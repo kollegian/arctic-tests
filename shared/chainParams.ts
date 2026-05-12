@@ -1,22 +1,12 @@
-// Per-chain operational parameters that the test suite needs in order to
-// reproduce on-chain gas math, fee dynamics, and similar consensus-coupled
-// behavior client-side.
+// Per-chain operational parameters for gas math, fee dynamics, and
+// other consensus-coupled behavior the suite reproduces client-side.
+// Public chains (CHAIN_PARAMS) carry governance-tuned values; any
+// other non-empty chain-id resolves to EPHEMERAL_HARNESS — the values
+// fresh chains actually run because seictl's `genesis-chain` preset
+// doesn't override consensus_params yet. Empty chain-id throws.
 //
-// Values are sourced from each chain's current operational state (governance
-// has typically tuned these away from sei-chain module defaults). When
-// running against an ephemeral chain provisioned by seictl, the entry under
-// SEI_CHAIN_ID is consulted; if the chain-id is unrecognized and matches
-// the orchestrator's `rel-*` prefix, the suite falls back to the ephemeral
-// harness values — which today match sei-tendermint's DefaultBlockParams
-// (100M block gas limit) because the seictl preset / orchestrator pipeline
-// does not yet write pacific-1-aligned consensus_params at chain init.
-//
-// The longer-term shape (embed canonical defaults in sei-config, overlay
-// at sidecar `generate-identity`) is tracked separately. When that lands,
-// the ephemeral entry should swing to pacific-1's operational values to
-// match the new chain shape.
-//
-// When governance updates a parameter, update the corresponding entry here.
+// The public-vs-ephemeral split also gates bootstrap behavior — see
+// shared/warmup.ts.
 
 export type ChainParams = {
     // CometBFT consensus_params.block.max_gas — operational, governance-mutable.
@@ -52,13 +42,9 @@ const ARCTIC_1: ChainParams = {
     minFeePerGas: 1_000_000_000,
 };
 
-// Ephemeral chains provisioned by the release-test orchestrator inherit
-// sei-tendermint's DefaultBlockParams (sei-chain/sei-tendermint/types/params.go,
-// MaxGas: 100_000_000) because neither the seictl `genesis-chain` preset nor
-// the orchestrator overrides consensus_params at chain init. When the chain-side
-// emulation work lands (sei-config embedded defaults + sidecar overlay, tracked
-// separately), this entry should swing to PACIFIC_1 to match the new
-// pacific-1-aligned chain state.
+// Matches sei-tendermint's DefaultBlockParams (MaxGas 100M). Swing to
+// PACIFIC_1 once the chain-side emulation work (sei-config embedded
+// defaults + sidecar overlay) lands.
 const EPHEMERAL_HARNESS: ChainParams = {
     blockGasLimit: 100_000_000,
     targetGasUsed: 250_000,
@@ -73,12 +59,19 @@ export const CHAIN_PARAMS: Record<string, ChainParams> = {
     "arctic-1": ARCTIC_1,
 };
 
+export function isPublicChain(chainId: string): boolean {
+    return chainId in CHAIN_PARAMS;
+}
+
 export function getChainParams(chainId?: string): ChainParams {
     const id = chainId ?? process.env.SEI_CHAIN_ID ?? "";
-    if (CHAIN_PARAMS[id]) return CHAIN_PARAMS[id];
-    if (id.startsWith("rel-")) return EPHEMERAL_HARNESS;
-    throw new Error(
-        `No chainParams entry for chain-id "${id}". ` +
-        `Add it to shared/chainParams.ts (or set SEI_CHAIN_ID).`,
-    );
+    if (isPublicChain(id)) return CHAIN_PARAMS[id];
+    if (id === "") {
+        throw new Error(
+            "No chainParams entry: SEI_CHAIN_ID is missing or empty. " +
+            "Set it to one of: " + Object.keys(CHAIN_PARAMS).join(", ") +
+            ", or an ephemeral chain-id.",
+        );
+    }
+    return EPHEMERAL_HARNESS;
 }
