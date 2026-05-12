@@ -69,6 +69,8 @@ async function pollReceipt(
 
 async function deployFixtures() {
     console.log('[deploy-fixtures] resetting mnemonics + contract address files');
+    // git prunes empty dirs — config/ may not exist in the image.
+    fs.mkdirSync(path.dirname(MNEMONICS_JSON), {recursive: true});
     fs.writeFileSync(MNEMONICS_JSON, '[]');
     fs.writeFileSync(TOKENS_JSON, '{}');
     fs.writeFileSync(RPC_JSON, '{}');
