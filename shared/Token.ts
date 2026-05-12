@@ -17,6 +17,28 @@ import {EncodeObject} from "@cosmjs/proto-signing";
 import {TxRaw} from "cosmjs-types/cosmos/tx/v1beta1/tx";
 import {BroadcastTxResponse} from "cosmjs-types/cosmos/tx/v1beta1/service";
 
+type PointerKind = 'ERC20' | 'CW20' | 'ERC721' | 'CW721';
+
+// `seid q evm pointer` returns {"pointer":""} for a moment after the
+// register-pointer tx commits — the EVM module's state index lags the
+// block. Poll until non-empty so callers don't construct ethers.Contract
+// handles with an empty target (ENS UNCONFIGURED_NAME cascade).
+async function pollPointerNonEmpty(kind: PointerKind, target: string, timeoutMs = 30_000): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    let lastErr: unknown;
+    while (Date.now() < deadline) {
+        try {
+            const {stdout} = await seidExec(`seid q evm pointer ${kind} ${target} --output json`);
+            const pointer = JSON.parse(stdout).pointer as string | undefined;
+            if (pointer && pointer.length > 0) return pointer;
+        } catch (err) {
+            lastErr = err;
+        }
+        await waitFor(1);
+    }
+    const suffix = lastErr ? `: ${(lastErr as any).message ?? lastErr}` : '';
+    throw new Error(`pointer for ${kind} ${target} not registered within ${timeoutMs}ms${suffix}`);
+}
 
 export interface IFungibleToken {
     name(): Promise<string>;
@@ -83,9 +105,7 @@ export class Erc20Token extends EvmTokenBase implements IFungibleToken {
     async deployPointer(evmRpcEndpoint: string){
         console.info(`Deploying pointer for ${(this.contract.target)} on ${evmRpcEndpoint}`);
         await seidExec(`seid tx evm register-cw-pointer ERC20 ${(this.contract.target)} --from admin --fees 24200usei -y`);
-        await waitFor(2);
-        const {stdout} = await seidExec(`seid q evm pointer ERC20 ${this.contract.target} --output json`);
-        return JSON.parse(stdout).pointer;
+        return pollPointerNonEmpty('ERC20', this.contract.target as string);
     }
 
     async sendMultipleTxs(users: SeiUser[]){
@@ -220,14 +240,11 @@ export class Cw20Token implements IFungibleToken {
     }
 
     async deployPointer(evmEndpoint: string){
-        const resp = await seidExec(`seid tx evm register-evm-pointer CW20 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4900000 --broadcast-mode block`);
-        console.log(resp);
+        await seidExec(`seid tx evm register-evm-pointer CW20 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4900000 --broadcast-mode block`);
+        await pollPointerNonEmpty('CW20', this.address);
     }
     async queryPointerAddress(){
-        const {stdout, stderr} = await seidExec(`seid q evm pointer CW20 ${this.address} --output json`);
-        console.log(stdout);
-        console.log(stderr);
-        return (JSON.parse(stdout)).pointer;
+        return pollPointerNonEmpty('CW20', this.address);
     }
 
     async executeMultipleInTheSameBlock(sender: SeiUser, cw20ContractAddress: string, msgs: object[], chainId: string) {
@@ -353,10 +370,8 @@ export class Erc721Token extends EvmTokenBase implements INft721 {
     }
 
     async registerPointer() {
-        const resp = await seidExec(`seid tx evm register-cw-pointer ERC721 ${this.contract.target} --from admin -y --fees 24200usei --broadcast-mode block`);
-        await waitFor(1);
-        const {stdout, stderr} = await seidExec(`seid q evm pointer ERC721 ${this.contract.target} --output json`);
-        return (JSON.parse(stdout)).pointer;
+        await seidExec(`seid tx evm register-cw-pointer ERC721 ${this.contract.target} --from admin -y --fees 24200usei --broadcast-mode block`);
+        return pollPointerNonEmpty('ERC721', this.contract.target as string);
     }
 }
 
@@ -423,15 +438,11 @@ export class Cw721Token implements INft721 {
         }));
         return this.execMultiple(messages, '');}
     async deployPointer(evmEndpoint: string){
-        const resp = await seidExec(`seid tx evm register-evm-pointer CW721 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4500000 --broadcast-mode block`);
-        await waitFor(1);
-        const {stdout, stderr} = await seidExec(`seid q evm pointer CW721 ${this.address} --output json`);
-        return (JSON.parse(stdout)).pointer;
+        await seidExec(`seid tx evm register-evm-pointer CW721 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4500000 --broadcast-mode block`);
+        return pollPointerNonEmpty('CW721', this.address);
     }
     async queryPointerAddress(){
-        const {stdout} = await seidExec(`seid q evm pointer CW721 ${this.address} --output json`);
-        console.log(stdout);
-        return (JSON.parse(stdout)).pointer;
+        return pollPointerNonEmpty('CW721', this.address);
     }
 
     async queryApprovals(nftId: number){
