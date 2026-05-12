@@ -241,7 +241,7 @@ export class Cw20Token implements IFungibleToken {
 
     async deployPointer(evmEndpoint: string){
         await seidExec(`seid tx evm register-evm-pointer CW20 ${this.address} --evm-rpc=${evmEndpoint} --from admin -y --gas-limit 4900000 --broadcast-mode block`);
-        await pollPointerNonEmpty('CW20', this.address);
+        return pollPointerNonEmpty('CW20', this.address);
     }
     async queryPointerAddress(){
         return pollPointerNonEmpty('CW20', this.address);

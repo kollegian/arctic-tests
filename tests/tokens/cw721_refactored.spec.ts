@@ -209,8 +209,14 @@ describe('Cw721 Tests', function () {
         const signedTx = await AtomicTxSender
             .signEvmTransaction(users[0], erc721Contract.getAddress(), encodedTx, "15000000000", "29000000000")
         const hash = await evmRpcClient.sendRawTransaction(signedTx);
-        await waitFor(1);
-        const txReceipt = await evmRpcClient.getTransactionReceipt(hash);
+        let txReceipt: TransactionReceipt | null = null;
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline) {
+            txReceipt = await evmRpcClient.getTransactionReceipt(hash);
+            if (txReceipt) break;
+            await waitFor(1);
+        }
+        if (!txReceipt) throw new Error(`erc721 transferFrom tx ${hash} not included within 15s`);
         transferReceipt = (await evmRpcClient.getBlockByNumber(txReceipt.blockNumber, true)).transactions[0];
         receiptLogs = JSON.stringify(txReceipt.logs[0]);
 
