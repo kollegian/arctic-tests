@@ -37,7 +37,7 @@ export class Funder {
     }
 
 
-    async fundAddressesOnSei(users: SeiUser[], amount = '10000000'){
+    async fundAddressesOnSei(users: SeiUser[], amount = '100000000'){
         const remaining = [...users];
         while (remaining.length > 0) {
             const batch = remaining.splice(0, 200);
