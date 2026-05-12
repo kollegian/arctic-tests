@@ -77,15 +77,14 @@ export class Funder {
     }
 
 
-    async isDocker() {
-        return new Promise(async (resolve, reject) => {
+    async isDocker(): Promise<boolean> {
+        // `exec` throws when docker CLI is absent (K8s pods); fall through.
+        try {
             const {stdout} = await exec('docker ps --filter \'name=sei-node-0\' --format \'{{.Names}}\'');
-            if (stdout.includes('sei-node-0')) {
-                resolve(true);
-            } else {
-                resolve(false);
-            }
-        });
+            return stdout.includes('sei-node-0');
+        } catch {
+            return false;
+        }
     }
 
 }
