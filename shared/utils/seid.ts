@@ -15,6 +15,8 @@ const TX_RE = /^\s*(?:echo[^|]*\|\s*)?seid\s+tx\b/;
 const NODE_RE = /^\s*(?:echo[^|]*\|\s*)?seid\s+(?:q|query|status|tendermint|rollback)\b/;
 const BROADCAST_BLOCK_RE = /--broadcast-mode\s+block\b/;
 const TXHASH_RE = /"txhash"\s*:\s*"([0-9A-Fa-f]+)"/;
+const OUTPUT_FLAG_RE = /--output\s+\S+/;
+const GENERATE_ONLY_RE = /--generate-only\b/;
 
 const POLL_INTERVAL_MS = 1000;
 const POLL_TIMEOUT_MS = 30_000;
@@ -22,6 +24,13 @@ const POLL_TIMEOUT_MS = 30_000;
 export interface SeidExecOptions {
     // Set false to skip the inclusion poll (same-block submission patterns).
     waitForInclusion?: boolean;
+}
+
+interface BroadcastResponse {
+    code?: number;
+    codespace?: string;
+    raw_log?: string;
+    txhash?: string;
 }
 
 export function seidNodeFlag(): string {
@@ -34,6 +43,19 @@ export function seidOnlineFlags(): string {
     const chainId = process.env.SEI_CHAIN_ID;
     if (!chainId) throw new Error('SEI_CHAIN_ID must be set for seid CLI broadcast calls');
     return `${seidNodeFlag()} --chain-id ${chainId}`;
+}
+
+// CLI exits 0 on CheckTx rejection; failure is in payload `code`.
+function tryParseBroadcastResponse(stdout: string): BroadcastResponse | null {
+    try {
+        const obj = JSON.parse(stdout.trim());
+        if (typeof obj === 'object' && obj !== null && typeof obj.code === 'number') {
+            return obj;
+        }
+        return null;
+    } catch {
+        return null;
+    }
 }
 
 async function pollForTxInclusion(txhash: string): Promise<void> {
@@ -58,8 +80,13 @@ export async function seidExec(
     command: string,
     options: SeidExecOptions = {},
 ): Promise<{ stdout: string; stderr: string }> {
-    const rewritten = command.replace(BROADCAST_BLOCK_RE, '--broadcast-mode sync');
+    let rewritten = command.replace(BROADCAST_BLOCK_RE, '--broadcast-mode sync');
     const isTx = TX_RE.test(rewritten);
+
+    // CheckTx response is parseable only as JSON; cosmos-sdk default is text.
+    if (isTx && !OUTPUT_FLAG_RE.test(rewritten) && !GENERATE_ONLY_RE.test(rewritten)) {
+        rewritten = `${rewritten} --output json`;
+    }
 
     let result: { stdout: string; stderr: string };
     if (isTx) result = await exec(`${rewritten} ${seidOnlineFlags()}`);
@@ -67,8 +94,17 @@ export async function seidExec(
     else result = await exec(rewritten);
 
     if (isTx && options.waitForInclusion !== false) {
-        const m = result.stdout.match(TXHASH_RE);
-        if (m) await pollForTxInclusion(m[1]);
+        const broadcast = tryParseBroadcastResponse(result.stdout);
+        if (broadcast && broadcast.code !== 0) {
+            throw new Error(
+                `seid tx broadcast rejected: code=${broadcast.code} ` +
+                `codespace=${broadcast.codespace ?? '<unknown>'} ` +
+                `raw_log=${broadcast.raw_log ?? '<empty>'} ` +
+                `(cmd: ${rewritten})`,
+            );
+        }
+        const hash = broadcast?.txhash ?? result.stdout.match(TXHASH_RE)?.[1];
+        if (hash) await pollForTxInclusion(hash);
     }
     return result;
 }
