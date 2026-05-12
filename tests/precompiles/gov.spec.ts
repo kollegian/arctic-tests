@@ -27,6 +27,12 @@ describe("Gov Precompile Tests", function () {
     const MIN_DEPOSIT = '10000000';
     let govQueryClient: QueryClient & GovExtension;
     let validatorAddress1: string;
+    let chainDepositPeriodSec: number;
+    let chainVotingPeriodSec: number;
+    let chainQuorumWei: string;
+    // Skip wait-for-period tests above this threshold (waitFor(30) won't
+    // elapse Sei mainnet's 48h voting cycle).
+    const FAST_GOV_PERIOD_SEC = 60;
 
     before(async function () {
         admin = await trace('gov.before:createAdminUser', () => UserFactory.createAdminUser());
@@ -35,6 +41,26 @@ describe("Gov Precompile Tests", function () {
 
         govContract = new ethers.Contract(GOV_PRECOMPILE_ADDRESS, GOV_ARTIFACTS, admin.evmWallet.wallet);
         govQueryClient = await trace('gov.before:returnQueryClient(gov)', () => returnQueryClient(setupGovExtension));
+
+        const govParams = await trace('gov.before:queryGovParams', () => govQueryClient.gov.params('voting'));
+        const depositParams = await trace('gov.before:queryDepositParams', () => govQueryClient.gov.params('deposit'));
+        const tallyParams = await trace('gov.before:queryTallyParams', () => govQueryClient.gov.params('tallying'));
+        // Default-on-undefined would make 0 > 60 false and run gated tests against
+        // a chain that can't elapse periods. Fail loud instead.
+        const v = govParams.votingParams?.votingPeriod?.seconds;
+        const d = depositParams.depositParams?.maxDepositPeriod?.seconds;
+        const q = tallyParams.tallyParams?.quorum;
+        if (v == null || d == null || q == null) {
+            throw new Error(`gov.params missing fields: voting=${v} deposit=${d} quorum=${q}`);
+        }
+        chainVotingPeriodSec = Number(v);
+        chainDepositPeriodSec = Number(d);
+        chainQuorumWei = new TextDecoder().decode(q);
+        console.log(`[gov.params] voting=${chainVotingPeriodSec}s deposit=${chainDepositPeriodSec}s quorum=${chainQuorumWei}`);
+        if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) {
+            console.warn(`[gov.params] voting_period > ${FAST_GOV_PERIOD_SEC}s — 8 wait-for-period tests will skip; closeable via orchestrator gov.voting_period override`);
+        }
+
         stakingContract = new Contract(STAKING_PRECOMPILE_ADDRESS, stakingAbi, admin.evmWallet.wallet);
         const stakingQueryClient = await trace('gov.before:returnQueryClient(staking)', () => returnQueryClient(setupStakingExtension)) as QueryClient & StakingExtension;
 
@@ -71,7 +97,7 @@ describe("Gov Precompile Tests", function () {
             const textProposal = TextProposal.decode(proposalQuery.proposal.content!.value);
             expect(textProposal.title).to.be.eq('Test Text Proposal');
             expect(textProposal.description).to.be.eq('This is a test text proposal for governance');
-            expect(Number(proposalQuery.proposal.depositEndTime.seconds - proposalQuery.proposal.submitTime.seconds)).to.be.eq(100);
+            expect(Number(proposalQuery.proposal.depositEndTime.seconds - proposalQuery.proposal.submitTime.seconds)).to.be.eq(chainDepositPeriodSec);
             expect(Object.values(proposalQuery.proposal.finalTallyResult)).to.be.deep.eq(['0', '0', '0', '0']);
         });
 
@@ -132,7 +158,8 @@ describe("Gov Precompile Tests", function () {
                 await tx.wait();
                 throw new Error('Fails tx');
             } catch (e: any) {
-                expect(e.message).to.include('execution reverted');
+                // ethers v6 surfaces empty reverts as "missing revert data".
+                expect(e.message).to.match(/execution reverted|missing revert data/);
             }
         });
 
@@ -175,7 +202,7 @@ describe("Gov Precompile Tests", function () {
             expect(decoded.changes[0].key).to.be.eq('tallyparams');
             expect(JSON.parse(decoded.changes[0].value).quorum).to.be.eq('0.35');
             expect(Object.values(proposalQuery.proposal.finalTallyResult)).to.be.deep.eq(['0', '0', '0', '0']);
-            expect(Number(proposalQuery.proposal.votingEndTime.seconds - proposalQuery.proposal.votingStartTime.seconds)).to.be.eq(30);
+            expect(Number(proposalQuery.proposal.votingEndTime.seconds - proposalQuery.proposal.votingStartTime.seconds)).to.be.eq(chainVotingPeriodSec);
         });
 
         it('Users can submit a software upgrade proposal given that they send 1 sei', async () => {
@@ -208,7 +235,7 @@ describe("Gov Precompile Tests", function () {
 
             expect(Number(proposalQuery.proposal.proposalId)).to.be.eq(Number(proposalId));
             expect(proposalQuery.proposal.content?.typeUrl).to.include('SoftwareUpgradeProposal');
-            expect(Number(proposalQuery.proposal.depositEndTime.seconds - proposalQuery.proposal.submitTime.seconds)).to.be.eq(100);
+            expect(Number(proposalQuery.proposal.depositEndTime.seconds - proposalQuery.proposal.submitTime.seconds)).to.be.eq(chainDepositPeriodSec);
             expect(Object.values(proposalQuery.proposal.finalTallyResult)).to.be.deep.eq(['0', '0', '0', '0']);
         });
 
@@ -253,7 +280,7 @@ describe("Gov Precompile Tests", function () {
             console.log(decoded);
             expect(decoded).to.contain("Test v1 Proposal=This is a test proposal using the v1 governance module format");
             expect(Object.values(proposalQuery.proposal.finalTallyResult)).to.be.deep.eq(['0', '0', '0', '0']);
-            expect(Number(proposalQuery.proposal.votingEndTime.seconds - proposalQuery.proposal.votingStartTime.seconds)).to.be.eq(30);
+            expect(Number(proposalQuery.proposal.votingEndTime.seconds - proposalQuery.proposal.votingStartTime.seconds)).to.be.eq(chainVotingPeriodSec);
         })
     });
 
@@ -319,7 +346,8 @@ describe("Gov Precompile Tests", function () {
             expect(afterDeposit.proposal.status).to.be.eq(2);
         });
 
-        it('Users cant deposit to proposals that are closed due to not reaching min deposit', async () => {
+        it('Users cant deposit to proposals that are closed due to not reaching min deposit', async function () {
+            if (chainDepositPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const proposal = returnTextProposal();
             const proposalId = await getProposalID(govContract, proposal);
             // Submit with full min deposit
@@ -342,11 +370,12 @@ describe("Gov Precompile Tests", function () {
                 await tx.wait();
                 throw new Error('Should return');
             } catch(e: any){
-                expect(e.message).to.include('execution reverted');
+                expect(e.message).to.match(/execution reverted|missing revert data/);
             }
         });
 
-        it('If proposals are passed deposits are returned to the users', async () => {
+        it('If proposals are passed deposits are returned to the users', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const proposal = returnTextProposal();
             const proposalId = await getProposalID(govContract, proposal);
             const tx = await govContract.submitProposal(proposal, {
@@ -365,7 +394,8 @@ describe("Gov Precompile Tests", function () {
             expect(ethers.formatEther(userAfterBalance - userPreBalance).toString()).to.be.eq('10.0');
         });
 
-        it('If proposals are rejected deposits are returned to the users', async () => {
+        it('If proposals are rejected deposits are returned to the users', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const proposal = returnTextProposal();
             const proposalId = await getProposalID(govContract, proposal);
             const tx = await govContract.submitProposal(proposal, {
@@ -384,7 +414,8 @@ describe("Gov Precompile Tests", function () {
         });
 
         it('Multiple people deposit tokens for proposals in voting period and if the proposal rejects,' +
-            ' deposits are returned to the all users', async () => {
+            ' deposits are returned to the all users', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const proposal = returnTextProposal();
             const proposalId = await getProposalID(govContract, proposal);
             const tx = await govContract.submitProposal(proposal, {
@@ -414,7 +445,8 @@ describe("Gov Precompile Tests", function () {
             expect(ethers.formatEther(voter2AfterBalance - voter2PreBalance).toString()).to.be.eq('10.0');
         })
 
-        it('If proposals are vetoed, deposits are burned', async () => {
+        it('If proposals are vetoed, deposits are burned', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const proposal = returnTextProposal();
             const proposalId = await getProposalID(govContract, proposal);
             const tx = await govContract.submitProposal(proposal, {
@@ -443,7 +475,7 @@ describe("Gov Precompile Tests", function () {
                 await depositTx.wait();
                 throw new Error('Should return');
             } catch(e: any){
-                expect(e.message).to.include('execution reverted');
+                expect(e.message).to.match(/execution reverted|missing revert data/);
             }
             const userAfterBalance = await admin.evmWallet.queryBalance();
             expect(Number(ethers.formatEther(userBalance - userAfterBalance))).to.be.within(0, 1);
@@ -620,13 +652,14 @@ describe("Gov Precompile Tests", function () {
                 await voteTx.wait();
                 throw new Error('Should return');
             } catch(e: any){
-                expect(e.message).to.include('execution reverted');
+                expect(e.message).to.match(/execution reverted|missing revert data/);
             }
         });
     });
 
     describe('Proposal tally tests', function () {
-        it('Given that a proposal is rejected it is not executed', async () => {
+        it('Given that a proposal is rejected it is not executed', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const paramChangeProposal = JSON.stringify({
                 "title": "Gov Param Change",
                 "description": "Update quorum to 0.90",
@@ -666,7 +699,8 @@ describe("Gov Precompile Tests", function () {
             console.log(textDecoder.decode(parameters.tallyParams.vetoThreshold));
         });
 
-        it('Given that a proposal passed, deposits are returned to the users', async () => {
+        it('Given that a proposal passed, deposits are returned to the users', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const textProposal = JSON.stringify({
                 "title": "Test Deposit Period Voting",
                 "description": "Testing voting power of unstaked users",
@@ -689,7 +723,8 @@ describe("Gov Precompile Tests", function () {
             expect(proposalQuery.proposal.status).to.be.eq(3);
         });
 
-        it('Votes are counted correctly', async () => {
+        it('Votes are counted correctly', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             // voter1 stakes 1000 sei
             const stakeTx = await stakingContract.connect(voter1.evmWallet.wallet).delegate(validatorAddress1, {value: ethers.parseEther("5")});
             await stakeTx.wait();
@@ -721,7 +756,8 @@ describe("Gov Precompile Tests", function () {
             expect(proposalStatus.proposal.status).to.be.eq(4);
         });
 
-        it('Weighted votes are counted correctly', async () => {
+        it('Weighted votes are counted correctly', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const paramChangeProposal = JSON.stringify({
                 "title": "Gov Param Change",
                 "description": "Update quorum to 0.90",
@@ -763,10 +799,11 @@ describe("Gov Precompile Tests", function () {
             const parameters = await govQueryClient.gov.params('tallying');
             const textDecoder = new TextDecoder('utf-8');
             console.log(textDecoder.decode(parameters.tallyParams.quorum));
-            expect(textDecoder.decode(parameters.tallyParams.quorum)).to.be.eq('100000000000000000');
+            expect(textDecoder.decode(parameters.tallyParams.quorum)).to.be.eq(chainQuorumWei);
         });
 
-        it('Invalid proposals wont be executed', async () =>{
+        it('Invalid proposals wont be executed', async function () {
+            if (chainVotingPeriodSec > FAST_GOV_PERIOD_SEC) this.skip();
             const paramChangeProposal = JSON.stringify({
                 "title": "Gov Param Change",
                 "description": "Update quorum to 0.90",
@@ -798,7 +835,7 @@ describe("Gov Precompile Tests", function () {
             const parameters = await govQueryClient.gov.params('tallying');
             const textDecoder = new TextDecoder('utf-8');
             console.log(textDecoder.decode(parameters.tallyParams.quorum));
-            expect(textDecoder.decode(parameters.tallyParams.quorum)).to.be.eq('100000000000000000');
+            expect(textDecoder.decode(parameters.tallyParams.quorum)).to.be.eq(chainQuorumWei);
         });
 
     });
