@@ -3,6 +3,7 @@ import {ethers} from "hardhat";
 import {Contract, formatEther, parseEther} from "ethers";
 import {SignerWithAddress} from "@nomicfoundation/hardhat-ethers/signers";
 import {waitFor} from "../../shared/utils/helpers";
+import {trace} from "../../shared/utils/trace";
 import {SeiUser, UserFactory} from "../../shared/User";
 import GOV_ARTIFACTS from "./abis/gov_abi.json";
 import {GovExtension, QueryClient, setupGovExtension, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
@@ -28,30 +29,26 @@ describe("Gov Precompile Tests", function () {
     let validatorAddress1: string;
 
     before(async function () {
-        admin = await UserFactory.createAdminUser();
-        await UserFactory.fundAdminOnSei();
-        [voter1, voter2] = await UserFactory.createSeiUsers(admin, 4, false);
+        admin = await trace('gov.before:createAdminUser', () => UserFactory.createAdminUser());
+        await trace('gov.before:fundAdminOnSei', () => UserFactory.fundAdminOnSei());
+        [voter1, voter2] = await trace('gov.before:createSeiUsers(4)', () => UserFactory.createSeiUsers(admin, 4, false));
 
-        // Get the Gov precompile contract
         govContract = new ethers.Contract(GOV_PRECOMPILE_ADDRESS, GOV_ARTIFACTS, admin.evmWallet.wallet);
-        govQueryClient = await returnQueryClient(setupGovExtension);
+        govQueryClient = await trace('gov.before:returnQueryClient(gov)', () => returnQueryClient(setupGovExtension));
         stakingContract = new Contract(STAKING_PRECOMPILE_ADDRESS, stakingAbi, admin.evmWallet.wallet);
-        const stakingQueryClient = await returnQueryClient(setupStakingExtension) as QueryClient & StakingExtension;
+        const stakingQueryClient = await trace('gov.before:returnQueryClient(staking)', () => returnQueryClient(setupStakingExtension)) as QueryClient & StakingExtension;
 
-        const validatorsResponse = await stakingQueryClient.staking.validators("BOND_STATUS_BONDED");
+        const validatorsResponse = await trace('gov.before:queryValidators', () => stakingQueryClient.staking.validators("BOND_STATUS_BONDED"));
         if (validatorsResponse.validators.length < 2) {
             throw new Error("At least two validators are required for these tests");
         }
         validatorAddress1 = validatorsResponse.validators[0].operatorAddress;
         const validatorAddress2 = validatorsResponse.validators[1].operatorAddress;
 
-        // Should hold the quorum now
-        const stakingTx = await stakingContract.delegate(validatorAddress1, {value: ethers.parseEther("50")});
-        await stakingTx.wait();
-        console.log('Staked into validator 1');
-        const stakingTx2 = await stakingContract.delegate(validatorAddress2, {value: ethers.parseEther("50")});
-        await stakingTx2.wait();
-        console.log('Finished staking into validator 2');
+        const stakingTx = await trace('gov.before:delegate(v1, 50sei)', () => stakingContract.delegate(validatorAddress1, {value: ethers.parseEther("50")}));
+        await trace('gov.before:delegate(v1).wait', () => stakingTx.wait());
+        const stakingTx2 = await trace('gov.before:delegate(v2, 50sei)', () => stakingContract.delegate(validatorAddress2, {value: ethers.parseEther("50")}));
+        await trace('gov.before:delegate(v2).wait', () => stakingTx2.wait());
     });
 
     describe("Create submission tests", function () {

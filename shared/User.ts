@@ -14,6 +14,7 @@ import {Funder} from "./Funder";
 import path from "path";
 import fs from "fs";
 import {getTestConfig} from "./testConfig";
+import {trace} from "./utils/trace";
 
 const exec = util.promisify(require('node:child_process').exec);
 
@@ -321,14 +322,16 @@ export class UserFactory {
             users.push(new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint));
         }
         console.log('Creating new users');
-        await Promise.all(users.map(u => u.initialize('', '', false)));
+        await trace(`createSeiUsers:initialize(${count})`, () => Promise.all(users.map(u => u.initialize('', '', false))));
         // seid keyring writes aren't safe under parallel access; serialize.
-        for (const u of users) {
-            await u.cli.createUser(u.seiAddress, u.seiWallet.wallet.mnemonic);
-        }
-        await UserFactory.fundAllUsers(users);
-        await UserFactory.waitForFunding(users);
-        await UserFactory.associateAll(users);
+        await trace(`createSeiUsers:cli.createUser-loop(${count})`, async () => {
+            for (const u of users) {
+                await u.cli.createUser(u.seiAddress, u.seiWallet.wallet.mnemonic);
+            }
+        });
+        await trace(`createSeiUsers:fundAllUsers(${count})`, () => UserFactory.fundAllUsers(users));
+        await trace(`createSeiUsers:waitForFunding(${count})`, () => UserFactory.waitForFunding(users));
+        await trace(`createSeiUsers:associateAll(${count})`, () => UserFactory.associateAll(users));
         console.log(`${count} Users created on Sei`);
 
         if(recordMnemonics){
