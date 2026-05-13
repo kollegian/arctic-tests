@@ -166,10 +166,15 @@ describe('TokenFactory Tests', function () {
             const bobBalanceBefore = await bankContract.balance(bob.evmAddress, denomName);
 
             const data = bankContract.interface.encodeFunctionData('send', [alice.evmAddress, bob.evmAddress, denomName, '50000']);
+            // 5M gas: 1M is OOG on the bank precompile's MsgSend wrap
+            // (status=0, gasUsed==gasLimit observed in prior verify runs).
+            // The sibling CLI-based transfer in the next test passes,
+            // confirming the chain accepts the send — the gas budget is
+            // the constraint, not the assertion.
             const sendTx = await alice.evmWallet.wallet.sendTransaction({
                 to: BANK_PRECOMPILE_ADDRESS,
                 data,
-                gasLimit: 1000000n,
+                gasLimit: 5000000n,
             });
             await sendTx.wait();
 
