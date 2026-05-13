@@ -486,7 +486,10 @@ describe('Solo precompile tests', function () {
 
         const payload = await getSoloPayload('admin', alice.evmAddress, 'CW721', cw721.getAddress());
         const payloadArry = hex2uint8(payload);
-        const claimTx = await soloContract.connect(alice.evmWallet.wallet).claimSpecific(payloadArry, {gasLimit: 1000000});
+        // 5M gas: by this point admin has accumulated CW721 tokens across
+        // earlier tests in the describe; claimSpecific transfers all of them
+        // and 1M was OOG'ing (chain-probe receipt confirmed gasUsed==gasLimit).
+        const claimTx = await soloContract.connect(alice.evmWallet.wallet).claimSpecific(payloadArry, {gasLimit: 5000000});
         await claimTx.wait();
 
         // CW721 moved to Alice
@@ -515,7 +518,11 @@ describe('Solo precompile tests', function () {
 
         const payload = await getSoloAllPayload('alice', bob.evmAddress);
         const payloadArr = hex2uint8(payload);
-        const claimTx = await soloContract.connect(bob.evmWallet.wallet).claim(payloadArr, {gasLimit: 1000000});
+        // 5M gas: claim-all transfers all of alice's accumulated cw20+cw721+
+        // native; 1M was OOG'ing (chain-probe receipt for tx hash
+        // 0x6f6ff1ba3c3a0377a87d7b56339facd4aa2dc6d8ea4cb1a90a2026e878d9b1e7
+        // showed gasUsed exactly == gasLimit == 1000000, status=0).
+        const claimTx = await soloContract.connect(bob.evmWallet.wallet).claim(payloadArr, {gasLimit: 5000000});
         await claimTx.wait();
 
         // ERC balances should be unchanged
