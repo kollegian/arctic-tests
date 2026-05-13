@@ -87,7 +87,7 @@ export class AtomicTxSender {
         evmSubmit: () => Promise<string>,
         cosmosCall: () => Promise<C>,
         rpcClient: EvmRpcClient,
-        maxAttempts = 5,
+        maxAttempts = 15,
         delaySeconds = 1,
     ): Promise<{ evmReceipt: TransactionReceipt; cosmosResponse: C }> {
         let prevEvmEarlier: boolean | null = null;
@@ -118,7 +118,21 @@ export class AtomicTxSender {
                 cosmosTxPromise,
             ]);
 
-            const evmReceipt = await rpcClient.getTransactionReceipt(evmHash);
+            // Poll for the EVM receipt; single-shot can return null on a
+            // lagging RPC pod and the next line null-derefs.
+            let evmReceipt: TransactionReceipt | null = null;
+            const receiptDeadline = Date.now() + 10_000;
+            while (Date.now() < receiptDeadline && !evmReceipt) {
+                evmReceipt = await rpcClient.getTransactionReceipt(evmHash);
+                if (!evmReceipt) await waitFor(0.5);
+            }
+            if (!evmReceipt) {
+                console.warn(
+                    `sendRawUntilSameBlock attempt ${attempt}: evm receipt for ${evmHash} not produced within 10s; retrying`,
+                );
+                if (attempt < maxAttempts) await waitFor(delaySeconds);
+                continue;
+            }
             const evmBlock = Number(evmReceipt.blockNumber);
             const cosmosHeight = cosmosResponse.height;
 
