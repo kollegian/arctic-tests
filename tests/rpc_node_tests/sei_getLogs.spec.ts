@@ -184,8 +184,16 @@ describe('Sei get logs tests', function() {
         const encodedTx = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('0.01')]);
         const signedTxs = await Promise.all(users.map((user) => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
         const results = await Promise.all(signedTxs.map((signedTx) => AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx, admin)));
-        await waitFor(0.5);
-        const txReceipt = await rpcClient.getTransactionReceipt(results[0]);
+        // Poll for the first tx's receipt — single-shot was racing the
+        // RPC-pod indexer (results[0] could be null briefly even after
+        // the 0.5s wait, then `.blockNumber` null-derefs).
+        let txReceipt: any = null;
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline && !txReceipt) {
+            txReceipt = await rpcClient.getTransactionReceipt(results[0]);
+            if (!txReceipt) await waitFor(0.5);
+        }
+        if (!txReceipt) throw new Error(`receipt for ${results[0]} not produced within 15s`);
         multipleTxBlock = txReceipt.blockNumber;
         await waitFor(60);
         const logParams = {
