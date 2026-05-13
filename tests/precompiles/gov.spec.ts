@@ -276,9 +276,14 @@ describe("Gov Precompile Tests", function () {
             expect(proposalQuery.proposal.totalDeposit[0].denom).to.be.eq("usei");
             expect(Number(proposalQuery.proposal.proposalId)).to.be.eq(Number(proposalId));
             expect(proposalQuery.proposal.content?.typeUrl).to.include('TextProposal');
+            // `content.value` is a protobuf-encoded v1beta1 TextProposal. The
+            // chain's v1→v1beta1 shim populates it from the OUTER MsgSubmitProposal
+            // title/description above (not the inner `messages[0].content` overrides
+            // in the JSON). Bytes between the title and description fields are proto
+            // length-delim wire format, not a literal `=`.
             const decoded = new TextDecoder().decode(proposalQuery.proposal.content!.value);
-            console.log(decoded);
-            expect(decoded).to.contain("Test v1 Proposal=This is a test proposal using the v1 governance module format");
+            expect(decoded).to.include("Test v1 Proposal");
+            expect(decoded).to.include("This is a test proposal using the v1 governance module format");
             expect(Object.values(proposalQuery.proposal.finalTallyResult)).to.be.deep.eq(['0', '0', '0', '0']);
             expect(Number(proposalQuery.proposal.votingEndTime.seconds - proposalQuery.proposal.votingStartTime.seconds)).to.be.eq(chainVotingPeriodSec);
         })
