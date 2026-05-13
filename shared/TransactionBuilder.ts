@@ -90,8 +90,9 @@ export default class TransactionBuilder {
         let evmTxs = await this.evmRpcClient.getBlockByNumber(ethers.toQuantity(blockNumber), true);
         let index = 0;
         while(seiTxs.transactions.length === evmTxs.transactions.length || (seiTxs.transactions.length === 0 || evmTxs.transactions.length === 0)){
-            seiTxs = await this.evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(--blockNumber), true);
-            evmTxs = await this.evmRpcClient.getBlockByNumber(ethers.toQuantity(--blockNumber), true);
+            blockNumber--;
+            seiTxs = await this.evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(blockNumber), true);
+            evmTxs = await this.evmRpcClient.getBlockByNumber(ethers.toQuantity(blockNumber), true);
             if (index === 150){
                 throw new Error('Reached end of block chain');
             }
