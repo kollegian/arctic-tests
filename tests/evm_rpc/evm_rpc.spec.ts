@@ -313,21 +313,34 @@ describe('EVM RPC Tests', function () {
             await waitFor(2);
 
             const tx = await erc20.mint(alice.evmAddress, ethers.parseEther('100').toString());
-            await tx.wait();
-            transferBlockNumber = await provider.getBlockNumber();
+            // Use the receipt's block, not provider.getBlockNumber() (which
+            // returns the *current* head, typically 1–2 blocks ahead of the
+            // mint, and on a lagging RPC pod can even land before the mint).
+            const receipt = await tx.wait();
+            transferBlockNumber = receipt!.blockNumber;
         });
 
         it('eth_getLogs returns logs for a contract within a block range', async () => {
             const transferTopic = ethers.id('Transfer(address,address,uint256)');
-            const logs = await provider.send('eth_getLogs', [
-                {
-                    fromBlock: ethers.toQuantity(transferBlockNumber - 5),
-                    toBlock: 'latest',
-                    address: erc20Address,
-                    topics: [transferTopic],
-                },
-            ]);
-            expect(logs).to.be.an('array').with.length.above(0);
+            // Poll until logs appear (RPC-pod index lag can return an empty
+            // array for a few seconds after the receipt is observable on a
+            // sibling pod). Widen the fromBlock window to absorb any
+            // off-by-one on which block the mint actually landed in.
+            let logs: any[] = [];
+            const deadline = Date.now() + 15_000;
+            while (Date.now() < deadline) {
+                logs = await provider.send('eth_getLogs', [
+                    {
+                        fromBlock: ethers.toQuantity(Math.max(0, transferBlockNumber - 10)),
+                        toBlock: 'latest',
+                        address: erc20Address,
+                        topics: [transferTopic],
+                    },
+                ]);
+                if (logs.length > 0) break;
+                await waitFor(1);
+            }
+            expect(logs, `no Transfer event indexed within 15s at ${erc20Address} from block ${transferBlockNumber - 10}`).to.be.an('array').with.length.above(0);
             expect(logs[0].address.toLowerCase()).to.eq(erc20Address.toLowerCase());
             expect(logs[0].topics[0]).to.eq(transferTopic);
         });
