@@ -79,10 +79,14 @@ function runMocha(spec: string, ignore: readonly string[]): Promise<{ exitCode: 
   return new Promise((resolve) => {
     const ignoreArgs = ignore.flatMap((g) => ['--ignore', g]);
     // requires live in .mocharc.cjs
+    // `--exit` forces mocha to terminate after the suite. Without it, mocha
+    // waits for event-loop drain — open ethers/cosmjs sockets from tests
+    // can hold the process open for an hour+ post-suite.
     const child = spawn(
       'npx',
       [
         'mocha',
+        '--exit',
         '--reporter', 'mochawesome',
         '--reporter-options', `reportDir=${REPORT_DIR},reportFilename=mochawesome,quiet=true,html=false,json=true`,
         ...ignoreArgs,
