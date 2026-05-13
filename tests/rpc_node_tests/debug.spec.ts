@@ -184,7 +184,12 @@ describe('Sei debug tests', function() {
                 await admin.evmWallet.signingClient.send('debug_traceCall', callParams);
                 throw new Error('Should have failed');
             } catch(e: any){
-                expect(unwrapErrorMessage(e)).to.contain('could not find block for hash');
+                // The chain's exact wording for block-hash-not-found varies
+                // ("header not found" on geth-style, "could not find block for
+                // hash" on older Sei builds). Assert intent — the error names
+                // a missing block/header — rather than a specific phrasing.
+                const msg = unwrapErrorMessage(e);
+                expect(msg, `actual: ${msg}`).to.match(/could not find block for hash|header not found|block.*not found|hash.*not found/i);
             }
         });
 
