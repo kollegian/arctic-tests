@@ -166,15 +166,16 @@ describe('TokenFactory Tests', function () {
             const bobBalanceBefore = await bankContract.balance(bob.evmAddress, denomName);
 
             const data = bankContract.interface.encodeFunctionData('send', [alice.evmAddress, bob.evmAddress, denomName, '50000']);
-            // 5M gas: 1M is OOG on the bank precompile's MsgSend wrap
-            // (status=0, gasUsed==gasLimit observed in prior verify runs).
-            // The sibling CLI-based transfer in the next test passes,
-            // confirming the chain accepts the send — the gas budget is
-            // the constraint, not the assertion.
+            // Gas escalation: 1M OOG'd, 5M also OOG'd (both chain-probe receipts
+            // showed gasUsed exactly == gasLimit). Sibling CLI-based send in the
+            // next test passes, so the chain accepts the send; gas accounting
+            // for the bank precompile's MsgSend wrap is just much higher than
+            // expected. 10M is the next escalation — if still OOG, the gas
+            // accounting itself is the chain-side regression.
             const sendTx = await alice.evmWallet.wallet.sendTransaction({
                 to: BANK_PRECOMPILE_ADDRESS,
                 data,
-                gasLimit: 5000000n,
+                gasLimit: 10000000n,
             });
             await sendTx.wait();
 

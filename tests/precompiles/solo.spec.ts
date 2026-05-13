@@ -486,11 +486,18 @@ describe('Solo precompile tests', function () {
 
         const payload = await getSoloPayload('admin', alice.evmAddress, 'CW721', cw721.getAddress());
         const payloadArry = hex2uint8(payload);
-        // 5M gas: by this point admin has accumulated CW721 tokens across
-        // earlier tests in the describe; claimSpecific transfers all of them
-        // and 1M was OOG'ing (chain-probe receipt confirmed gasUsed==gasLimit).
+        // 5M gas covers admin's accumulated CW721 transfer in the precompile;
+        // the open question is why prior 300s mocha timeouts occurred without a
+        // status=0 receipt (gas-bump alone didn't close #4/#5). Hypothesis: tx
+        // genuinely never lands on the RPC pod ethers polls. Bound the wait at
+        // 60s and log the hash so the next failure surfaces a probeable artifact
+        // instead of an opaque mocha timeout.
         const claimTx = await soloContract.connect(alice.evmWallet.wallet).claimSpecific(payloadArry, {gasLimit: 5000000});
-        await claimTx.wait();
+        console.log(`[solo #4] claimTx hash=${claimTx.hash}`);
+        await Promise.race([
+            claimTx.wait(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error(`claimTx ${claimTx.hash} did not resolve in 60s`)), 60_000)),
+        ]);
 
         // CW721 moved to Alice
         expect(await cw721.ownerOf(cw721Id)).to.equal(alice.seiAddress);
@@ -518,12 +525,15 @@ describe('Solo precompile tests', function () {
 
         const payload = await getSoloAllPayload('alice', bob.evmAddress);
         const payloadArr = hex2uint8(payload);
-        // 5M gas: claim-all transfers all of alice's accumulated cw20+cw721+
-        // native; 1M was OOG'ing (chain-probe receipt for tx hash
-        // 0x6f6ff1ba3c3a0377a87d7b56339facd4aa2dc6d8ea4cb1a90a2026e878d9b1e7
-        // showed gasUsed exactly == gasLimit == 1000000, status=0).
+        // 5M gas covers alice's accumulated state transfer; same diagnostic
+        // shape as #4 — bound the wait + log the hash so a hung tx surfaces
+        // a probeable artifact, not an opaque mocha timeout.
         const claimTx = await soloContract.connect(bob.evmWallet.wallet).claim(payloadArr, {gasLimit: 5000000});
-        await claimTx.wait();
+        console.log(`[solo #5] claimTx hash=${claimTx.hash}`);
+        await Promise.race([
+            claimTx.wait(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error(`claimTx ${claimTx.hash} did not resolve in 60s`)), 60_000)),
+        ]);
 
         // ERC balances should be unchanged
         const aliceErc20After = await erc20.balanceOf(alice.evmAddress);
