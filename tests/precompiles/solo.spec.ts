@@ -390,6 +390,10 @@ describe('Solo precompile tests', function () {
     });
 
     it('Given that a user has cw20 and cw721 balance', async () =>{
+        // claimSpecific transfers ALL of the sender's holdings for the listed
+        // asset, so bob's delta = alice's full pre-balance + the fresh mint
+        // (alice accumulates cw20 across earlier tests in this describe).
+        const alicePreBalance = await cw20.balanceOf(alice.seiAddress);
         await cw20.mint(alice.seiAddress, '10000000');
         await cw721.mintTx((laterMultipleMints + 1).toString(), alice.seiAddress);
         const bobPreBalance = await cw20.balanceOf(bob.seiAddress);
@@ -399,7 +403,7 @@ describe('Solo precompile tests', function () {
         const claimTx = await soloContract.connect(bob.evmWallet.wallet).claimSpecific(payloadArr, {gasLimit: 1000000});
         await claimTx.wait();
         const bobBalance = await cw20.balanceOf(bob.seiAddress);
-        expect(Number(bobBalance)).to.equal(Number(bobPreBalance) + Number('10000000'));
+        expect(Number(bobBalance)).to.equal(Number(bobPreBalance) + Number(alicePreBalance) + Number('10000000'));
         expect(await cw721.ownerOf((laterMultipleMints + 1).toString())).to.equal(bob.seiAddress);
         expect(await cw20.balanceOf(alice.seiAddress)).to.equal('0');
     });
@@ -612,7 +616,10 @@ describe('Solo precompile tests', function () {
         const {stdout} = await seidExec(`seid tx evm print-claim-specific ${admin.evmAddress} CW20 ${cw20.getAddress()} CW721 ${cw721.getAddress()} --from bob --fees 24200usei -y`);
         console.log(stdout);
         const payloadArray = hex2uint8(hexString);
-        const okTx = await soloContract.connect(admin.evmWallet.wallet).claimSpecific(payloadArray, { gasLimit: 1000000 });
+        // 5M gas: claim transfers all of bob's accumulated cw20+cw721
+        // holdings across the describe block; 1M was OOG'ing (gasUsed
+        // exactly equal to gasLimit on a status=0 receipt).
+        const okTx = await soloContract.connect(admin.evmWallet.wallet).claimSpecific(payloadArray, { gasLimit: 5000000 });
         await okTx.wait();
     });
 })
