@@ -223,21 +223,41 @@ describe('Sei get logs tests', function() {
     });
 
     it('Sei get logs supports finalized, safe, latest, pending tags', async () => {
-        // Test intent: verify sei_getLogs ACCEPTS each block-tag value
-        // (finalized/safe/latest/pending) without an RPC error. On
-        // ephemeral chains `finalized` and `latest` resolve to nearly the
-        // same block, so a `fromBlock=tag..toBlock=latest` window is
-        // narrow and may not contain any specific recent Transfer event —
-        // making "find a Transfer here" a flaky proxy for the actual
-        // intent. Assert the call returns an array; that's what the test
-        // name claims to verify.
-        const tags = ['finalized', 'safe', 'latest', 'pending'];
-        for(const tag of tags) {
-            const logParams = {
+        // Test intent: verify each tag is genuinely SUPPORTED — both that
+        // the tag resolves to a real block (not silently dropped) and
+        // that sei_getLogs accepts it. The prior shape (poll for a fresh
+        // Transfer event in fromBlock=tag..latest) was racy because on
+        // ephemeral chains the window is near-zero-width; relaxing to
+        // "returns an array" was too weak (a broken handler that returns
+        // [] for any unrecognized tag would pass).
+        //
+        // Stronger checks:
+        //   1. Each tag resolves via eth_getBlockByNumber to a non-null
+        //      block with a positive number — guards against silent
+        //      tag-resolution failures.
+        //   2. Resolved heights honor the canonical ordering
+        //      finalized ≤ safe ≤ latest ≤ pending — guards against a
+        //      handler that maps everything to the same block silently.
+        //   3. sei_getLogs accepts each tag value without error — the
+        //      original surface this test was named for.
+        const tags = ['finalized', 'safe', 'latest', 'pending'] as const;
+        const heights: Record<string, number> = {};
+        for (const tag of tags) {
+            const block = await rpcClient.getBlockByNumber(tag) as Block | null;
+            expect(block, `eth_getBlockByNumber(${tag}) returned null`).to.not.be.null;
+            const n = Number(block!.number);
+            expect(n, `eth_getBlockByNumber(${tag}) returned block.number=${n}`).to.be.greaterThan(0);
+            heights[tag] = n;
+        }
+        expect(heights.finalized).to.be.lte(heights.safe);
+        expect(heights.safe).to.be.lte(heights.latest);
+        expect(heights.latest).to.be.lte(heights.pending);
+
+        for (const tag of tags) {
+            const rpc = await rpcClient.sei_getLogs({
                 fromBlock: tag,
                 topics: [ethers.id('Transfer(address,address,uint256)')],
-            };
-            const rpc = await rpcClient.sei_getLogs(logParams);
+            });
             expect(rpc, `sei_getLogs(fromBlock=${tag}) should return an array`).to.be.an('array');
         }
     });

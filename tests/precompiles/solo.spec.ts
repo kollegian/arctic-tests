@@ -484,19 +484,22 @@ describe('Solo precompile tests', function () {
         await cw721.mintTx(cw721Id, admin.seiAddress);
         expect(await cw721.ownerOf(cw721Id)).to.equal(admin.seiAddress);
 
+        // Diagnostic markers — prior round's logs never fired because the
+        // 60s race was downstream of the actual hang. Bracket each await
+        // so the next failure pinpoints which call hung (payload-gen vs
+        // claimSpecific submit vs receipt wait).
+        console.log('[solo #4] before getSoloPayload');
         const payload = await getSoloPayload('admin', alice.evmAddress, 'CW721', cw721.getAddress());
+        console.log('[solo #4] payload generated, submitting claimSpecific');
         const payloadArry = hex2uint8(payload);
-        // 5M gas covers admin's accumulated CW721 transfer in the precompile;
-        // the open question is why prior 300s mocha timeouts occurred without a
-        // status=0 receipt (gas-bump alone didn't close #4/#5). Hypothesis: tx
-        // genuinely never lands on the RPC pod ethers polls. Bound the wait at
-        // 60s and log the hash so the next failure surfaces a probeable artifact
-        // instead of an opaque mocha timeout.
-        const claimTx = await soloContract.connect(alice.evmWallet.wallet).claimSpecific(payloadArry, {gasLimit: 5000000});
-        console.log(`[solo #4] claimTx hash=${claimTx.hash}`);
+        const claimTx: any = await Promise.race([
+            soloContract.connect(alice.evmWallet.wallet).claimSpecific(payloadArry, {gasLimit: 5000000}),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('[solo #4] claimSpecific submit did not resolve in 60s')), 60_000)),
+        ]);
+        console.log(`[solo #4] claimTx hash=${claimTx.hash}, awaiting receipt`);
         await Promise.race([
             claimTx.wait(),
-            new Promise((_, rej) => setTimeout(() => rej(new Error(`claimTx ${claimTx.hash} did not resolve in 60s`)), 60_000)),
+            new Promise((_, rej) => setTimeout(() => rej(new Error(`[solo #4] claimTx ${claimTx.hash} wait did not resolve in 60s`)), 60_000)),
         ]);
 
         // CW721 moved to Alice
@@ -523,16 +526,20 @@ describe('Solo precompile tests', function () {
         // Fund Alice with native to make claim (all) do something
         await UserFactory.fundAddressOnSei(alice.seiAddress, 'usei', '1000000');
 
+        // Same diagnostic shape as #4 — bracket payload-gen + submit + wait
+        // separately so the next failure shows which one hung.
+        console.log('[solo #5] before getSoloAllPayload');
         const payload = await getSoloAllPayload('alice', bob.evmAddress);
+        console.log('[solo #5] payload generated, submitting claim');
         const payloadArr = hex2uint8(payload);
-        // 5M gas covers alice's accumulated state transfer; same diagnostic
-        // shape as #4 — bound the wait + log the hash so a hung tx surfaces
-        // a probeable artifact, not an opaque mocha timeout.
-        const claimTx = await soloContract.connect(bob.evmWallet.wallet).claim(payloadArr, {gasLimit: 5000000});
-        console.log(`[solo #5] claimTx hash=${claimTx.hash}`);
+        const claimTx: any = await Promise.race([
+            soloContract.connect(bob.evmWallet.wallet).claim(payloadArr, {gasLimit: 5000000}),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('[solo #5] claim submit did not resolve in 60s')), 60_000)),
+        ]);
+        console.log(`[solo #5] claimTx hash=${claimTx.hash}, awaiting receipt`);
         await Promise.race([
             claimTx.wait(),
-            new Promise((_, rej) => setTimeout(() => rej(new Error(`claimTx ${claimTx.hash} did not resolve in 60s`)), 60_000)),
+            new Promise((_, rej) => setTimeout(() => rej(new Error(`[solo #5] claimTx ${claimTx.hash} wait did not resolve in 60s`)), 60_000)),
         ]);
 
         // ERC balances should be unchanged
