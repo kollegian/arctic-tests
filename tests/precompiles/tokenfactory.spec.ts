@@ -161,17 +161,6 @@ describe('TokenFactory Tests', function () {
 
     describe('transfer via bank precompile', function () {
 
-        // EOA-direct call to bank precompile send() was a test bug: the
-        // precompile gates `send` on `caller == registered ERC20 pointer`
-        // for the denom (sei-chain/precompiles/bank/bank.go:149-152).
-        // An EOA never matches, so it always reverts with status:0,
-        // bare ErrExecutionReverted (no data — the deferred handler at
-        // precompiles/common/precompiles.go:158-164 drops the message),
-        // and all gas burned. Gas escalation (1M → 5M → 10M) was chasing
-        // the wrong layer. The next `it` block below covers the same
-        // user-flow correctly via `seid tx bank send`.
-
-
         it('should transfer tokens via CLI and verify via precompile', async () => {
             const bobBalanceBefore = await bankContract.balance(bob.evmAddress, denomName);
 
