@@ -281,8 +281,27 @@ describe('Erc20 Tests', function () {
             });
 
             it('Sei filter logs returns info on wasm erc20 txs', async () =>{
-                const filterId = await evmRpcClient.sei_newFilter(seiLogs);
-                const logs = await evmRpcClient.sei_getFilterLogs(filterId);
+                // Sei filters are pod-local: `sei_newFilter` creates the
+                // filter on whichever RPC pod the ClusterIP load-balances
+                // to; the next `sei_getFilterLogs` may hit a different pod
+                // → "filter does not exist". Retry the whole pair until we
+                // hit the same pod twice in a row (or timeout).
+                let logs: any[] = [];
+                const deadline = Date.now() + 30_000;
+                let lastErr: any = null;
+                while (Date.now() < deadline) {
+                    try {
+                        const filterId = await evmRpcClient.sei_newFilter(seiLogs);
+                        logs = await evmRpcClient.sei_getFilterLogs(filterId);
+                        lastErr = null;
+                        break;
+                    } catch (e: any) {
+                        lastErr = e;
+                        if (!String(e?.message ?? e).includes('filter does not exist')) throw e;
+                        await waitFor(0.5);
+                    }
+                }
+                if (lastErr) throw new Error(`filter pair never landed on same pod within 30s: ${lastErr.message}`);
                 expect(logs.length).to.be.eq(1);
             });
         });

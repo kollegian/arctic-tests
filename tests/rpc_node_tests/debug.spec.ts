@@ -82,14 +82,22 @@ describe('Sei debug tests', function() {
 
     describe('Tests debug_traceCall', function(){
         it('Debug call trace succeeds in valid block with default params', async () =>{
+            // Step back 5 blocks from `finalized` to absorb RPC-pod state-prop
+            // lag. If the first call resolves `finalized` against pod A and
+            // the debug_traceCall hits pod B, pod B may not yet know about
+            // the just-finalized block — error: "requested height N is not
+            // yet available; safe latest is N-1: block height not yet
+            // available". The test intent is "succeeds in a valid block";
+            // any sufficiently-historical block satisfies it.
             const validBlockNumber = await rpcClient.getBlockByNumber('finalized') as Block;
+            const traceBlock = Math.max(1, validBlockNumber.number - 5);
             const callParams = [
                 {
                     from: admin.evmAddress,
                     to: await debugContract.getAddress(),
                     data: actualCall
                 },
-                ethers.toQuantity(validBlockNumber.number),
+                ethers.toQuantity(traceBlock),
             ]
             const debugResult = await admin.evmWallet.signingClient.send('debug_traceCall', callParams);
             expect(debugResult.failed).to.be.false;
