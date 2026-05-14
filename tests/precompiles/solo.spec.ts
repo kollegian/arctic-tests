@@ -469,26 +469,35 @@ describe('Solo precompile tests', function () {
     });
 
     it('Claiming have no effect on erc side', async () => {
+        // Round-5 diagnostic markers — prior rounds' logs (in the post-setup
+        // block) never fired because the 300s mocha timeout fires inside one
+        // of the setup awaits BELOW this comment. Mark every await so the
+        // next failure pinpoints which call hung.
+        console.log('[solo #4] step 0: entered');
         const erc20MintAmount = ethers.parseEther('1').toString();
         const erc721TokenId = laterMultipleMints + 4;
+        console.log('[solo #4] step 1: erc20.balanceOf(admin)');
         const adminErc20Pre = await erc20.balanceOf(admin.evmAddress);
+        console.log('[solo #4] step 2: erc20.mint(admin) submit');
         await erc20.mint(admin.evmAddress, erc20MintAmount);
+        console.log('[solo #4] step 3: erc721.safeMint(admin) submit');
         const tx = await erc721.safeMint(admin.evmAddress, erc721TokenId.toString());
+        console.log(`[solo #4] step 4: safeMint hash=${tx.hash}, awaiting receipt`);
         await tx.wait();
 
+        console.log('[solo #4] step 5: erc20.balanceOf(admin) post-safeMint');
         const adminErc20BeforeClaim = await erc20.balanceOf(admin.evmAddress);
+        console.log('[solo #4] step 6: erc721.ownerOf');
         const erc721OwnerBeforeClaim = await erc721.ownerOf(erc721TokenId.toString());
 
         // Mint a CW721 to admin on Sei and claim it to Alice
         const cw721Id = (laterMultipleMints + 4).toString();
+        console.log('[solo #4] step 7: cw721.mintTx (cosmos)');
         await cw721.mintTx(cw721Id, admin.seiAddress);
+        console.log('[solo #4] step 8: cw721.ownerOf');
         expect(await cw721.ownerOf(cw721Id)).to.equal(admin.seiAddress);
 
-        // Diagnostic markers — prior round's logs never fired because the
-        // 60s race was downstream of the actual hang. Bracket each await
-        // so the next failure pinpoints which call hung (payload-gen vs
-        // claimSpecific submit vs receipt wait).
-        console.log('[solo #4] before getSoloPayload');
+        console.log('[solo #4] step 9: before getSoloPayload');
         const payload = await getSoloPayload('admin', alice.evmAddress, 'CW721', cw721.getAddress());
         console.log('[solo #4] payload generated, submitting claimSpecific');
         const payloadArry = hex2uint8(payload);
@@ -513,22 +522,27 @@ describe('Solo precompile tests', function () {
     });
 
     it('Claim (all) has no effect on erc assets', async () => {
-        // Ensure Alice has ERC balances on EVM
+        // Round-5 setup markers — same shape as #4.
+        console.log('[solo #5] step 0: entered');
         const erc20MintAmount = ethers.parseEther('2').toString();
         const erc721TokenId = laterMultipleMints + 5;
 
+        console.log('[solo #5] step 1: erc20.mint(alice) submit');
         await erc20.mint(alice.evmAddress, erc20MintAmount);
+        console.log('[solo #5] step 2: erc721.safeMint(alice) submit');
         const tx = await erc721.safeMint(alice.evmAddress, erc721TokenId);
+        console.log(`[solo #5] step 3: safeMint hash=${tx.hash}, awaiting receipt`);
         await tx.wait();
+        console.log('[solo #5] step 4: erc20.balanceOf(alice)');
         const aliceErc20Pre = await erc20.balanceOf(alice.evmAddress);
+        console.log('[solo #5] step 5: erc721.ownerOf');
         const aliceErc721OwnerPre = await erc721.ownerOf(erc721TokenId);
 
         // Fund Alice with native to make claim (all) do something
+        console.log('[solo #5] step 6: fundAddressOnSei(alice, usei)');
         await UserFactory.fundAddressOnSei(alice.seiAddress, 'usei', '1000000');
 
-        // Same diagnostic shape as #4 — bracket payload-gen + submit + wait
-        // separately so the next failure shows which one hung.
-        console.log('[solo #5] before getSoloAllPayload');
+        console.log('[solo #5] step 7: before getSoloAllPayload');
         const payload = await getSoloAllPayload('alice', bob.evmAddress);
         console.log('[solo #5] payload generated, submitting claim');
         const payloadArr = hex2uint8(payload);
