@@ -52,7 +52,13 @@ describe('Sei get logs tests', function() {
             topics: [ethers.id('Transfer(address,address,uint256)')],
         };
         const logs = await rpcClient.sei_getLogs(logsParams);
-        expect(logs.length).to.be.eq(users.length);
+        // Parallel transfers don't atomically land in one block — Sei's
+        // ~500ms block time means some spill into block N+1 under load.
+        // The filter window is one block (fromBlock=toBlock=blockNumber),
+        // so the expected count is "txs that landed in *this* block",
+        // not the total user count. The txBlocks map already records
+        // this above; use it directly.
+        expect(logs.length).to.be.eq(txBlocks.get(blockNumber.toString()));
         for (const log of logs) {
             expect(log.address.toString().toLowerCase()).to.be.eq(erc20.getAddress().toString().toLowerCase());
             const parsed = erc20.contract.interface.parseLog(log) as LogDescription;

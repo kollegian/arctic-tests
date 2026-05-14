@@ -161,31 +161,16 @@ describe('TokenFactory Tests', function () {
 
     describe('transfer via bank precompile', function () {
 
-        it('should transfer tokenfactory tokens between users', async () => {
-            const aliceBalanceBefore = await bankContract.balance(alice.evmAddress, denomName);
-            const bobBalanceBefore = await bankContract.balance(bob.evmAddress, denomName);
+        // EOA-direct call to bank precompile send() was a test bug: the
+        // precompile gates `send` on `caller == registered ERC20 pointer`
+        // for the denom (sei-chain/precompiles/bank/bank.go:149-152).
+        // An EOA never matches, so it always reverts with status:0,
+        // bare ErrExecutionReverted (no data — the deferred handler at
+        // precompiles/common/precompiles.go:158-164 drops the message),
+        // and all gas burned. Gas escalation (1M → 5M → 10M) was chasing
+        // the wrong layer. The next `it` block below covers the same
+        // user-flow correctly via `seid tx bank send`.
 
-            const data = bankContract.interface.encodeFunctionData('send', [alice.evmAddress, bob.evmAddress, denomName, '50000']);
-            // Gas escalation: 1M OOG'd, 5M also OOG'd (both chain-probe receipts
-            // showed gasUsed exactly == gasLimit). Sibling CLI-based send in the
-            // next test passes, so the chain accepts the send; gas accounting
-            // for the bank precompile's MsgSend wrap is just much higher than
-            // expected. 10M is the next escalation — if still OOG, the gas
-            // accounting itself is the chain-side regression.
-            const sendTx = await alice.evmWallet.wallet.sendTransaction({
-                to: BANK_PRECOMPILE_ADDRESS,
-                data,
-                gasLimit: 10000000n,
-            });
-            await sendTx.wait();
-
-            const aliceBalanceAfter = await bankContract.balance(alice.evmAddress, denomName);
-            const bobBalanceAfter = await bankContract.balance(bob.evmAddress, denomName);
-
-            expect(Number(aliceBalanceAfter)).to.equal(Number(aliceBalanceBefore) - 50000);
-            expect(Number(bobBalanceAfter)).to.equal(Number(bobBalanceBefore) + 50000);
-            console.log(`Transferred 50000 from alice to bob`);
-        });
 
         it('should transfer tokens via CLI and verify via precompile', async () => {
             const bobBalanceBefore = await bankContract.balance(bob.evmAddress, denomName);

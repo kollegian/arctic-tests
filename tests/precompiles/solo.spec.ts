@@ -479,7 +479,15 @@ describe('Solo precompile tests', function () {
         console.log('[solo #4] step 1: erc20.balanceOf(admin)');
         const adminErc20Pre = await erc20.balanceOf(admin.evmAddress);
         console.log('[solo #4] step 2: erc20.mint(admin) submit');
-        await erc20.mint(admin.evmAddress, erc20MintAmount);
+        // Wait for the mint receipt before issuing the next write on the
+        // same wallet. ethers v6 picks each tx's nonce via
+        // getTransactionCount(pending), which routes through the
+        // aggregate ClusterIP — the next call can land on a different
+        // RPC pod that hasn't seen tx1's mempool entry, returning the
+        // same nonce. Two txs sharing a nonce → one orphaned → 300s
+        // wait() timeout for a receipt that never appears.
+        const mintTx = await erc20.mint(admin.evmAddress, erc20MintAmount);
+        await mintTx.wait();
         console.log('[solo #4] step 3: erc721.safeMint(admin) submit');
         const tx = await erc721.safeMint(admin.evmAddress, erc721TokenId.toString());
         console.log(`[solo #4] step 4: safeMint hash=${tx.hash}, awaiting receipt`);
@@ -528,7 +536,11 @@ describe('Solo precompile tests', function () {
         const erc721TokenId = laterMultipleMints + 5;
 
         console.log('[solo #5] step 1: erc20.mint(alice) submit');
-        await erc20.mint(alice.evmAddress, erc20MintAmount);
+        // Wait for the mint receipt before issuing the next write on the
+        // same wallet — see [solo #4] comment for full rationale (LB
+        // nonce race between back-to-back EVM writes).
+        const mintTx = await erc20.mint(alice.evmAddress, erc20MintAmount);
+        await mintTx.wait();
         console.log('[solo #5] step 2: erc721.safeMint(alice) submit');
         const tx = await erc721.safeMint(alice.evmAddress, erc721TokenId);
         console.log(`[solo #5] step 3: safeMint hash=${tx.hash}, awaiting receipt`);
