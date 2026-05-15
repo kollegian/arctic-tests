@@ -14,10 +14,11 @@ const REPORT_PATH = path.join(REPORT_DIR, 'mochawesome.json');
 //                    contract addresses on a specific chain). Invoked
 //                    manually against pacific-1 / atlantic-2 by QA.
 // public-chain-safe: subset of chain-agnostic that also tolerates
-//                    long-running public chains (arctic-1 et al.) —
-//                    no genesis-state queries, no irreversible
-//                    chain-pollution, no snapshot-delta math that
-//                    assumes a quiet chain. See PUBLIC_CHAIN_UNSAFE_GLOBS.
+//                    long-running public chains (arctic-1, atlantic-2
+//                    — pacific-1 untested). No genesis-state queries,
+//                    no irreversible chain pollution, no snapshot-
+//                    delta math that assumes a quiet chain. See
+//                    PUBLIC_CHAIN_UNSAFE_GLOBS.
 const STATE_REQUIRED_GLOBS = [
   'tests/indexers/**/*.spec.ts',
   'tests/rpc_node_tests/eth_subscribe.spec.ts',
@@ -42,6 +43,7 @@ const PUBLIC_CHAIN_UNSAFE_GLOBS = [
   'tests/solo_evm/rpc_tests/state_endpoints/eth_getCode.spec.ts',
   'tests/solo_evm/rpc_tests/state_endpoints/eth_getStorageAt.spec.ts',
   'tests/solo_evm/rpc_tests/state_endpoints/eth_getTransactionCount.spec.ts',
+  'tests/rpc_node_tests/eth_call.spec.ts',
   // (2) irreversible chain pollution
   'tests/precompiles/staking.spec.ts',
   'tests/precompiles/gov.spec.ts',
