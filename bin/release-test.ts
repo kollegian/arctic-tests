@@ -7,16 +7,48 @@ const REPORT_DIR = path.join(REPO_ROOT, 'release-test-report');
 const REPORT_PATH = path.join(REPORT_DIR, 'mochawesome.json');
 
 // Test targets partition the suite by what the chain must provide.
-// chain-agnostic: tests that set up their own state; safe on any chain.
-// state-required: tests that read pre-existing chain state (mainnet/atlantic-2
-//   indexer data, hardcoded contract addresses on a specific chain).
-// The harness defaults to chain-agnostic. state-required is invoked manually
-// against pacific-1 / atlantic-2 by the QA team.
+// chain-agnostic:    tests that set up their own state; safe on an
+//                    ephemeral chain we control.
+// state-required:    tests that read pre-existing chain state
+//                    (mainnet/atlantic-2 indexer data, hardcoded
+//                    contract addresses on a specific chain). Invoked
+//                    manually against pacific-1 / atlantic-2 by QA.
+// public-chain-safe: subset of chain-agnostic that also tolerates
+//                    long-running public chains (arctic-1 et al.) —
+//                    no genesis-state queries, no irreversible
+//                    chain-pollution, no snapshot-delta math that
+//                    assumes a quiet chain. See PUBLIC_CHAIN_UNSAFE_GLOBS.
 const STATE_REQUIRED_GLOBS = [
   'tests/indexers/**/*.spec.ts',
   'tests/rpc_node_tests/eth_subscribe.spec.ts',
   'tests/chain_tests/pectra_upgrade/**/*.spec.ts',
   'tests/tokens/disable_pointers.spec.ts',
+];
+
+// Specs that pass on ephemeral chains but break against long-running
+// public chains. Categorized by failure class:
+//   (1) Genesis-state queries: `eth_getBalance(addr, 'earliest')`,
+//       block-0 storage/code/nonce — state at block 0 is pruned on
+//       arctic-1 / atlantic-2 / pacific-1.
+//   (2) Irreversible chain pollution: create validators, submit
+//       governance proposals, delegate stake. Side effects persist
+//       across runs and assertions assume ephemeral validator-set /
+//       proposal-list / delegation-set state.
+//   (3) Snapshot-delta math: assumes admin doesn't receive other
+//       inbound txs between snapshots; flaky on a noisy chain.
+const PUBLIC_CHAIN_UNSAFE_GLOBS = [
+  // (1) genesis-state queries
+  'tests/solo_evm/rpc_tests/state_endpoints/eth_getBalance.spec.ts',
+  'tests/solo_evm/rpc_tests/state_endpoints/eth_getCode.spec.ts',
+  'tests/solo_evm/rpc_tests/state_endpoints/eth_getStorageAt.spec.ts',
+  'tests/solo_evm/rpc_tests/state_endpoints/eth_getTransactionCount.spec.ts',
+  // (2) irreversible chain pollution
+  'tests/precompiles/staking.spec.ts',
+  'tests/precompiles/gov.spec.ts',
+  'tests/precompiles/distribution.spec.ts',
+  // (3) snapshot-delta math against a noisy chain
+  'tests/precompiles/bank_precompile.spec.ts',
+  'tests/chain_tests/gasTests.spec.ts',
 ];
 
 const TARGETS = {
@@ -27,6 +59,14 @@ const TARGETS = {
   'state-required': {
     spec: `{${STATE_REQUIRED_GLOBS.join(',')}}`,
     ignore: [],
+  },
+  'public-chain-safe': {
+    spec: 'tests/**/*.spec.ts',
+    ignore: [
+      'tests/confidential_transfers/**',
+      ...STATE_REQUIRED_GLOBS,
+      ...PUBLIC_CHAIN_UNSAFE_GLOBS,
+    ],
   },
 } as const;
 type TargetName = keyof typeof TARGETS;
