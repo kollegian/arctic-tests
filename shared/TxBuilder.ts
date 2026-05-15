@@ -90,28 +90,22 @@ export class AtomicTxSender {
         maxAttempts = 15,
         delaySeconds = 1,
     ): Promise<{ evmReceipt: TransactionReceipt; cosmosResponse: C }> {
-        let prevEvmEarlier: boolean | null = null;
+        // Bisection on the inter-broadcast delay: halve on overshoot
+        // (sign flip vs previous miss), double on undershoot. Always
+        // delays whichever side landed earlier.
+        const MIN_DELAY = 0.05;
+        const MAX_DELAY = 1.0;
+        let injectedSide: 'evm' | 'cosmos' | null = null;
+        let injectedDelay = 0;
+        let prevSign: -1 | 1 | null = null;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            let evmHashPromise: Promise<string>;
-            let cosmosTxPromise: Promise<C>;
-
-            if (prevEvmEarlier === true) {
-                cosmosTxPromise = cosmosCall();
-                evmHashPromise = (async () => {
-                    await waitFor(0.1 * attempt);
-                    return evmSubmit();
-                })();
-            } else if (prevEvmEarlier === false) {
-                evmHashPromise = evmSubmit();
-                cosmosTxPromise = (async () => {
-                    await waitFor(0.1 * attempt);
-                    return cosmosCall();
-                })();
-            } else {
-                evmHashPromise = evmSubmit();
-                cosmosTxPromise = cosmosCall();
-            }
+            const evmHashPromise: Promise<string> = injectedSide === 'evm'
+                ? (async () => { await waitFor(injectedDelay); return evmSubmit(); })()
+                : evmSubmit();
+            const cosmosTxPromise: Promise<C> = injectedSide === 'cosmos'
+                ? (async () => { await waitFor(injectedDelay); return cosmosCall(); })()
+                : cosmosCall();
 
             const [evmHash, cosmosResponse] = await Promise.all([
                 evmHashPromise,
@@ -140,11 +134,25 @@ export class AtomicTxSender {
                 return { evmReceipt, cosmosResponse };
             }
 
+            // +1: cosmos earlier; -1: evm earlier.
+            const sign: -1 | 1 = evmBlock > cosmosHeight ? 1 : -1;
+            const sideToDelay: 'evm' | 'cosmos' = sign === 1 ? 'cosmos' : 'evm';
+
             console.warn(
-                `sendRawUntilSameBlock attempt ${attempt}: evm=${evmBlock} cosmos=${cosmosHeight}`,
+                `sendRawUntilSameBlock attempt ${attempt}: evm=${evmBlock} cosmos=${cosmosHeight} (delayed ${injectedSide ?? 'none'} by ${injectedDelay}s)`,
             );
 
-            prevEvmEarlier = evmBlock < cosmosHeight;
+            if (prevSign === null) {
+                injectedSide = sideToDelay;
+                injectedDelay = 0.2;
+            } else if (sign === prevSign) {
+                injectedDelay = Math.min(injectedDelay * 2, MAX_DELAY);
+                injectedSide = sideToDelay;
+            } else {
+                injectedSide = sideToDelay;
+                injectedDelay = Math.max(injectedDelay / 2, MIN_DELAY);
+            }
+            prevSign = sign;
 
             if (attempt < maxAttempts) {
                 await waitFor(delaySeconds);
