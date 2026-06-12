@@ -262,6 +262,46 @@ describe('EIP behaviours (Sei vs geth)', function () {
                 0xabcdefn,
             );
         });
+
+        // Measure the gasUsed of a SELFDESTRUCT on a pre-existing contract, sending the
+        // balance to an existing recipient (so the cost reflects only the op, not
+        // account-creation). EIP-3529 removed the old 24,000 SELFDESTRUCT refund, so
+        // the receipt must show NO such credit and must match geth byte-for-byte.
+        async function measureSelfdestructGas(
+            deployFn: typeof deploySei,
+            recipient: string,
+            isGeth: boolean,
+        ): Promise<bigint> {
+            const { contract } = await deployFn(destructibleAbi, destructibleBytecode, [], {
+                value: ethers.parseEther('0.001'),
+            });
+            const send = () =>
+                contract.destroy(recipient) as Promise<ethers.ContractTransactionResponse>;
+            const receipt = isGeth ? await sendGeth(send) : await (await send()).wait();
+            return receipt!.gasUsed;
+        }
+
+        it('SELFDESTRUCT grants NO gas refund (EIP-3529) and matches geth', async () => {
+            const [seiGas, gethGas] = await Promise.all([
+                measureSelfdestructGas(deploySei, seiSink, false),
+                measureSelfdestructGas(deployGeth, gethSink, true),
+            ]);
+
+            expect(
+                seiGas > 25_000n,
+                `Sei selfdestruct gasUsed ${seiGas} is too low — a refund appears to be applied`,
+            ).to.equal(true);
+            expect(
+                gethGas > 25_000n,
+                `geth selfdestruct gasUsed ${gethGas} is too low — a refund appears to be applied`,
+            ).to.equal(true);
+
+            const delta = seiGas > gethGas ? seiGas - gethGas : gethGas - seiGas;
+            expect(
+                delta <= 2_600n,
+                `selfdestruct gasUsed diverged by ${delta} (Sei ${seiGas} vs geth ${gethGas}) — more than recipient access state can explain`,
+            ).to.equal(true);
+        });
     });
 
     describe('SSTORE gas — EIP-2200 / EIP-2929 (Sei overrides set-gas)', () => {
@@ -315,6 +355,51 @@ describe('EIP behaviours (Sei vs geth)', function () {
             expect(clearGas < setGas, `clear ${clearGas} should net below set ${setGas}`).to.equal(
                 true,
             );
+        });
+
+        // Measure the EIP-3529 SSTORE clear refund exactly. Two single-SSTORE txs on
+        // the same warm slot, identical except the transition: clearing (nonzero->0)
+        // earns the refund, dirtying (nonzero->other-nonzero) does not. The gasUsed
+        // gap is the applied refund. The refund (≈4800) is well under the gasUsed/5
+        // cap for these ~26k-gas txs, so the full amount lands and is comparable.
+        async function measureRefund(isGeth: boolean) {
+            const deployFn = isGeth ? deployGeth : deploySei;
+            const run = (c: ethers.Contract, fn: string) => {
+                const send = () => c[fn]() as Promise<ethers.ContractTransactionResponse>;
+                return isGeth ? sendGeth(send) : send().then(t => t.wait());
+            };
+
+            const { contract: clearC } = await deployFn(probeAbi, probeBytecode);
+            await run(clearC, 'primeRefundSlot'); // 0 -> nonzero (own tx)
+            const clearGas = (await run(clearC, 'clearRefundSlot'))!.gasUsed; // nonzero -> 0
+
+            const { contract: dirtyC } = await deployFn(probeAbi, probeBytecode);
+            await run(dirtyC, 'primeRefundSlot'); // 0 -> nonzero (own tx)
+            const dirtyGas = (await run(dirtyC, 'dirtyRefundSlot'))!.gasUsed; // nonzero -> nonzero
+
+            return { clearGas, dirtyGas, refund: dirtyGas - clearGas };
+        }
+
+        it('SSTORE clear refund is applied and matches geth exactly (EIP-3529)', async () => {
+            const [seiR, gethR] = await Promise.all([measureRefund(false), measureRefund(true)]);
+
+            // A clear must net cheaper than a same-slot dirty write — i.e. a refund was
+            // actually applied — on both chains.
+            expect(seiR.refund > 0n, `Sei refund ${seiR.refund} must be positive`).to.equal(true);
+            expect(gethR.refund > 0n, `geth refund ${gethR.refund} must be positive`).to.equal(true);
+
+            // The clear refund is in the EIP-3529 ballpark (4,800 base; small warm-access
+            // delta puts the observed value just under ~4,900).
+            expect(
+                seiR.refund >= 4_000n && seiR.refund <= 5_000n,
+                `Sei clear refund ${seiR.refund} outside the EIP-3529 band`,
+            ).to.equal(true);
+
+            // Byte-for-byte parity: Sei must charge the same net gas as geth for both
+            // the clear and the dirty write, so the refund itself is identical.
+            expect(seiR.clearGas, 'clear gasUsed parity').to.equal(gethR.clearGas);
+            expect(seiR.dirtyGas, 'dirty gasUsed parity').to.equal(gethR.dirtyGas);
+            expect(seiR.refund, 'refund parity').to.equal(gethR.refund);
         });
     });
 
@@ -504,14 +589,14 @@ describe('EIP behaviours (Sei vs geth)', function () {
 
             const receipt = await (await factory.deploy(salt)).wait();
             const ev = receipt!.logs
-                .map(l => {
+                .map((l: ethers.Log) => {
                     try {
                         return factory.interface.parseLog(l);
                     } catch {
                         return null;
                     }
                 })
-                .find(p => p?.name === 'Deployed');
+                .find((p: ethers.LogDescription | null) => p?.name === 'Deployed');
             expect(ev!.args.addr).to.equal(expected);
             expect(await sei.getCode(expected)).to.not.equal('0x');
         });
