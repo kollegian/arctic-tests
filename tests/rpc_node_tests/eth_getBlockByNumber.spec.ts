@@ -200,7 +200,17 @@ describe('Evm Rpc Tests', function () {
         const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx)), true]);
         expect(blockInfo.transactions.length).to.be.greaterThan(0);
         expect(ethers.toNumber(blockInfo.gasLimit)).to.be.gt(10000000);
-        expect(blockInfo.transactions[0].hash).to.be.eq(failingTxHash);
+        // The failing tx may land with status 0 or be rejected at CheckTx, so iterate
+        // every included tx: reconcile block.gasUsed and assert any revert still burned gas.
+        let totalGasUsed = 0;
+        for (const tx of blockInfo.transactions) {
+            const receipt = await rpcClient.getTransactionReceipt(tx.hash);
+            totalGasUsed += ethers.toNumber(receipt.gasUsed);
+            if (ethers.toNumber(receipt.status) === 0) {
+                expect(ethers.toNumber(receipt.gasUsed), `reverted tx ${tx.hash} burned gas`).to.be.greaterThan(0);
+            }
+        }
+        expect(ethers.toNumber(blockInfo.gasUsed)).to.be.eq(totalGasUsed);
     })
 
     it('Given that heavy txs base gas fee increases on block call', async () =>{
