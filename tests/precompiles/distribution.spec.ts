@@ -1,11 +1,13 @@
 import { ethers, JsonRpcProvider } from "ethers";
 import { expect } from "chai";
-import { QueryClient, StakingExtension, setupStakingExtension, setupDistributionExtension, DistributionExtension } from "@cosmjs/stargate";
+import { QueryClient, StakingExtension, setupStakingExtension, setupDistributionExtension, DistributionExtension, BankExtension, setupBankExtension } from "@cosmjs/stargate";
 import { SeiUser, UserFactory } from "../../shared/User";
 import distrAbi from "./abis/distr_abi.json";
 import stakingAbi from "./abis/staking_abi.json";
-import { returnQueryClient, findValidator, parseRewardsResponse, calculateTotalRewardsAmount, findEvent, waitForRewards } from "./utils";
+import { returnQueryClient, findValidator, parseRewardsResponse, calculateTotalRewardsAmount, findEvent, waitForRewards, moduleAddress, castEvmAddress, castSeiAddress, cosmosUsei } from "./utils";
+import { findModuleAccount } from "./distribution.utils";
 import { waitFor } from "../../shared/utils/helpers";
+import { execCommandAndReturnJson } from "../../shared/utils/cliUtils";
 import crypto from "crypto";
 import testConfig from "../../config/testConfig.json";
 
@@ -23,6 +25,7 @@ describe('Distribution Precompile Tests', function () {
     let stakingContract: any;
     let stakingQueryClient: QueryClient & StakingExtension;
     let distrQueryClient: QueryClient & DistributionExtension;
+    let bankQueryClient: QueryClient & BankExtension;
     let validatorAddress1: string;
     let validatorAddress2: string;
     let provider: JsonRpcProvider;
@@ -40,6 +43,7 @@ describe('Distribution Precompile Tests', function () {
 
         stakingQueryClient = await returnQueryClient(setupStakingExtension) as QueryClient & StakingExtension;
         distrQueryClient = await returnQueryClient(setupDistributionExtension) as QueryClient & DistributionExtension;
+        bankQueryClient = await returnQueryClient(setupBankExtension) as QueryClient & BankExtension;
         console.log('Query clients initialized');
         const validatorsResponse = await stakingQueryClient.staking.validators("BOND_STATUS_BONDED");
         expect(validatorsResponse.validators.length).to.be.gte(2, "At least two validators are required");
@@ -122,6 +126,15 @@ describe('Distribution Precompile Tests', function () {
             expect(parsedEvent?.args[1].toLowerCase()).to.equal(bob.evmAddress.toLowerCase());
         });
 
+        it('Waits for rewards to accumulate and verifies rewards are set to new address and sent to new address', async () => {
+            await waitForRewards(distrContract, alice.evmAddress);
+            const rewards = await distrContract.rewards(alice.evmAddress);
+            const parsedRewards = parseRewardsResponse(rewards);
+            expect(parsedRewards.rewards.length).to.be.gte(2);
+            expect(parsedRewards.rewards.map((r: any) => r.validator_address).sort()).to.deep.equal([validatorAddress1, validatorAddress2]);
+        });
+
+
         it('should allow setting withdraw address back to self', async () => {
             const tx = await distrContract.connect(alice.evmWallet.wallet)
                 .setWithdrawAddress(alice.evmAddress);
@@ -133,6 +146,122 @@ describe('Distribution Precompile Tests', function () {
             const parsedEvent = distrContract.interface.parseLog(event!);
             expect(parsedEvent?.args[1].toLowerCase()).to.equal(alice.evmAddress.toLowerCase());
         });
+
+        it('setWithdrawAddress does NOT auto-withdraw rewards; only an explicit withdraw moves them, and to the new address', async () => {
+            // Verifies a key distribution-module invariant: setting the withdraw address is a
+            // pure config update — it must NOT trigger a reward distribution/withdrawal. We
+            // confirm both halves: (a) after setting the address, pending rewards keep
+            // accruing (never reset to ~0) and the new address is NOT credited; then (b) an
+            // explicit withdraw is what actually moves the rewards, and they land at the
+            // newly-set address. Balances are read from the bank via the CLI (source of
+            // truth), since eth_getBalance carries a synthetic floor on this endpoint.
+            await waitForRewards(distrContract, alice.evmAddress);
+
+            const targetEvm = bob.evmAddress;
+            const targetSei = bob.seiAddress;
+
+            const rewardsBefore = calculateTotalRewardsAmount(parseRewardsResponse(await distrContract.rewards(alice.evmAddress)));
+            const targetBalBefore = await cosmosUsei(bankQueryClient, targetSei);
+            expect(rewardsBefore > 0n, 'alice should have pending rewards before the test').to.equal(true);
+
+            // (a) Setting the withdraw address must not distribute anything.
+            const setTx = await distrContract.connect(alice.evmWallet.wallet).setWithdrawAddress(targetEvm);
+            expect((await setTx.wait()).status).to.equal(1);
+            await waitFor(3); // let a couple of blocks pass
+
+            const rewardsAfterSet = calculateTotalRewardsAmount(parseRewardsResponse(await distrContract.rewards(alice.evmAddress)));
+            const targetBalAfterSet = await cosmosUsei(bankQueryClient, targetSei);
+
+            // Pending rewards kept accruing (NOT reset) and the new address got nothing.
+            expect(
+                rewardsAfterSet >= rewardsBefore,
+                `setWithdrawAddress must not withdraw pending rewards (got ${rewardsBefore} -> ${rewardsAfterSet})`
+            ).to.equal(true);
+            expect(targetBalAfterSet).to.equal(
+                targetBalBefore,
+                `setWithdrawAddress must not credit the new address (got ${targetBalBefore} -> ${targetBalAfterSet})`
+            );
+
+            // (b) An explicit withdraw moves the rewards, and they land at the newly-set address.
+            const wTx = await distrContract.connect(alice.evmWallet.wallet)
+                .withdrawMultipleDelegationRewards([validatorAddress1, validatorAddress2]);
+            expect((await wTx.wait()).status).to.equal(1);
+            await waitFor(3);
+
+            const targetBalAfterWithdraw = await cosmosUsei(bankQueryClient, targetSei);
+            expect(
+                targetBalAfterWithdraw > targetBalAfterSet,
+                `explicit withdraw should credit the new withdraw address (got ${targetBalAfterSet} -> ${targetBalAfterWithdraw})`
+            ).to.equal(true);
+
+            // Cleanup: reset the withdraw address to alice so later suites measure alice's own balance.
+            const resetTx = await distrContract.connect(alice.evmWallet.wallet).setWithdrawAddress(alice.evmAddress);
+            expect((await resetTx.wait()).status).to.equal(1);
+        });
+
+        it('DIVERGENCE: precompile setWithdrawAddress rejects an unassociated address, but the Cosmos path accepts the cast address and it still receives rewards', async () => {
+            // Association is NOT required by the distribution module to be a reward recipient:
+            // a withdraw address can be any (non-blocklisted) account, including the "cast"
+            // (raw-20-byte) Sei address of an unassociated EVM address. HOWEVER, the EVM
+            // precompile's setWithdrawAddress refuses an unassociated EVM address (it cannot
+            // resolve it to a Sei address and reverts). This test pins both halves:
+            //   (A) precompile setWithdrawAddress(unassociated) reverts; and
+            //   (B) the Cosmos MsgSetWithdrawAddress to the cast address succeeds, and a
+            //       subsequent withdraw credits that unassociated address.
+            await waitForRewards(distrContract, alice.evmAddress);
+
+            const unassociatedEvm = ethers.getAddress(ethers.Wallet.createRandom().address);
+            const castSei = castSeiAddress(unassociatedEvm);
+
+            const assocBefore = await execCommandAndReturnJson(`seid q evm evm-addr ${castSei}`);
+            expect(assocBefore.associated, 'withdraw target must be unassociated').to.equal(false);
+
+            // (A) The EVM precompile rejects an unassociated withdraw address.
+            let reverted = false;
+            try {
+                const tx = await distrContract.connect(alice.evmWallet.wallet).setWithdrawAddress(unassociatedEvm);
+                await tx.wait();
+            } catch {
+                reverted = true;
+            }
+            expect(reverted, 'precompile setWithdrawAddress must revert for an unassociated address').to.equal(true);
+
+            // (B) The Cosmos path accepts the cast Sei address of that same unassociated EVM addr.
+            const setRes = await alice.seiWallet.signAndSend(
+                [
+                    {
+                        typeUrl: '/cosmos.distribution.v1beta1.MsgSetWithdrawAddress',
+                        value: { delegatorAddress: alice.seiAddress, withdrawAddress: castSei },
+                    },
+                ],
+                'set withdraw to unassociated cast address'
+            );
+            expect(setRes.code, `Cosmos MsgSetWithdrawAddress failed: ${setRes.rawLog}`).to.equal(0);
+            await waitFor(2);
+
+            const balBefore = await cosmosUsei(bankQueryClient, castSei);
+
+            // Withdraw via the precompile — rewards land at the unassociated cast Sei address.
+            const wTx = await distrContract.connect(alice.evmWallet.wallet)
+                .withdrawMultipleDelegationRewards([validatorAddress1, validatorAddress2]);
+            expect((await wTx.wait()).status).to.equal(1);
+            await waitFor(3);
+
+            const balAfter = await cosmosUsei(bankQueryClient, castSei);
+            expect(
+                balAfter > balBefore,
+                `unassociated address should receive the withdrawn rewards (got ${balBefore} -> ${balAfter})`
+            ).to.equal(true);
+
+            // Receiving rewards must NOT auto-associate the address.
+            const assocAfter = await execCommandAndReturnJson(`seid q evm evm-addr ${castSei}`);
+            expect(assocAfter.associated, 'receiving rewards must not associate the address').to.equal(false);
+
+            // Cleanup: reset the withdraw address to alice for later suites.
+            const resetTx = await distrContract.connect(alice.evmWallet.wallet).setWithdrawAddress(alice.evmAddress);
+            expect((await resetTx.wait()).status).to.equal(1);
+        });
+
     });
 
     describe('Function: withdrawDelegationRewards()', function () {
@@ -536,6 +665,114 @@ describe('Distribution Precompile Tests', function () {
 
             const gasCost = BigInt(withdrawReceipt.gasUsed) * BigInt(withdrawReceipt.gasPrice);
             expect(BigInt(postBalance) >= BigInt(preBalance) - gasCost).to.be.true;
+        });
+    });
+
+    describe('Module account as withdraw address (blocklist)', function () {
+        // A genuine ModuleAccount is blocklisted from receiving funds. The distribution
+        // module additionally guards SetWithdrawAddress ("not allowed to receive external
+        // funds"), so you can never point reward withdrawals at a module account. The
+        // rejection happens at SET time on BOTH the Cosmos and EVM paths — the later
+        // WithdrawDelegatorReward step never gets a chance to fail. Nothing crashes.
+        let moduleAcct: { name: string; address: string };
+        let moduleUseiBaseline: bigint;
+
+        const moduleUsei = async (address: string): Promise<bigint> => {
+            const balResp = await execCommandAndReturnJson(`seid q bank balances ${address} --output json`);
+            const usei = (balResp.balances ?? []).find((c: any) => c.denom === 'usei');
+            return usei ? BigInt(usei.amount) : 0n;
+        };
+
+        before('Resolve a real module account and ensure alice has a delegation', async () => {
+            moduleAcct = await findModuleAccount('gov');
+            // Sanity: the derived address matches the on-chain module address.
+            expect(moduleAddress(moduleAcct.name)).to.equal(moduleAcct.address);
+            // Baseline the module balance. The gov module may already hold orphaned dust
+            // from other suites (e.g. the bank precompile's sendNative-into-module divergence
+            // deposits real usei that module accounting never reclaims), so we assert this
+            // test does not ADD to it — not that it is globally zero.
+            moduleUseiBaseline = await moduleUsei(moduleAcct.address);
+            // alice already delegated in the suite-level before hook; ensure rewards exist.
+            await waitForRewards(distrContract, alice.evmAddress);
+        });
+
+        it('Cosmos: MsgSetWithdrawAddress -> module account is rejected at set time', async () => {
+            const msg = {
+                typeUrl: '/cosmos.distribution.v1beta1.MsgSetWithdrawAddress',
+                value: {
+                    delegatorAddress: alice.seiAddress,
+                    withdrawAddress: moduleAcct.address,
+                },
+            };
+
+            let code = 0;
+            let log = '';
+            try {
+                const res = await alice.seiWallet.signAndSend([msg], 'set module withdraw addr');
+                code = res.code;
+                log = res.rawLog ?? '';
+            } catch (e: any) {
+                code = -1;
+                log = e?.message ?? String(e);
+            }
+            expect(code, `expected rejection, got code=${code} log=${log}`).to.not.equal(0);
+            expect(log.toLowerCase()).to.match(
+                /not allowed to receive (external )?funds|unauthorized|blocked/,
+                `rejection should reference the distribution/bank blocklist: ${log}`
+            );
+
+            // The on-chain withdraw address is unchanged (still alice / not the module).
+            const current = await distrQueryClient.distribution.delegatorWithdrawAddress(alice.seiAddress);
+            expect(current.withdrawAddress).to.not.equal(moduleAcct.address);
+        });
+
+        it('EVM: precompile setWithdrawAddress(moduleCast) reverts; happy-path to a normal address still works', async function () {
+            this.timeout(2 * 60 * 1000);
+            const moduleCast = castEvmAddress(moduleAcct.address);
+
+            // Control: setting a normal EVM address must succeed (status 1).
+            const okTx = await distrContract.connect(alice.evmWallet.wallet).setWithdrawAddress(bob.evmAddress);
+            const okReceipt = await okTx.wait();
+            expect(okReceipt.status).to.equal(1, 'setting a normal withdraw address should succeed');
+
+            // The module cast address must be rejected: either the send throws or it mines
+            // with a revert status. We pass an explicit gasLimit so a rejected tx does not
+            // hang on gas estimation.
+            let rejected = false;
+            let detail = '';
+            try {
+                const badTx = await distrContract
+                    .connect(alice.evmWallet.wallet)
+                    .setWithdrawAddress(moduleCast, { gasLimit: 300000 });
+                const badReceipt = await badTx.wait();
+                rejected = badReceipt.status === 0;
+                detail = `status=${badReceipt.status}`;
+            } catch (e: any) {
+                rejected = true;
+                detail = e?.shortMessage ?? e?.message ?? String(e);
+            }
+            expect(rejected, `expected module-cast withdraw address to be rejected on EVM (${detail})`).to.equal(true);
+
+            // Reset withdraw address back to alice to avoid leaking state into other tests.
+            await (await distrContract.connect(alice.evmWallet.wallet).setWithdrawAddress(alice.evmAddress)).wait();
+        });
+
+        it('Because set is blocked, the withdraw step never targets a module account (no funds ever reach it)', async () => {
+            // Confirm THIS test added nothing to the module: every set/withdraw above refused
+            // it, so its balance must equal the baseline captured before the test (it may be
+            // non-zero due to orphaned dust from other suites, but our blocked actions cannot
+            // have credited it).
+            const amount = await moduleUsei(moduleAcct.address);
+            expect(amount).to.equal(
+                moduleUseiBaseline,
+                `${moduleAcct.name} balance must be unchanged by this test (baseline ${moduleUseiBaseline}, now ${amount})`
+            );
+
+            // And a normal withdraw to alice still works end-to-end, proving the path is healthy.
+            await waitForRewards(distrContract, alice.evmAddress);
+            const tx = await distrContract.connect(alice.evmWallet.wallet).withdrawDelegationRewards(validatorAddress1);
+            const receipt = await tx.wait();
+            expect(receipt.status).to.equal(1, 'a normal reward withdraw should still succeed');
         });
     });
 });

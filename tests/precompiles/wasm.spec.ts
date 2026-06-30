@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import wasmdAbi from "./abis/wasmd_abi.json";
 import {WASM_PRECOMPILE_ADDRESS} from "./constants";
+import {getLatestContractForCode} from "./wasm.utils";
 
 const WASM_FILE = "wasm_store/cw20_base.wasm";
 
@@ -390,11 +391,6 @@ describe("Wasm Precompile Tests", function () {
     });
 
     describe("instantiate()", function () {
-        async function getLatestContractForCode(cId: number): Promise<string> {
-            const contracts = await admin.seiWallet.cosmWasmSigningClient.getContracts(cId);
-            return contracts[contracts.length - 1];
-        }
-
         it("should instantiate a new CW20 contract via the precompile", async () => {
             const contractsBefore = await admin.seiWallet.cosmWasmSigningClient.getContracts(codeId);
 
@@ -456,7 +452,7 @@ describe("Wasm Precompile Tests", function () {
 
             await waitFor(1);
 
-            const newAddr = await getLatestContractForCode(codeId);
+            const newAddr = await getLatestContractForCode(admin, codeId);
 
             const queryMsg = {token_info: {}};
             const queryReq = ethers.toUtf8Bytes(JSON.stringify(queryMsg));

@@ -75,15 +75,14 @@ export class Funder {
     }
 
 
-    async isDocker() {
-        return new Promise(async (resolve, reject) => {
+    async isDocker(): Promise<boolean> {
+        try {
             const {stdout} = await exec('docker ps --filter \'name=sei-node-0\' --format \'{{.Names}}\'');
-            if (stdout.includes('sei-node-0')) {
-                resolve(true);
-            } else {
-                resolve(false);
-            }
-        });
+            return stdout.includes('sei-node-0');
+        } catch {
+            // Docker not installed/running (e.g. when targeting a remote testnet): treat as non-docker.
+            return false;
+        }
     }
 
 }

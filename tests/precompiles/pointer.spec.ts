@@ -115,6 +115,57 @@ describe('Pointer Precompile Tests', function () {
         });
     });
 
+    describe('addCW1155Pointer()', function () {
+        let cw1155Address: string;
+
+        before('Deploy a CW1155 contract', async () => {
+            const cw1155 = await deployer.deployCw1155('wasm_store/cw1155_base.wasm', {
+                name: 'PointerCW1155',
+                symbol: 'PCW1155',
+                minter: admin.seiAddress,
+            }, 'PointerCW1155');
+            cw1155Address = cw1155.getAddress();
+            await waitFor(2);
+        });
+
+        it('Creates a pointer for a CW1155 contract and returns a valid EVM address', async () => {
+            const tx = await pointerContract.addCW1155Pointer(cw1155Address, { gasLimit: 5000000 });
+            const receipt = await tx.wait();
+            expect(receipt).to.not.be.null;
+            expect(receipt!.status).to.equal(1);
+
+            await waitFor(2);
+            const [addr, version, exists] = await pointerViewContract.getCW1155Pointer(cw1155Address);
+            expect(exists).to.equal(true);
+            expect(addr).to.not.equal(ethers.ZeroAddress);
+            expect(addr).to.match(/^0x[0-9a-fA-F]{40}$/);
+        });
+
+        it('Adding pointer for already-pointed CW1155 does not revert and keeps the same address', async () => {
+            const [addrBefore] = await pointerViewContract.getCW1155Pointer(cw1155Address);
+
+            const tx = await pointerContract.addCW1155Pointer(cw1155Address, { gasLimit: 5000000 });
+            const receipt = await tx.wait();
+            expect(receipt).to.not.be.null;
+            expect(receipt!.status).to.equal(1);
+
+            await waitFor(2);
+            const [addrAfter, , exists] = await pointerViewContract.getCW1155Pointer(cw1155Address);
+            expect(exists).to.equal(true);
+            expect(addrAfter).to.equal(addrBefore);
+        });
+
+        it('Reverts for invalid CW1155 address', async () => {
+            try {
+                const tx = await pointerContract.addCW1155Pointer('sei1invalidaddr', { gasLimit: 5000000 });
+                await tx.wait();
+                throw new Error('Should have reverted');
+            } catch (e: any) {
+                expect(e.message).to.not.contain('Should have reverted');
+            }
+        });
+    });
+
     describe('addNativePointer()', function () {
         let denomName: string;
 

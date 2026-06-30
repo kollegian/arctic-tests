@@ -41,6 +41,7 @@ Each suite has its own `.mocharc.json` so it can be run in isolation. The table 
 | `npm run test:rpc-node`      | `tests/rpc_node_tests/.mocharc.json`      | `solo_evm` RPC suites (state endpoints `eth_getBalance` / `eth_getCode` / `eth_getStorageAt` / `eth_getTransactionCount` / `eth_call` / `eth_estimateGas`, and debug endpoints `debug_traceCall` / `debug_traceTransaction` / `debug_traceBlockByNumber`). Load tests are intentionally skipped. | `reports/rpc_node/rpc-node-report.{html,json}` |
 | `npm run test:evm-rpc`       | `tests/evm_rpc/.mocharc.json`             | `tests/evm_rpc/**/*.spec.ts` — additional EVM JSON-RPC coverage                                                                                              | `reports/evm_rpc/evm-rpc-report.{html,json}`   |
 | `npm run test:chain`         | `tests/chain_tests/.mocharc.json`         | Chain-level tx behavior: gas, EIP-1559, tx types, nonce management, tx execution, Pectra (EIP-7702) EOA upgrades                                             | `reports/chain/chain-report.{html,json}`       |
+| `npm run test:mempool`       | `tests/mempool/.mocharc.json`             | Sei mempool semantics: admission (CheckTx), nonce queueing, priority ordering, RPC surface (`txpool_*`, `pending` blockTag, subscriptions), Tendermint↔EVM dual-pool coherency, capacity/TTL (local-only), broadcast (multi-node). See `tests/mempool/README.md`. | `reports/mempool/mempool-report.{html,json}`   |
 
 All configs share the same shape:
 

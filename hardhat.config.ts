@@ -2,7 +2,15 @@ import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.28",
+  solidity: {
+    version: "0.8.28",
+    settings: {
+      // Cancun gives us PUSH0, MCOPY, TSTORE/TLOAD, BLOBHASH and BLOBBASEFEE so the
+      // EIP probe contract can exercise the post-merge/Cancun opcode set Sei targets.
+      evmVersion: "cancun",
+      optimizer: { enabled: true, runs: 200 },
+    },
+  },
   networks: {
     sepolia: {
       url: process.env.SEPOLIA_RPC_URL || "https://sepolia.infura.io/v3/7385403357dc4a5db6401f095a34d4f1",

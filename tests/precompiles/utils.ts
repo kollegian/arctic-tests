@@ -1,6 +1,8 @@
 import util from "node:util";
+import crypto from "crypto";
+import {bech32} from "bech32";
 import {Tendermint34Client} from "@cosmjs/tendermint-rpc";
-import {QueryClient, setupBankExtension, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
+import {BankExtension, QueryClient, setupBankExtension, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
 import {Contract, ethers} from "ethers";
 import {SeiUser} from '../../shared/User';
 import fs from 'fs';
@@ -330,3 +332,32 @@ export const parseValidator = (data: any): Validator => {
         minSelfDelegation: data[13]
     };
 };
+
+// --- Address / module-account helpers (shared across precompile specs) ---
+
+/**
+ * Deterministic Cosmos SDK module-account address: bech32("sei", sha256(name)[:20]).
+ * The derivation is sha256 of the bare module name (no "module" prefix).
+ */
+export function moduleAddress(name: string): string {
+    const hash = crypto.createHash("sha256").update(Buffer.from(name)).digest().slice(0, 20);
+    return bech32.encode("sei", bech32.toWords(hash));
+}
+
+/** Cast EVM address of an unassociated Cosmos account (raw 20 bytes -> 0x). */
+export function castEvmAddress(seiAddress: string): string {
+    const raw = Buffer.from(bech32.fromWords(bech32.decode(seiAddress).words));
+    return ethers.getAddress("0x" + raw.toString("hex"));
+}
+
+/** Cast Sei address of an unassociated EVM account (0x raw 20 bytes -> bech32). */
+export function castSeiAddress(evmAddress: string): string {
+    const raw = Buffer.from(evmAddress.replace(/^0x/, ""), "hex");
+    return bech32.encode("sei", bech32.toWords(raw));
+}
+
+/** Authoritative usei bank balance via the cosmjs bank query client (unlike eth_getBalance). */
+export async function cosmosUsei(bankClient: QueryClient & BankExtension, seiAddress: string): Promise<bigint> {
+    const coin = await bankClient.bank.balance(seiAddress, "usei");
+    return BigInt(coin.amount);
+}

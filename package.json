@@ -4,13 +4,20 @@
   "scripts": {
     "test:modules": "mocha --config tests/modules/.mocharc.json",
     "test:precompiles": "mocha --config tests/precompiles/.mocharc.json",
-    "test:precompiles:gov": "mocha --config tests/precompiles/.mocharc.json --reporter-option reportFilename=precompiles-gov-report tests/precompiles/gov.spec.ts",
+    "test:precompiles:all": "bash scripts/runPrecompiles.sh",
+    "test:precompiles:gov": "mocha --config tests/precompiles/.mocharc.gov.json",
     "test:tokens": "mocha --config tests/tokens/.mocharc.json",
     "test:rpc-node": "mocha --config tests/rpc_node_tests/.mocharc.json",
     "test:evm-rpc": "mocha --config tests/evm_rpc/.mocharc.json",
     "test:chain": "mocha --config tests/chain_tests/.mocharc.json",
+    "test:mempool": "mocha --config tests/mempool/.mocharc.json",
+    "rpc:geth": "geth --dev --http --http.addr 127.0.0.1 --http.port 9547 --http.api eth,net,web3,debug,txpool --dev.period 0 --verbosity 2",
+    "rpc:fork": "hardhat --config tests/new_rpc_tests/hardhat/hardhat.config.ts node --port 9546 --hostname 127.0.0.1",
+    "rpc:bootstrap": "mocha --config tests/new_rpc_tests/.mocharc.bootstrap.json",
+    "rpc:run": "mocha --config tests/new_rpc_tests/.mocharc.run.json",
+    "test:rpc": "npm run rpc:bootstrap && npm run rpc:run",
     "test:reports:merge": "mochawesome-merge \"reports/*/*.json\" -o reports/combined/combined-report.json && marge reports/combined/combined-report.json -o reports/combined --reportFilename combined-report",
-    "test:reported": "(npm run test:precompiles; npm run test:tokens; npm run test:rpc-node; npm run test:evm-rpc; npm run test:modules; npm run test:chain); npm run test:reports:merge"
+    "test:reported": "(npm run test:precompiles; npm run test:tokens; npm run test:rpc-node; npm run test:evm-rpc; npm run test:modules; npm run test:chain; npm run test:mempool); npm run test:reports:merge"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

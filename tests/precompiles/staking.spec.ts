@@ -14,14 +14,9 @@ import {
 import {QueryClient, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
 import crypto from "crypto";
 import {waitFor} from "../../shared/utils/helpers";
+import {decodeGoUnicodeEscapes} from "./staking.utils";
 
 const STAKING_ADDRESS = "0x0000000000000000000000000000000000001005";
-
-function decodeGoUnicodeEscapes(str: string): string {
-    return str.replace(/\\U([0-9a-fA-F]{8})/g, (_, hex: string) =>
-        String.fromCodePoint(parseInt(hex, 16))
-    );
-}
 
 describe('Staking Precompile Tests', function () {
     this.timeout(3 * 60 * 1000);
@@ -99,6 +94,22 @@ describe('Staking Precompile Tests', function () {
                 error = err;
             }
             expect(error).to.not.be.null;
+        });
+
+        it('delegate with a sub-usei wei remainder is rejected (HandlePaymentUsei is exact)', async () => {
+            // Unlike sendNative (usei+wei), the staking/gov payment path rejects any value
+            // that is not a whole number of usei (non-zero wei remainder). 0.02 SEI = 20000
+            // usei exactly; +1 wei introduces a remainder that must be rejected.
+            const valueWithRemainder = ethers.parseEther('0.02') + 1n;
+            let error: any = null;
+            try {
+                const tx = await stakingContract.connect(alice.evmWallet.wallet)
+                    .delegate(validatorAddress1, {value: valueWithRemainder, gasLimit: 1000000});
+                await tx.wait();
+            } catch (err: any) {
+                error = err;
+            }
+            expect(error, 'delegate with a wei remainder must revert').to.not.be.null;
         });
 
         it('Given that users have sufficient funds, users can stake into multiple validators', async () => {
@@ -469,6 +480,40 @@ describe('Staking Precompile Tests', function () {
         });
     });
 
+    describe('DelegationRewardsWithdrawn event', function () {
+        let rewardUser: SeiUser;
+
+        before('fund a fresh delegator and let rewards accrue', async () => {
+            [rewardUser] = await UserFactory.createSeiUsers(admin, 1);
+            const firstDelegate = await stakingContract.connect(rewardUser.evmWallet.wallet)
+                .delegate(validatorAddress1, {value: ethers.parseEther('0.05')});
+            await firstDelegate.wait();
+            // Let the validator earn block rewards before triggering withdrawal.
+            await waitFor(10);
+        });
+
+        it('emits DelegationRewardsWithdrawn on a subsequent delegate to the same validator', async () => {
+            const tx = await stakingContract.connect(rewardUser.evmWallet.wallet)
+                .delegate(validatorAddress1, {value: ethers.parseEther('0.02')});
+            const receipt = await tx.wait();
+            expect(receipt.status).to.equal(1);
+
+            const log = receipt.logs.find((l: any) => {
+                try {
+                    return stakingContract.interface.parseLog(l)?.name === 'DelegationRewardsWithdrawn';
+                } catch (e) { return false; }
+            });
+            expect(log, 'DelegationRewardsWithdrawn event should be emitted on delegate').to.not.be.undefined;
+
+            const parsed = stakingContract.interface.parseLog(log!);
+            // event DelegationRewardsWithdrawn(address indexed delegator, string validator, uint256 amount)
+            expect(parsed?.args[0]).to.eq(rewardUser.evmAddress);
+            expect(parsed?.args[1]).to.eq(validatorAddress1);
+            expect(parsed?.args[2]).to.be.a('bigint');
+            expect(parsed?.args[2] >= 0n, 'withdrawn rewards amount must be non-negative').to.be.true;
+        });
+    });
+
     describe('View Functions', function () {
         // Use a fresh user so the delegate / redelegate / undelegate state for
         // every view-function query is freshly created in this `before` block.
@@ -625,6 +670,42 @@ describe('Staking Precompile Tests', function () {
             expect(valAddrs).to.include(validatorAddress2);
         });
 
+        it('delegatorValidator() should return the single validator for a delegator/validator pair', async () => {
+            const result = await stakingContract.delegatorValidator(viewer.evmAddress, validatorAddress1);
+            const validatorInfo = parseValidator(result);
+            expect(validatorInfo.operatorAddress).to.eq(validatorAddress1);
+
+            // Cross-check against the cosmos query for the same validator.
+            const cosmosResponse = await stakingQueryClient.staking.validator(validatorAddress1);
+            const cosmosVal = cosmosResponse.validator;
+            expect(validatorInfo.operatorAddress).to.eq(cosmosVal?.operatorAddress);
+            expect(validatorInfo.jailed).to.eq(cosmosVal?.jailed);
+            expect(Number(validatorInfo.status)).to.eq(cosmosVal?.status);
+            expect(validatorInfo.minSelfDelegation).to.eq(cosmosVal?.minSelfDelegation);
+        });
+
+        it('historicalInfo() should return validator set recorded at a past height', async () => {
+            // The staking module keeps the last `HistoricalEntries` snapshots; query a
+            // recent committed height so the entry is guaranteed to still be stored.
+            const currentHeight = await admin.seiWallet.signingClient.getHeight();
+            const targetHeight = currentHeight - 5;
+
+            const result = await stakingContract.historicalInfo(targetHeight);
+            // HistoricalInfo tuple: [height, validators[]]
+            expect(Number(result.height ?? result[0])).to.eq(targetHeight);
+
+            const validators = result.validators ?? result[1];
+            expect(validators.length, 'historical validator set should be non-empty').to.be.gt(0);
+
+            // Every entry must be a well-formed validator with a sei valoper operator address.
+            const sample = parseValidator(validators[0]);
+            expect(sample.operatorAddress).to.match(/^seivaloper/);
+
+            // The active set should be consistent with the current bonded validators.
+            const operators = validators.map((v: any) => parseValidator(v).operatorAddress);
+            expect(operators).to.include(validatorAddress1);
+        });
+
         it('delegatorUnbondingDelegations() should return unbonding delegations', async () => {
             const result = await stakingContract.delegatorUnbondingDelegations(viewer.evmAddress, "0x");
             const unbondingDelegationsRaw = result[0];
@@ -657,6 +738,13 @@ describe('Staking Precompile Tests', function () {
         });
 
         it('redelegations() should return redelegations', async () => {
+            // unbonding_time is short on this devnet (~10s); redelegation entries reach their
+            // completion_time and are removed by the EndBlocker within the suite window. So we
+            // create a fresh redelegation here and query it immediately (well under maturation)
+            // rather than relying on the shared `before` state, which may already have matured.
+            await (await stakingContract.connect(viewer.evmWallet.wallet)
+                .redelegate(validatorAddress1, validatorAddress2, redelegatedAmountUsei)).wait();
+
             const result = await stakingContract.redelegations(viewer.seiAddress, validatorAddress1, validatorAddress2, "0x");
             const redelegationsRaw = result[0];
             expect(redelegationsRaw.length).to.be.gte(1);
@@ -667,7 +755,10 @@ describe('Staking Precompile Tests', function () {
             expect(redelegation.validatorDstAddress).to.eq(validatorAddress2);
 
             expect(redelegation.entries.length).to.be.gte(1);
-            const entry = redelegation.entries[0];
+            // Match the entry we just created; older entries may be mid-maturation.
+            const entry = redelegation.entries.find(
+                (e: any) => Number(e.initialBalance) === Number(redelegatedAmountUsei)
+            ) ?? redelegation.entries[redelegation.entries.length - 1];
             expect(Number(entry.initialBalance)).to.be.closeTo(Number(redelegatedAmountUsei), 1);
             expect(Number(entry.sharesDst)).to.be.closeTo(Number(redelegatedAmountUsei), 1);
             expect(Number(entry.creationHeight)).to.be.gt(0);
@@ -675,12 +766,19 @@ describe('Staking Precompile Tests', function () {
         });
 
         it('unbondingDelegation() should return specific unbonding delegation', async () => {
+            // Fresh unbonding queried immediately (entries mature in ~10s on this devnet).
+            await (await stakingContract.connect(viewer.evmWallet.wallet)
+                .undelegate(validatorAddress2, unbondedAmountUsei)).wait();
+
             const result = await stakingContract.unbondingDelegation(viewer.evmAddress, validatorAddress2);
             const unbondingDelegation = parseUnbondingDelegation(result);
             expect(unbondingDelegation).to.exist;
             expect(unbondingDelegation.entries.length).to.be.gte(1);
 
-            const entry = unbondingDelegation.entries[0];
+            // Match the entry we just created; older entries may still be present/maturing.
+            const entry = unbondingDelegation.entries.find(
+                (e: any) => Number(e.balance) === Number(unbondedAmountUsei)
+            ) ?? unbondingDelegation.entries[unbondingDelegation.entries.length - 1];
             expect(Number(entry.balance)).to.eq(Number(unbondedAmountUsei));
             expect(Number(entry.initialBalance)).to.be.gte(Number(entry.balance));
             expect(Number(entry.creationHeight)).to.be.gt(0);
@@ -727,6 +825,11 @@ describe('Staking Precompile Tests', function () {
         });
 
         it('validatorUnbondingDelegations() should return unbonding delegations from a validator', async () => {
+            // Fresh unbonding queried immediately (entries mature in ~10s on this devnet),
+            // so the viewer is guaranteed to have a live entry on validatorAddress2.
+            await (await stakingContract.connect(viewer.evmWallet.wallet)
+                .undelegate(validatorAddress2, unbondedAmountUsei)).wait();
+
             // Same pagination concern as validatorDelegations: on networks with
             // many active unbondings, the viewer's unbonding may be on a later
             // page rather than the first one returned.
@@ -757,7 +860,11 @@ describe('Staking Precompile Tests', function () {
             const unbond = parseUnbondingDelegation(viewerUnbondRaw);
             expect(unbond.validatorAddress).to.eq(validatorAddress2);
             expect(unbond.entries.length).to.be.gte(1);
-            expect(Number(unbond.entries[0].balance)).to.eq(Number(unbondedAmountUsei));
+            // At least one entry must match the amount we just unbonded (others may be maturing).
+            const hasEntry = unbond.entries.some(
+                (e: any) => Number(e.balance) === Number(unbondedAmountUsei)
+            );
+            expect(hasEntry, `expected an unbonding entry of ${unbondedAmountUsei} usei`).to.equal(true);
         });
     });
 });
