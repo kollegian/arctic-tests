@@ -20,13 +20,38 @@ describe('Dynamic RPC queries', function () {
 
     let currentBlock: Block;
     it('Gets current block', async () => {
-        currentBlock = await rpcClient.getBlockByNumber('latest', false);
-        blockNumber = ethers.toQuantity(Math.max(1, Number(currentBlock.number) - 10));
-        let blockData = await rpcClient.getBlockByNumber(blockNumber, false);
-        while (blockData.transactions.length < 6 && Number(blockNumber) > 1) {
-            blockNumber = ethers.toQuantity(Number(blockNumber) - 1);
-            blockData = await rpcClient.getBlockByNumber(blockNumber, false);
+        // debug_traceBlockByNumber on block 1 always fails on Sei (its parent
+        // height 0 has no validator set), so the walk floors at 2.
+        const walkForBusyBlock = async (): Promise<string | null> => {
+            currentBlock = await rpcClient.getBlockByNumber('latest', false);
+            let candidate = Math.max(2, Number(currentBlock.number));
+            let blockData = await rpcClient.getBlockByNumber(ethers.toQuantity(candidate), false);
+            while (blockData.transactions.length < 6 && candidate > 2) {
+                candidate -= 1;
+                blockData = await rpcClient.getBlockByNumber(ethers.toQuantity(candidate), false);
+            }
+            return blockData.transactions.length >= 6 ? ethers.toQuantity(candidate) : null;
+        };
+
+        let selected = await walkForBusyBlock();
+        if (!selected) {
+            // Quiet chain (fresh spin-up, little ambient traffic from earlier
+            // suites): generate the busy block instead of depending on one.
+            // Throwaway users — mnemonics stay unrecorded; the burst is sized
+            // to clear the >=6 threshold even when it straddles blocks, and
+            // retried once in case it still does.
+            const users = await UserFactory.createSeiUsers(admin, 20, false);
+            for (let round = 0; round < 2 && !selected; round++) {
+                const sends = await Promise.allSettled(users.map(user => user.evmWallet.wallet.sendTransaction({to: admin.evmAddress, value: 1})));
+                const submitted = sends.filter((s): s is PromiseFulfilledResult<any> => s.status === 'fulfilled').map(s => s.value);
+                await Promise.allSettled(submitted.map(tx => tx.wait(1, 30_000)));
+                selected = await walkForBusyBlock();
+            }
         }
+        if (!selected) {
+            throw new Error('no block with >=6 txs found, even after generating a tx burst — dynamic RPC tests need a busy block');
+        }
+        blockNumber = selected;
         console.log('Selected block is ', blockNumber);
     });
 

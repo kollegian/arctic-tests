@@ -41,19 +41,61 @@ describe('Evm Rpc Tests', function () {
         console.log('Sent tx number is ', responses.length);
     });
 
-    let multipleSyntheticAndEvmTxs: ExecuteResult;
+    let multipleSyntheticAndEvmTxs: ExecuteResult | undefined;
+
+    // Height of the verified synthetic+EVM block; throws if setup never
+    // established one, so dependents fail loudly instead of on a misleading
+    // assertion.
+    const syntheticEvmBlockHeight = (): number => {
+        if (!multipleSyntheticAndEvmTxs) {
+            throw new Error('synthetic+EVM same-block fixture not established — see the setup test failure');
+        }
+        return multipleSyntheticAndEvmTxs.height;
+    };
+
+    // Poll a tx for its receipt until the deadline — null on timeout. A
+    // transient RPC error counts as not-yet-mined and keeps polling.
+    const pollReceipt = async (hash: string, timeoutSeconds = 15): Promise<any> => {
+        const deadline = Date.now() + timeoutSeconds * 1000;
+        while (Date.now() < deadline) {
+            try {
+                const receipt = await rpcClient.getTransactionReceipt(hash);
+                if (receipt) return receipt;
+            } catch (e) {
+                // transient RPC fault; keep polling
+            }
+            await waitFor(0.25);
+        }
+        return null;
+    };
+
     it('Send multiple synthetic and evm tx in the same block', async () => {
         const encodedTx = erc20.contract.interface.encodeFunctionData('mint', [admin.evmAddress, ethers.parseEther('100000000')]);
-        const signedTxs = await Promise.all(users.map(user => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
-
-        const txPromise = baseCw20.mintMultiple(users.map(user => user.seiAddress), users.map(user => '100000000'))
-        await waitFor(0.2);
-        for (let i = 0; i < signedTxs.length; i++) {
-            await waitFor(0.03);
-            const response = AtomicTxSender.sendRawTransaction(getTestConfig().evmRpcEndpoint, signedTxs[i], admin);
+        // Same-block co-location of concurrent submissions is not a chain
+        // guarantee: broadcast the burst, poll each tx for a receipt, and retry
+        // until >=2 EVM txs share the cosmos tx's block (the eth_ view excludes
+        // synthetic txs, so the assertions on this block need two).
+        const maxRounds = 4;
+        for (let round = 1; round <= maxRounds; round++) {
+            try {
+                const signedTxs = await Promise.all(users.map(user => AtomicTxSender.signEvmTransaction(user, erc20.getAddress(), encodedTx)));
+                const txPromise = baseCw20.mintMultiple(users.map(user => user.seiAddress), users.map(user => '100000000'));
+                const hashes = await AtomicTxSender.sendMultipleEvmTxs(signedTxs, getTestConfig().evmRpcEndpoint, admin);
+                const cosmosResponse = await txPromise;
+                const receipts = await Promise.all(hashes.map(hash => pollReceipt(hash)));
+                const coLocated = receipts.filter(r => r !== null && Number(r.blockNumber) === cosmosResponse.height).length;
+                if (coLocated >= 2) {
+                    multipleSyntheticAndEvmTxs = cosmosResponse;
+                    break;
+                }
+                console.warn(`Round ${round}/${maxRounds}: ${coLocated} EVM txs landed in cosmos block ${cosmosResponse.height}; retrying`);
+            } catch (e) {
+                // e.g. a re-sign at a stale nonce after a receipt-poll timeout —
+                // retry the round with freshly-signed txs rather than aborting
+                console.warn(`Round ${round}/${maxRounds} failed (${e}); retrying`);
+            }
         }
-        multipleSyntheticAndEvmTxs = await txPromise;
-        const txLength = await rpcClient.getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true);
+        const txLength = await rpcClient.getBlockByNumber(ethers.toQuantity(syntheticEvmBlockHeight()), true);
         expect(txLength.transactions.length).to.be.gt(1);
     });
 
@@ -137,10 +179,10 @@ describe('Evm Rpc Tests', function () {
 
     it('Given that there are synthetic and evm events on a block, eth_getBlockByNumber returns gas as expected', async () => {
         const provider = admin.evmWallet.signingClient;
-        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true]);
+        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(syntheticEvmBlockHeight()), true]);
         expect(blockInfo.transactions.length).to.be.greaterThan(0);
         expect(ethers.toNumber(blockInfo.gasLimit)).to.be.gt(100000);
-        console.log(multipleSyntheticAndEvmTxs.height);
+        console.log(syntheticEvmBlockHeight());
         let totalGasUsed = 0;
         let index = 0;
         for (const tx of blockInfo.transactions) {
@@ -153,14 +195,14 @@ describe('Evm Rpc Tests', function () {
 
     it('Given that there are synthetic and txs on a block evm transaction index excludes synthetic txs', async () =>{
         const provider = admin.evmWallet.signingClient;
-        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true]);
+        const blockInfo = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(syntheticEvmBlockHeight()), true]);
         const indexes = blockInfo.transactions.map(tx => ethers.toNumber(tx.transactionIndex));
         expect(indexes.sort((a, b) => b - a)[0]).to.be.eq(blockInfo.transactions.length - 1);
     });
 
     it('Given that there are synthetic and evm tx on a block synthetic tx index includes all txs', async () =>{
         const provider = admin.evmWallet.signingClient;
-        const blockInfo = await provider.send('sei_getBlockByNumber', [ethers.toQuantity(multipleSyntheticAndEvmTxs.height), true]);
+        const blockInfo = await provider.send('sei_getBlockByNumber', [ethers.toQuantity(syntheticEvmBlockHeight()), true]);
         const indexes = blockInfo.transactions.map(tx => ethers.toNumber(tx.transactionIndex));
         expect(indexes.sort((a, b) => b - a)[0]).to.be.eq(blockInfo.transactions.length - 1);
     });
