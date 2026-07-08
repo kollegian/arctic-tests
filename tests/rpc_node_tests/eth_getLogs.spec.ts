@@ -8,6 +8,7 @@ import {AtomicTxSender} from "../../shared/TxBuilder";
 import {waitFor} from "../../shared/utils/helpers";
 import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
 import {TokenDeployer} from "../../shared/Deployer";
+import {expectContiguousBlockLogIndexes, filterLogsByTxHash} from "./logAssertions";
 import fs from "fs";
 
 describe('Evm Rpc Tests', function () {
@@ -29,10 +30,12 @@ describe('Evm Rpc Tests', function () {
     })
 
     let multipleTxReceipt: ContractTransactionReceipt;
+    let multipleTxHashes: string[] = [];
     let txBlocks: Map<string, number> = new Map<string, number>();
     it('Sends multiple evm txs', async () => {
         const responses = await erc20.sendMultipleTxs(users);
         multipleTxReceipt = responses[0];
+        multipleTxHashes = responses.map((response) => response.hash);
         for (const response of responses) {
             expect(response.status).to.be.eq(1);
             if (txBlocks.has(response.blockNumber.toString())) {
@@ -45,6 +48,7 @@ describe('Evm Rpc Tests', function () {
     });
 
     let oneSyntheticOneEvmTx: ContractTransactionReceipt;
+    let oneSyntheticOneEvmTxHashes: string[] = [];
     it('Send a synthetic and evm tx', async () => {
         const encodedData = erc20.contract.interface.encodeFunctionData('transfer', [admin.evmAddress, ethers.parseEther('1')]);
         baseCw20.setSigner(users[1]);
@@ -57,9 +61,16 @@ describe('Evm Rpc Tests', function () {
             rpcClient,
         );
         oneSyntheticOneEvmTx = evmReceipt as ContractTransactionReceipt;
+        // Synthetic logs carry the 0x-prefixed cosmos tx hash as their
+        // transactionHash; the evm receipt here is raw RPC JSON.
+        oneSyntheticOneEvmTxHashes = [
+            (evmReceipt as any).transactionHash,
+            '0x' + cosmosResponse.transactionHash.toLowerCase(),
+        ];
     });
 
     let multipleSyntheticAndOneFailingEvmTx: ExecuteResult;
+    let failingTxHashes: string[] = [];
     it('Sends multiple failing txs', async () => {
         const encoded1 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('10000000000')]);
         const encoded2 = erc20.contract.interface.encodeFunctionData('transfer', [users[2].evmAddress, ethers.parseEther('10000000000')]);
@@ -69,11 +80,15 @@ describe('Evm Rpc Tests', function () {
         // assertion is "no Transfer logs from address=erc20 in the queried
         // range," which holds regardless of where signed2 lands.
         const signed2 = await AtomicTxSender.signEvmTransaction(users[3], erc20.getAddress(), encoded2);
+        failingTxHashes.push(ethers.keccak256(signed2));
         AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed2, admin).catch(() => {});
 
         const { evmReceipt, cosmosResponse } = await AtomicTxSender.sendRawUntilSameBlock(
             async () => {
                 const signed = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encoded1);
+                // tx hash = keccak of the signed raw tx; every retry attempt
+                // broadcasts a fresh failing tx, so capture them all.
+                failingTxHashes.push(ethers.keccak256(signed));
                 return AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signed, admin);
             },
             () => baseCw20.transfer(admin.seiAddress, '100000'),
@@ -112,8 +127,6 @@ describe('Evm Rpc Tests', function () {
             let blockRpc;
             let txIndexes = new Set();
             let logIndexes = new Set();
-            const expectedLogIndexes = new Array(txBlocks.get(blockNumber)).fill(0)
-                .map((_, index) => ethers.toQuantity(index));
             const logParams = {
                 fromBlock: ethers.toQuantity(blockNumber),
                 toBlock: ethers.toQuantity(blockNumber),
@@ -121,13 +134,16 @@ describe('Evm Rpc Tests', function () {
                 address: erc20.getAddress().toString()
             }
             blockRpc = await provider.send('eth_getLogs', [logParams]);
-            expect(blockRpc.length).to.be.eq(txBlocks.get(blockNumber));
+            // Concurrent tests' Transfers on the shared ERC20 can share the
+            // block; count and validate only this test's txs.
+            const ownLogs = filterLogsByTxHash(blockRpc, multipleTxHashes);
+            expect(ownLogs.length).to.be.eq(txBlocks.get(blockNumber));
 
             // Get block details for additional validation
             const blockDetails = await provider.send('eth_getBlockByNumber', [ethers.toQuantity(blockNumber), true]);
             const blockReceipts = await provider.send('eth_getBlockReceipts', [ethers.toQuantity(blockNumber)]);
 
-            for(const topic of blockRpc) {
+            for(const topic of ownLogs) {
                 expect(topic.address.toLowerCase()).to.be.eq(erc20.getAddress().toString().toLowerCase());
                 const parsed = erc20.contract.interface.parseLog(topic) as LogDescription;
                 expect(parsed.name).to.be.eq('Transfer');
@@ -161,14 +177,13 @@ describe('Evm Rpc Tests', function () {
                 txIndexes.add(topic.transactionIndex);
                 logIndexes.add(topic.logIndex);
 
-                // Verify that log indexes start from 0
-                const found = expectedLogIndexes.find(index => index === topic.logIndex);
-                expect(found).to.not.be.undefined;
-
                 console.log(`✅ Log validation passed for tx ${topic.transactionHash}: txIndex=${topic.transactionIndex}, logIndex=${topic.logIndex}`);
             }
             expect(txIndexes.size).to.be.eq(txBlocks.get(blockNumber));
             expect(logIndexes.size).to.be.eq(txBlocks.get(blockNumber));
+            // Verify block logIndexes start at 0 and are gapless — only
+            // assertable on the unfiltered block view.
+            await expectContiguousBlockLogIndexes((filter) => rpcClient.getLogs(filter), ownLogs);
         }
     });
 
@@ -180,7 +195,9 @@ describe('Evm Rpc Tests', function () {
             address: erc20.getAddress()
         }
         const logResponses = await rpcClient.getLogs(logsParams);
-        expect(logResponses.length).to.be.eq(0);
+        // The window is shared chain history — other tests' Transfers can
+        // land in it. The invariant is that the failing txs emitted no logs.
+        expect(filterLogsByTxHash(logResponses, failingTxHashes).length).to.be.eq(0);
     });
 
 
@@ -218,13 +235,16 @@ describe('Evm Rpc Tests', function () {
             topics: [ethers.id('Transfer(address,address,uint256)')],
         }
         const logResponses = await rpcClient.sei_getLogs(logsParams);
-        expect(logResponses.length).to.be.eq(2);
+        // Topic-only filter over a 3-block shared window also returns other
+        // tests' Transfers; scope to this test's evm + synthetic pair.
+        const ownLogs = filterLogsByTxHash(logResponses, oneSyntheticOneEvmTxHashes);
+        expect(ownLogs.length).to.be.eq(2);
     });
 
     it('Can read topics with both erc20 and erc721 events', async () => {
         const deployer = new TokenDeployer(admin);
         const erc721 = await deployer.deployErc721('TestCw721', 'TestCw721', 'http://example.com');
-        await (await erc721.safeMint(admin.evmAddress, '1')).wait();
+        const mintReceipt = await (await erc721.safeMint(admin.evmAddress, '1')).wait();
         const encodedErc20 = erc20.contract.interface.encodeFunctionData('transfer', [users[0].evmAddress, ethers.parseEther('0.1')]);
         const signedErc20 = await AtomicTxSender.signEvmTransaction(users[1], erc20.getAddress(), encodedErc20);
         const encodedErc721 = erc721.contract.interface.encodeFunctionData('approve', [users[0].evmAddress, '1']);
@@ -258,7 +278,19 @@ describe('Evm Rpc Tests', function () {
             ]],
         }
         const logsCombined = await rpcClient.getLogs(combinedLogs);
-        expect(logsCombined.length).to.be.eq(logs.length + logs2.length);
+        // The three queries race ambient activity landing in the shared
+        // window, so the union identity (combined == approvals + transfers)
+        // is only stable on this test's own txs.
+        const ownHashes = [mintReceipt.hash, ...results];
+        const ownApprovals = filterLogsByTxHash(logs, ownHashes);
+        const ownTransfers = filterLogsByTxHash(logs2, ownHashes);
+        const ownCombined = filterLogsByTxHash(logsCombined, ownHashes);
+        // results[0]'s Transfer anchors the window, so it must be visible.
+        expect(filterLogsByTxHash(logs2, [results[0]]).length).to.be.greaterThan(0);
+        // A fully lagged RPC could satisfy the identity vacuously at 0 == 0 + 0;
+        // the anchor transfer defines the window, so at least it must resolve.
+        expect(ownCombined.length).to.be.greaterThan(0);
+        expect(ownCombined.length).to.be.eq(ownApprovals.length + ownTransfers.length);
     });
 
     let multipleTxBlock;
@@ -289,12 +321,13 @@ describe('Evm Rpc Tests', function () {
         };
         const logResponses = await rpcClient.getLogs(logParams);
         fs.writeFileSync('logs.json', JSON.stringify(logResponses, null, 2));
-        expect(logResponses.length).to.be.eq(users.length);
+        // The 105-block window over the shared ERC20 also captures other
+        // tests' Transfers; count and validate only this test's txs.
+        const ownLogs = filterLogsByTxHash(logResponses, results);
+        expect(ownLogs.length).to.be.eq(users.length);
         let txIndexes = new Set();
         let logIndexes = [];
-        const expectedLogIndexes = new Array(users.length).fill(0)
-            .map((_, index) => ethers.toQuantity(index));
-        for(const topic of logResponses) {
+        for(const topic of ownLogs) {
             expect(topic.address.toLowerCase()).to.be.eq(erc20.getAddress().toLowerCase());
             const parsed = erc20.contract.interface.parseLog(topic) as LogDescription;
             expect(parsed.name).to.be.eq('Transfer');
@@ -303,11 +336,12 @@ describe('Evm Rpc Tests', function () {
             txIndexes.add(topic.transactionIndex);
             console.log(topic.transactionIndex);
             logIndexes.push(topic.logIndex);
-            // Verify that log indexes start from 0
-            expect(topic.logIndex).to.be.oneOf(expectedLogIndexes);
         }
         // expect(txIndexes.size).to.be.eq(users.length);
         expect(logIndexes.length).to.be.eq(users.length);
+        // Verify block logIndexes start at 0 and are gapless — only
+        // assertable on the unfiltered block view.
+        await expectContiguousBlockLogIndexes((filter) => rpcClient.getLogs(filter), ownLogs);
     });
 
     let i = 0;
