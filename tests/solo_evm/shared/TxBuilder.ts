@@ -389,6 +389,16 @@ export class TxBuilder {
     };
   }
 
+  /**
+   * EIP-2930 intrinsic gas: 21000 base + 2400 per access-list address +
+   * 1900 per storage key. A bare 21000 limit is always rejected for a
+   * non-empty access list.
+   */
+  static accessListIntrinsicGas(accessList: AccessList): bigint {
+    const keys = accessList.reduce((n, entry) => n + entry.storageKeys.length, 0);
+    return 21000n + 2400n * BigInt(accessList.length) + 1900n * BigInt(keys);
+  }
+
   async buildAccessListTx(
     user: User,
     to: string,
@@ -400,7 +410,7 @@ export class TxBuilder {
     const feeData = await user.provider.getFeeData();
     const nonce = overrides?.nonce ?? await user.getNonce();
     const { chainId } = await user.provider.getNetwork();
-    
+
     return {
       type: 1,
       to,
@@ -408,7 +418,7 @@ export class TxBuilder {
       data,
       nonce,
       gasPrice: overrides?.gasPrice ?? feeData.gasPrice!,
-      gasLimit: overrides?.gasLimit ?? 21000n,
+      gasLimit: overrides?.gasLimit ?? TxBuilder.accessListIntrinsicGas(accessList),
       accessList,
       chainId,
     };
@@ -554,7 +564,7 @@ export class TxBuilder {
         value,
         nonce: nonces[index],
         gasPrice: feeData.gasPrice!,
-        gasLimit: 21000n,
+        gasLimit: TxBuilder.accessListIntrinsicGas(accessList),
         accessList,
         chainId,
       })

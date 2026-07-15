@@ -4,7 +4,7 @@ import { QueryClient, StakingExtension, setupStakingExtension, setupDistribution
 import { SeiUser, UserFactory } from "../../shared/User";
 import distrAbi from "./abis/distr_abi.json";
 import stakingAbi from "./abis/staking_abi.json";
-import { returnQueryClient, findValidator, parseRewardsResponse, calculateTotalRewardsAmount, findEvent, waitForRewards, moduleAddress, castEvmAddress, castSeiAddress, cosmosUsei } from "./utils";
+import { returnQueryClient, findValidator, parseRewardsResponse, calculateTotalRewardsAmount, validatorRewardsAmount, findEvent, waitForRewards, moduleAddress, castEvmAddress, castSeiAddress, cosmosUsei } from "./utils";
 import { findModuleAccount } from "./distribution.utils";
 import { waitFor } from "../../shared/utils/helpers";
 import { execCommandAndReturnJson } from "../../shared/utils/cliUtils";
@@ -155,7 +155,7 @@ describe('Distribution Precompile Tests', function () {
             // explicit withdraw is what actually moves the rewards, and they land at the
             // newly-set address. Balances are read from the bank via the CLI (source of
             // truth), since eth_getBalance carries a synthetic floor on this endpoint.
-            await waitForRewards(distrContract, alice.evmAddress);
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: [validatorAddress1, validatorAddress2] });
 
             const targetEvm = bob.evmAddress;
             const targetSei = bob.seiAddress;
@@ -208,7 +208,7 @@ describe('Distribution Precompile Tests', function () {
             //   (A) precompile setWithdrawAddress(unassociated) reverts; and
             //   (B) the Cosmos MsgSetWithdrawAddress to the cast address succeeds, and a
             //       subsequent withdraw credits that unassociated address.
-            await waitForRewards(distrContract, alice.evmAddress);
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: [validatorAddress1, validatorAddress2] });
 
             const unassociatedEvm = ethers.getAddress(ethers.Wallet.createRandom().address);
             const castSei = castSeiAddress(unassociatedEvm);
@@ -266,13 +266,19 @@ describe('Distribution Precompile Tests', function () {
 
     describe('Function: withdrawDelegationRewards()', function () {
         before('Wait for rewards to accumulate', async () => {
-            await waitForRewards(distrContract, alice.evmAddress);
+            // Earlier tests drain ALL rewards; the total across validators can go non-zero
+            // again while validator1's individual share still rounds to zero (withdrawing
+            // zero reverts). Wait for validator1 specifically, then let a few more blocks
+            // of rewards accrue so the pre-withdraw snapshot dwarfs post-withdraw accrual.
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: validatorAddress1 });
+            await waitFor(5);
         });
 
         it('should withdraw delegation rewards for a single validator with balance verification', async () => {
             const preBalance = await alice.evmWallet.queryBalance();
             const preRewards = parseRewardsResponse(await distrContract.rewards(alice.evmAddress));
-            const totalPreRewards = calculateTotalRewardsAmount(preRewards);
+            const preValidatorRewards = validatorRewardsAmount(preRewards, validatorAddress1);
+            expect(preValidatorRewards > BigInt(0)).to.be.true;
 
             const tx = await distrContract.connect(alice.evmWallet.wallet)
                 .withdrawDelegationRewards(validatorAddress1);
@@ -287,11 +293,15 @@ describe('Distribution Precompile Tests', function () {
 
             const postBalance = await alice.evmWallet.queryBalance();
             const postRewards = parseRewardsResponse(await distrContract.rewards(alice.evmAddress));
-            const totalPostRewards = calculateTotalRewardsAmount(postRewards);
+            // Compare only validator1's share: validator2's rewards keep accruing during
+            // the test and would mask the withdrawal in the cross-validator total.
+            const postValidatorRewards = validatorRewardsAmount(postRewards, validatorAddress1);
 
             const gasCost = BigInt(receipt.gasUsed) * BigInt(receipt.gasPrice);
             expect(BigInt(postBalance) >= BigInt(preBalance) - gasCost).to.be.true;
-            expect(totalPostRewards < totalPreRewards).to.be.true;
+            expect(postValidatorRewards < preValidatorRewards,
+                `validator1 rewards should drop after withdrawal (got ${preValidatorRewards} -> ${postValidatorRewards})`
+            ).to.be.true;
         });
 
         it('should fail to withdraw rewards from invalid validator', async () => {
@@ -317,7 +327,9 @@ describe('Distribution Precompile Tests', function () {
 
     describe('Function: withdrawMultipleDelegationRewards()', function () {
         before('Wait for rewards to accumulate', async () => {
-            await waitForRewards(distrContract, alice.evmAddress);
+            // Withdrawing when any listed validator's share is zero reverts, so wait
+            // until BOTH validators have pending rewards.
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: [validatorAddress1, validatorAddress2] });
         });
 
         it('should withdraw delegation rewards from multiple validators with balance verification', async () => {
@@ -369,62 +381,7 @@ describe('Distribution Precompile Tests', function () {
         });
     });
 
-    describe.skip('Function: withdrawValidatorCommission()', function () {
-        before('Create a validator for commission tests', async function () {
-            this.timeout(3 * 60 * 1000);
-
-            await UserFactory.fundAddressOnSei(validatorOperator.seiAddress, 'usei', '10000000000');
-            await waitFor(2);
-
-            const ed = require('ed25519-supercop');
-            const seed = Buffer.alloc(32);
-            crypto.randomFillSync(seed);
-            const kp = ed.createKeyPair(seed);
-            operatorPubkey = kp.publicKey.toString('hex');
-
-            try {
-                const tx = await stakingContract.connect(validatorOperator.evmWallet.wallet)
-                    .createValidator(
-                        operatorPubkey, "TestDistValidator", "0.10", "0.20", "0.05", "100000",
-                        { value: ethers.parseEther('5'), gasLimit: 1000000 }
-                    );
-                const receipt = await tx.wait();
-                expect(receipt.status).to.equal(1);
-
-                const validators = await stakingQueryClient.staking.validators('BOND_STATUS_BONDED');
-                const newValidator = findValidator(validators, operatorPubkey);
-                createdValidatorAddress = newValidator?.operatorAddress as string;
-
-                const delegateTx = await stakingContract.connect(alice.evmWallet.wallet)
-                    .delegate(createdValidatorAddress, { value: ethers.parseEther('0.5') });
-                await delegateTx.wait();
-                await waitFor(15);
-            } catch (e: any) {
-                console.log("Validator creation failed:", e.message);
-                this.skip();
-            }
-        });
-
-        it('should withdraw validator commission with balance verification', async function () {
-            if (!createdValidatorAddress) this.skip();
-
-            const preBalance = await validatorOperator.evmWallet.queryBalance();
-
-            const tx = await distrContract.connect(validatorOperator.evmWallet.wallet)
-                .withdrawValidatorCommission();
-            const receipt = await tx.wait();
-            expect(receipt.status).to.equal(1);
-
-            const event = findEvent(receipt, distrContract, 'ValidatorCommissionWithdrawn');
-            if (event) {
-                const parsedEvent = distrContract.interface.parseLog(event!);
-                expect(parsedEvent?.args[1]).to.be.a('bigint');
-            }
-
-            const postBalance = await validatorOperator.evmWallet.queryBalance();
-            expect(BigInt(postBalance) >= BigInt(preBalance) - BigInt(receipt.gasUsed) * BigInt(receipt.gasPrice)).to.be.true;
-        });
-
+    describe('Function: withdrawValidatorCommission()', function () {
         it('should fail to withdraw commission for non-validator', async () => {
             let error = null;
             try {
@@ -434,11 +391,71 @@ describe('Distribution Precompile Tests', function () {
             } catch (err: any) { error = err; }
             expect(error).to.not.be.null;
         });
+
+        // The positive flow needs a validator whose operator key we control, which
+        // means creating one on-chain. Validators cannot be deleted afterwards, so
+        // this stays disabled against shared networks like arctic-1.
+        describe.skip('with a dedicated validator (do not run on shared networks)', function () {
+            before('Create a validator for commission tests', async function () {
+                this.timeout(3 * 60 * 1000);
+
+                await UserFactory.fundAddressOnSei(validatorOperator.seiAddress, 'usei', '10000000000');
+                await waitFor(2);
+
+                const ed = require('ed25519-supercop');
+                const seed = Buffer.alloc(32);
+                crypto.randomFillSync(seed);
+                const kp = ed.createKeyPair(seed);
+                operatorPubkey = kp.publicKey.toString('hex');
+
+                try {
+                    const tx = await stakingContract.connect(validatorOperator.evmWallet.wallet)
+                        .createValidator(
+                            operatorPubkey, "TestDistValidator", "0.10", "0.20", "0.05", "100000",
+                            { value: ethers.parseEther('5'), gasLimit: 1000000 }
+                        );
+                    const receipt = await tx.wait();
+                    expect(receipt.status).to.equal(1);
+
+                    const validators = await stakingQueryClient.staking.validators('BOND_STATUS_BONDED');
+                    const newValidator = findValidator(validators, operatorPubkey);
+                    createdValidatorAddress = newValidator?.operatorAddress as string;
+
+                    const delegateTx = await stakingContract.connect(alice.evmWallet.wallet)
+                        .delegate(createdValidatorAddress, { value: ethers.parseEther('0.5') });
+                    await delegateTx.wait();
+                    await waitFor(15);
+                } catch (e: any) {
+                    console.log("Validator creation failed:", e.message);
+                    this.skip();
+                }
+            });
+
+            it('should withdraw validator commission with balance verification', async function () {
+                if (!createdValidatorAddress) this.skip();
+
+                const preBalance = await validatorOperator.evmWallet.queryBalance();
+
+                const tx = await distrContract.connect(validatorOperator.evmWallet.wallet)
+                    .withdrawValidatorCommission();
+                const receipt = await tx.wait();
+                expect(receipt.status).to.equal(1);
+
+                const event = findEvent(receipt, distrContract, 'ValidatorCommissionWithdrawn');
+                if (event) {
+                    const parsedEvent = distrContract.interface.parseLog(event!);
+                    expect(parsedEvent?.args[1]).to.be.a('bigint');
+                }
+
+                const postBalance = await validatorOperator.evmWallet.queryBalance();
+                expect(BigInt(postBalance) >= BigInt(preBalance) - BigInt(receipt.gasUsed) * BigInt(receipt.gasPrice)).to.be.true;
+            });
+        });
     });
 
     describe('Event Verification', function () {
         it('should emit correct event structure for DelegationRewardsWithdrawn', async () => {
-            await waitForRewards(distrContract, alice.evmAddress);
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: validatorAddress1 });
 
             const tx = await distrContract.connect(alice.evmWallet.wallet)
                 .withdrawDelegationRewards(validatorAddress1);
@@ -455,7 +472,9 @@ describe('Distribution Precompile Tests', function () {
         });
 
         it('should emit correct event structure for MultipleDelegationRewardsWithdrawn', async () => {
-            await waitForRewards(distrContract, alice.evmAddress);
+            // The previous test just drained validator1; wait until BOTH validators
+            // have pending rewards again or the multi-withdraw reverts.
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: [validatorAddress1, validatorAddress2] });
 
             const validators = [validatorAddress1, validatorAddress2];
             const tx = await distrContract.connect(alice.evmWallet.wallet)
@@ -574,7 +593,7 @@ describe('Distribution Precompile Tests', function () {
         });
 
         it('should verify log count matches transaction receipts', async () => {
-            await waitForRewards(distrContract, alice.evmAddress);
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: validatorAddress1 });
 
             const tx = await distrContract.connect(alice.evmWallet.wallet)
                 .withdrawDelegationRewards(validatorAddress1);
@@ -620,7 +639,7 @@ describe('Distribution Precompile Tests', function () {
 
     describe('Integration: Withdraw Address Flow', function () {
         it('should withdraw rewards to custom address when withdraw address is set', async () => {
-            await waitForRewards(distrContract, alice.evmAddress);
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: validatorAddress1 });
 
             const bobPreBalance = await bob.evmWallet.queryBalance();
 
@@ -646,8 +665,16 @@ describe('Distribution Precompile Tests', function () {
                 .delegate(validatorAddress1, { value: delegateAmount });
             await delegateTx.wait();
 
-            const totalRewardsAmount = await waitForRewards(distrContract, testUser.evmAddress);
+            const totalRewardsAmount = await waitForRewards(distrContract, testUser.evmAddress, { validatorAddress: validatorAddress1 });
             expect(totalRewardsAmount > BigInt(0)).to.be.true;
+
+            // Let rewards grow well past the first non-zero snapshot: the post-withdraw
+            // query races fresh accrual, so the pre snapshot (taken right before the
+            // withdraw) must represent a much longer accrual window than 1-2 blocks.
+            await waitFor(10);
+            const preRewards = parseRewardsResponse(await distrContract.rewards(testUser.evmAddress));
+            const totalPreRewards = calculateTotalRewardsAmount(preRewards);
+            expect(totalPreRewards > BigInt(0)).to.be.true;
 
             const preBalance = await testUser.evmWallet.queryBalance();
             const withdrawTx = await distrContract.connect(testUser.evmWallet.wallet)
@@ -661,7 +688,9 @@ describe('Distribution Precompile Tests', function () {
             const postRewards = parseRewardsResponse(await distrContract.rewards(testUser.evmAddress));
             const totalPostRewards = calculateTotalRewardsAmount(postRewards);
 
-            expect(totalPostRewards < totalRewardsAmount).to.be.true;
+            expect(totalPostRewards < totalPreRewards,
+                `rewards should drop after withdrawal (got ${totalPreRewards} -> ${totalPostRewards})`
+            ).to.be.true;
 
             const gasCost = BigInt(withdrawReceipt.gasUsed) * BigInt(withdrawReceipt.gasPrice);
             expect(BigInt(postBalance) >= BigInt(preBalance) - gasCost).to.be.true;
@@ -769,7 +798,7 @@ describe('Distribution Precompile Tests', function () {
             );
 
             // And a normal withdraw to alice still works end-to-end, proving the path is healthy.
-            await waitForRewards(distrContract, alice.evmAddress);
+            await waitForRewards(distrContract, alice.evmAddress, { validatorAddress: validatorAddress1 });
             const tx = await distrContract.connect(alice.evmWallet.wallet).withdrawDelegationRewards(validatorAddress1);
             const receipt = await tx.wait();
             expect(receipt.status).to.equal(1, 'a normal reward withdraw should still succeed');

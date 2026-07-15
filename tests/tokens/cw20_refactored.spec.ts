@@ -8,8 +8,11 @@ import {EvmRpcClient} from "../../shared/RpcClient";
 import {ContractTransactionReceipt, ethers, TransactionReceipt} from "ethers";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {erc20} from "../../typechain-types/@openzeppelin/contracts/token";
+import {isWasmEnabled} from "../../shared/utils/testFlags";
 
-describe('Cw20 Tests', function () {
+// The whole suite depends on a freshly deployed CW20 contract, which is
+// impossible on nodes where wasm is disabled (e.g. testnet).
+(isWasmEnabled() ? describe : describe.skip)('Cw20 Tests', function () {
     this.timeout(10 * 60 * 1000);
     let users: SeiUser[];
     let admin: SeiUser;

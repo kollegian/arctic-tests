@@ -14,9 +14,51 @@ export function expectTxSuccess(tx: DeliverTxResponse | ExecuteResult | { code?:
 export function expectTxFailure(tx: DeliverTxResponse | { code?: number; rawLog?: string; raw_log?: string }, expectedMessage?: string) {
   expect(tx.code, 'transaction should fail').to.not.eq(0);
   if (expectedMessage) {
-    const rawLog = tx.rawLog ?? tx.raw_log ?? '';
+    const failed = tx as MaybeTxResult;
+    const rawLog = failed.rawLog ?? failed.raw_log ?? '';
     expect(rawLog, 'failure log').to.contain(expectedMessage);
   }
+}
+
+type MaybeTxResult = { code?: number; rawLog?: string; raw_log?: string };
+
+/**
+ * Awaits an operation that is expected to fail and fails the test if it
+ * succeeds. Handles both failure modes of cosmjs/CLI flows: a rejected
+ * promise (CheckTx errors, exec failures) and a resolved DeliverTxResponse
+ * carrying a non-zero code. Never use `expect.fail` inside a `try` whose own
+ * `catch` asserts on the error — the AssertionError gets swallowed and the
+ * test passes vacuously; use this helper instead.
+ *
+ * Returns the failure message (error message or raw log) for further
+ * assertions at the call site.
+ */
+export async function expectFailure(
+  operation: Promise<unknown>,
+  expectedMessage?: string,
+  label = 'operation'
+): Promise<string> {
+  let result: unknown;
+  try {
+    result = await operation;
+  } catch (e: any) {
+    const message: string = e?.message ?? String(e);
+    if (expectedMessage) {
+      expect(message, `${label} failure message`).to.contain(expectedMessage);
+    }
+    return message;
+  }
+
+  const tx = result as MaybeTxResult | null | undefined;
+  if (tx && typeof tx.code === 'number' && tx.code !== 0) {
+    const rawLog = tx.rawLog ?? tx.raw_log ?? '';
+    if (expectedMessage) {
+      expect(rawLog, `${label} failure log`).to.contain(expectedMessage);
+    }
+    return rawLog;
+  }
+
+  return expect.fail(`${label} should have failed but succeeded`);
 }
 
 export function expectUseiCoin(coin: { denom?: string; amount?: string }, expectedAmount?: string | number | bigint) {

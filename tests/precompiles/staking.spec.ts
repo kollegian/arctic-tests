@@ -525,8 +525,12 @@ describe('Staking Precompile Tests', function () {
         // Amounts in usei after the staking flow below:
         // validatorAddress1: 40000 - 5000 (redelegated) = 35000
         // validatorAddress2: 20000 + 5000 (redelegated) - 1000 (unbonded) = 24000
-        const delegatedToVal1Usei = 35000;
-        const delegatedToVal2Usei = 24000;
+        // Mutable on purpose: some view tests create fresh redelegations /
+        // unbondings mid-suite (the shared `before` state matures in ~10s on
+        // this devnet), and they must keep these trackers in sync so later
+        // assertions compare against the actual remaining delegation.
+        let delegatedToVal1Usei = 35000;
+        let delegatedToVal2Usei = 24000;
         const redelegatedAmountUsei = '5000';
         const unbondedAmountUsei = '1000';
 
@@ -563,7 +567,12 @@ describe('Staking Precompile Tests', function () {
                 const delegation = result[1];
                 expect(delegation.validator_address).to.eq(validatorAddress1);
                 expect(delegation.delegator_address).to.eq(viewer.seiAddress);
+                // Confirm against both the tracked expected amount and the live cosmos query
                 expect(Number(balance.amount)).to.be.closeTo(delegatedToVal1Usei, 1);
+                const cosmosDelegation = await stakingQueryClient.staking.delegation(
+                    viewer.seiAddress, validatorAddress1
+                );
+                expect(balance.amount.toString()).to.eq(cosmosDelegation.delegationResponse?.balance.amount);
                 expect(balance.denom).to.eq('usei');
                 expect(BigInt(delegation.shares) > 0n, 'delegation shares should be positive').to.be.true;
             });
@@ -744,6 +753,8 @@ describe('Staking Precompile Tests', function () {
             // rather than relying on the shared `before` state, which may already have matured.
             await (await stakingContract.connect(viewer.evmWallet.wallet)
                 .redelegate(validatorAddress1, validatorAddress2, redelegatedAmountUsei)).wait();
+            delegatedToVal1Usei -= Number(redelegatedAmountUsei);
+            delegatedToVal2Usei += Number(redelegatedAmountUsei);
 
             const result = await stakingContract.redelegations(viewer.seiAddress, validatorAddress1, validatorAddress2, "0x");
             const redelegationsRaw = result[0];
@@ -769,6 +780,7 @@ describe('Staking Precompile Tests', function () {
             // Fresh unbonding queried immediately (entries mature in ~10s on this devnet).
             await (await stakingContract.connect(viewer.evmWallet.wallet)
                 .undelegate(validatorAddress2, unbondedAmountUsei)).wait();
+            delegatedToVal2Usei -= Number(unbondedAmountUsei);
 
             const result = await stakingContract.unbondingDelegation(viewer.evmAddress, validatorAddress2);
             const unbondingDelegation = parseUnbondingDelegation(result);
@@ -821,7 +833,12 @@ describe('Staking Precompile Tests', function () {
 
             expect(totalSeen).to.be.gte(1);
             expect(viewerDelegation, `Viewer's delegation not found across ${totalSeen} delegations on validator ${validatorAddress1}`).to.not.be.undefined;
+            // Confirm against both the tracked expected amount and the live cosmos query
             expect(Number(viewerDelegation[0][0])).to.be.closeTo(delegatedToVal1Usei, 1);
+            const cosmosDelegation = await stakingQueryClient.staking.delegation(
+                viewer.seiAddress, validatorAddress1
+            );
+            expect(viewerDelegation[0][0].toString()).to.eq(cosmosDelegation.delegationResponse?.balance.amount);
         });
 
         it('validatorUnbondingDelegations() should return unbonding delegations from a validator', async () => {
@@ -829,6 +846,7 @@ describe('Staking Precompile Tests', function () {
             // so the viewer is guaranteed to have a live entry on validatorAddress2.
             await (await stakingContract.connect(viewer.evmWallet.wallet)
                 .undelegate(validatorAddress2, unbondedAmountUsei)).wait();
+            delegatedToVal2Usei -= Number(unbondedAmountUsei);
 
             // Same pagination concern as validatorDelegations: on networks with
             // many active unbondings, the viewer's unbonding may be on a later

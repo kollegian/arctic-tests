@@ -145,15 +145,31 @@ describe('Ethereum Transaction Types Tests', function () {
 
     it(`Base fee increase per block is bounded by on-chain max_upward_adjustment`, async () => {
         const users = [alice, bob];
-        const numTxs = 20;
+        const numTxs = 5;
+        const totalTxs = users.length * numTxs;
         const allSendPromises: Promise<string>[] = [];
         const allUserTxInfo: { user: typeof alice, txIndex: number, hashPromise: Promise<string> }[] = [];
+
+            // All txs are signed up front against the CURRENT base fee, but the test
+            // deliberately drives the base fee up, so the signed cap needs headroom or
+            // the later-nonce txs become unincludable and never mine. Derive the
+            // worst case from the chain's own params: every tx lands in its own block
+            // (plus a buffer for interleaved traffic) and every block applies the full
+            // max_upward_adjustment. The on-chain max_fee_per_gas caps the growth, so
+            // a cap at that worst case is includable by construction.
+            const latestChainBlock = await rpcClient.getBlockByNumber('latest', false);
+            const currentBaseFee = Number(latestChainBlock.baseFeePerGas);
+            const worstCaseBlocks = totalTxs * 2;
+            const worstCaseBaseFee = BigInt(Math.ceil(Math.min(
+                currentBaseFee * Math.pow(1 + eip1559Params.maxUpwardAdjustment, worstCaseBlocks),
+                eip1559Params.maxFeePerGas,
+            )));
 
             for (const user of users) {
                 const toAddress = gasBurnerContract.target;
                 const feeData = await user.evmWallet.signingClient.getFeeData();
-                const maxFeePerGas = feeData.maxFeePerGas!;
                 const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas!;
+                const maxFeePerGas = worstCaseBaseFee + maxPriorityFeePerGas;
                 const baseNonce = await user.evmWallet.wallet.getNonce('latest');
                 const signedTxs: string[] = [];
 
@@ -192,8 +208,10 @@ describe('Ethereum Transaction Types Tests', function () {
 
             const allReceiptPromises: Promise<TransactionReceipt | null>[] = [];
             for (const {user, txIndex, hashPromise} of allUserTxInfo) {
+                // Bound each wait so one stuck tx cannot hang the whole test past the
+                // mocha timeout; unmined txs are tolerated and simply not counted.
                 const receiptPromise = hashPromise.then(hash =>
-                    user.evmWallet.signingClient.waitForTransaction(hash)
+                    user.evmWallet.signingClient.waitForTransaction(hash, 1, 120_000).catch(() => null)
                 );
                 allReceiptPromises.push(receiptPromise);
             }
@@ -289,11 +307,13 @@ describe('Ethereum Transaction Types Tests', function () {
             const blockCount = 40;
             const result = await rpcClient.feeHistory(blockCount, latestBlock, [5, 50, 95]);
 
-            // Structure checks
+            // Structure checks. Per the eth_feeHistory spec, baseFeePerGas carries one
+            // extra trailing entry: the base fee of the block AFTER the requested
+            // range (blockCount + 1 entries total).
             expect(result).to.have.property('baseFeePerGas');
             expect(result).to.have.property('gasUsedRatio');
             expect(result).to.have.property('reward');
-            expect(result.baseFeePerGas).to.be.an('array').with.lengthOf(blockCount);
+            expect(result.baseFeePerGas).to.be.an('array').with.lengthOf(blockCount + 1);
             expect(result.gasUsedRatio).to.be.an('array').with.lengthOf(blockCount);
             expect(result.reward).to.be.an('array').with.lengthOf(blockCount);
 

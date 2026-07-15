@@ -8,6 +8,7 @@ import { waitFor } from '../../shared/utils/helpers';
 import { Erc20Token } from '../../shared/Token';
 import testConfig from '../../config/testConfig.json';
 import { coins } from '@cosmjs/amino';
+import { buildWasmExecuteMsg, ensureCw20Balance, existingWasmAddresses } from './existingWasm';
 
 describe('Transaction Execution Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -730,34 +731,17 @@ describe('Transaction Execution Tests', function () {
 
     describe('Cosmos - Wasm Contract Execution', function () {
         let cw20Address: string;
-        const WASM_FILE = 'wasm_store/cw20_base.wasm';
 
-        before('Deploy CW20 for wasm execution tests', async () => {
-            const cw20 = await deployer.deployCw20(WASM_FILE, {
-                name: 'TxExecWasm',
-                symbol: 'TXW',
-                decimals: 6,
-                initial_balances: [
-                    { address: admin.seiAddress, amount: '1000000000' },
-                    { address: alice.seiAddress, amount: '1000000000' },
-                ],
-                mint: { minter: admin.seiAddress },
-            }, 'TxExecWasm_' + Date.now());
-            cw20Address = cw20.getAddress();
-            await waitFor(2);
+        before('Resolve the existing CW20 and seed alice with tokens', async function () {
+            // No wasm store/instantiate here: run against a contract that already
+            // exists on this network (uploads are slow/expensive on live chains).
+            const existing = existingWasmAddresses().cw20Address;
+            if (!existing) this.skip();
+            cw20Address = existing;
+            // alice is a fresh account each run; the admin is the CW20's minter,
+            // so top her up with enough tokens for the transfers below.
+            await ensureCw20Balance(admin, cw20Address, alice, 1_000_000n);
         });
-
-        function buildWasmExecuteMsg(sender: string, contract: string, wasmMsg: object) {
-            return {
-                typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
-                value: {
-                    sender,
-                    contract,
-                    msg: Buffer.from(JSON.stringify(wasmMsg)),
-                    funds: [],
-                },
-            };
-        }
 
         it('Wasm CW20 transfer succeeds with sufficient gas', async () => {
             const feeAmount = 100000;

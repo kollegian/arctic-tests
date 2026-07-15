@@ -434,11 +434,14 @@ describe('Bank Precompile Tests', function () {
             expect(moduleAccounts.length, 'chain should expose ModuleAccounts').to.be.greaterThan(0);
         });
 
-        it('Real module accounts are unassociated and their balance is readable via the precompile cast address', async () => {
-            // Genuine ModuleAccounts (staking pools, evm, gov, transfer, tokenfactory) are
-            // never EVM-associated. The bank precompile must still report their usei balance
-            // via the cast (raw-20-byte) EVM address, matching the Cosmos bank query exactly.
-            // Also sanity-check the derivation: sha256(name)[:20] reproduces the on-chain addr.
+        it('Unassociated module accounts are readable via the precompile cast address', async () => {
+            // The bank precompile must report a module account's usei balance via the cast
+            // (raw-20-byte) EVM address, matching the Cosmos bank query exactly. Also
+            // sanity-check the derivation: sha256(name)[:20] reproduces the on-chain addr.
+            // NOTE: on live networks the chain associates SOME module accounts itself
+            // (e.g. fee_collector on arctic-1 receives EVM fees); the cast-address
+            // identity only holds pre-association, so associated modules are skipped.
+            let unassociated = 0;
             for (const m of moduleAccounts) {
                 expect(moduleAddress(m.name)).to.equal(
                     m.address,
@@ -446,7 +449,8 @@ describe('Bank Precompile Tests', function () {
                 );
 
                 const assoc = await execCommandAndReturnJson(`seid q evm evm-addr ${m.address}`);
-                expect(assoc.associated, `${m.name} should be unassociated`).to.equal(false);
+                if (assoc.associated) continue;
+                unassociated++;
 
                 const cast = castEvmAddress(m.address);
                 const viaPrecompile = await bankContract.balance(cast, 'usei');
@@ -456,6 +460,7 @@ describe('Bank Precompile Tests', function () {
                     `${m.name}: precompile cast-address balance vs Cosmos bank query`
                 );
             }
+            expect(unassociated, 'at least one unassociated module account should exist').to.be.greaterThan(0);
         });
 
         it('Staking-pool module accounts hold real balances; bank/precompile agree', async () => {
@@ -961,7 +966,8 @@ describe('Bank Precompile Tests', function () {
         let castOfAdmin: string;
 
         before('confirm admin is associated and derive its cast address', async () => {
-            const assoc = await execCommandAndReturnJson(`seid q evm evm-addr ${admin.evmAddress}`);
+            // `evm-addr` expects a bech32 Sei address; for a 0x address use `sei-addr`.
+            const assoc = await execCommandAndReturnJson(`seid q evm sei-addr ${admin.evmAddress}`);
             expect(assoc.associated, 'admin must be associated for this test').to.equal(true);
             castOfAdmin = castSeiAddress(admin.evmAddress);
             // The cast address must differ from the real (pubkey-derived) Sei address.

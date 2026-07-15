@@ -18,7 +18,6 @@ const DEFAULT_GAS = '500000';
 const SMALL_STAKE_AMOUNT = '10';
 const STANDARD_STAKE_AMOUNT = '10000';
 const USEI_DENOM = 'usei';
-const CLI_CHAIN_ID = 'sei';
 const SIGN_CHAIN_ID = 'sei-chain';
 const restEndpoint = moduleRestEndpoint;
 
@@ -100,7 +99,6 @@ const queryStakingHistoricalInfo = (height: number) =>
 describe('Staking Tests', function () {
   this.timeout(4 * 60 * 1000);
   let admin: SeiUser;
-  let alice: SeiUser;
   let eve: SeiUser;
   let staking: Staking;
   let validatorAddress: string;
@@ -115,11 +113,14 @@ describe('Staking Tests', function () {
     allValidators = val.validators;
     validatorAddress = allValidators[0].operator_address;
     admin = await UserFactory.createAdminUser();
-    alice = await UserFactory.createSeiUser(admin, 'alice');
     eve = await UserFactory.createSeiUser(admin, 'eve');
 
     staking = new Staking();
     await staking.initialize(eve.seiWallet.wallet, testConfig.seiRpcEndpoint, restEndpoint);
+  });
+
+  after('Removes generated tx artifacts', () => {
+    fs.rmSync('./staking', { recursive: true, force: true });
   });
 
   describe('Delegation Tests', function () {
@@ -196,7 +197,7 @@ describe('Staking Tests', function () {
     it('Eve cant stake to empty addresses', async () => {
       const tx = await exec(`seid tx staking delegate ${validatorAddress} ${STANDARD_STAKE_AMOUNT}${USEI_DENOM} --from ${eve.seiAddress} --fees ${CLI_FEE} --gas ${DEFAULT_GAS} -y --broadcast-mode block --generate-only > ./staking/emptyAccountUnsigned.json`);
       const msg = JSON.parse(fs.readFileSync('./staking/emptyAccountUnsigned.json', 'utf8'));
-      msg.body.messages[0].amount.amount = '-10000';
+      msg.body.messages[0].validator_address = '';
       fs.writeFileSync('./staking/emptyAccountUnsigned.json', JSON.stringify(msg, null, 2));
 
 
@@ -204,7 +205,8 @@ describe('Staking Tests', function () {
       const signTx = await exec(`seid tx sign ./staking/emptyAccountUnsigned.json --from ${eve.seiAddress} --chain-id ${SIGN_CHAIN_ID} > ./staking/emptyAccountSigned.json`);
       await waitFor(0.5);
       const broadcastTX = await execCommandAndReturnJson(`seid tx broadcast ./staking/emptyAccountSigned.json --from ${eve.seiAddress} --broadcast-mode block`);
-      expect(broadcastTX.raw_log).to.contain('invalid delegation amount');
+      expect(broadcastTX.code).to.not.be.eq(0);
+      expect(broadcastTX.raw_log).to.contain('address');
     });
 
     it('Eve cant stake invalid addresses', async () => {
@@ -772,6 +774,69 @@ describe('Staking Tests', function () {
       // Confirm no delegation changes
       const postStakes = await staking.cmdDelegations(eve.seiAddress);
       expect(JSON.stringify(postStakes)).to.be.eq(JSON.stringify(preStakes));
+    });
+  });
+
+  describe('Edge Cases', function () {
+    it('Unbonding the full delegation removes the delegation record entirely', async () => {
+      const unbondAllUser = await UserFactory.createSeiUser(admin, 'stakingUnbondAll');
+      const delegateTx = await staking.delegateTx(unbondAllUser, validatorAddress, coin('10000', USEI_DENOM));
+      expect(delegateTx.code).to.be.eq(0);
+
+      const unbondTx = await staking.undelegateTx(unbondAllUser, validatorAddress, coin('10000', USEI_DENOM));
+      expect(unbondTx.code).to.be.eq(0);
+
+      const delegations = await staking.cmdDelegations(unbondAllUser.seiAddress);
+      expect(delegations.length).to.be.eq(0);
+
+      const unbonding = await staking.cmdUnbondingDelegations(unbondAllUser.seiAddress);
+      expect(unbonding.length).to.be.eq(1);
+      expect(unbonding[0].entries.some((entry: any) => entry.balance === '10000')).to.be.true;
+    });
+
+    it('Cannot chain redelegations: tokens received via redelegation are locked at the destination', async () => {
+      const transitiveUser = await UserFactory.createSeiUser(admin, 'stakingTransitive');
+      const validator2 = allValidators[1].operator_address;
+      const validator3 = allValidators[2].operator_address;
+
+      const delegateTx = await staking.delegateTx(transitiveUser, validatorAddress, coin('10000', USEI_DENOM));
+      expect(delegateTx.code).to.be.eq(0);
+
+      const firstRedelegate = await staking.redelegateTx(transitiveUser, validator2, coin(5000, USEI_DENOM), validatorAddress);
+      expect(firstRedelegate.code).to.be.eq(0);
+
+      // Redelegating the same tokens onward before the first redelegation
+      // matures must be rejected (transitive redelegation protection).
+      const secondRedelegate = await staking.redelegateTx(transitiveUser, validator3, coin(5000, USEI_DENOM), validator2);
+      expect(secondRedelegate.code).to.not.be.eq(0);
+      expect(secondRedelegate.rawLog).to.contain('redelegation to this validator already in progress');
+    });
+
+    it('Unbonding entries per validator pair are capped at max_entries', async function () {
+      const params = await staking.cmdParams();
+      const maxEntries = Number(params.max_entries);
+      expect(maxEntries).to.be.gt(0);
+      if (maxEntries > 10) {
+        // Chains configured with a large cap would make this test too slow.
+        this.skip();
+        return;
+      }
+
+      const maxEntriesUser = await UserFactory.createSeiUser(admin, 'stakingMaxEntries');
+      const delegateTx = await staking.delegateTx(maxEntriesUser, validatorAddress, coin('10000', USEI_DENOM));
+      expect(delegateTx.code).to.be.eq(0);
+
+      for (let i = 0; i < maxEntries; i++) {
+        const unbondTx = await staking.undelegateTx(maxEntriesUser, validatorAddress, coin(100, USEI_DENOM));
+        expect(unbondTx.code, `unbond entry ${i + 1} of ${maxEntries}`).to.be.eq(0);
+      }
+
+      const overCapTx = await staking.undelegateTx(maxEntriesUser, validatorAddress, coin(100, USEI_DENOM));
+      expect(overCapTx.code).to.not.be.eq(0);
+      expect(overCapTx.rawLog).to.contain('too many unbonding delegation entries');
+
+      const unbonding = await staking.cmdUnbondingDelegations(maxEntriesUser.seiAddress);
+      expect(unbonding[0].entries.length).to.be.eq(maxEntries);
     });
   });
 

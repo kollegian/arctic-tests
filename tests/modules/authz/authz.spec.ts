@@ -10,6 +10,7 @@ import { MsgSend } from 'cosmjs-types/cosmos/bank/v1beta1/tx';
 import ExpectStatic = Chai.ExpectStatic;
 import fs from 'node:fs';
 import { getRpcQueryClient, moduleRestEndpoint, withRestFallback } from '../utils/rpcQueryClient';
+import { expectFailure } from '../moduleTestUtils';
 
 let expect: ExpectStatic;
 const fee = { amount: coins(50000, 'usei'), gas: '500000' };
@@ -78,7 +79,12 @@ async function queryBalance(address: string, denom: string): Promise<{ denom: st
   );
 }
 
-function genericGrantMsg(granter: string, grantee: string, msgType = AUTHZ_MSG_TYPE) {
+function genericGrantMsg(
+  granter: string,
+  grantee: string,
+  msgType = AUTHZ_MSG_TYPE,
+  expiration: { seconds: bigint; nanos: number } = AUTHZ_EXPIRATION_TIMESTAMP
+) {
   return {
     typeUrl: "/cosmos.authz.v1beta1.MsgGrant",
     value: MsgGrant.fromPartial({
@@ -93,7 +99,7 @@ function genericGrantMsg(granter: string, grantee: string, msgType = AUTHZ_MSG_T
             }),
           ).finish(),
         },
-        expiration: AUTHZ_EXPIRATION_TIMESTAMP,
+        expiration,
       },
     }),
   };
@@ -271,14 +277,13 @@ describe('Authz Module Tests', function () {
   describe('Error Cases', function () {
     it('Cannot grant to self (CosmJS)', async () => {
       const grantMsg = genericGrantMsg(granter.seiAddress, granter.seiAddress);
-      try {
-        await granter.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        granter.seiWallet.signingClient.signAndBroadcast(
           granter.seiAddress, [grantMsg], fee, 'self grant'
-        );
-        expect.fail('self grant should fail');
-      } catch (e: any) {
-        expect(e.message).to.contain('granter and grantee cannot be same');
-      }
+        ),
+        'granter and grantee cannot be same',
+        'authz self-grant'
+      );
     });
 
     it('Cannot execute grant for unauthorized message type', async () => {
@@ -362,6 +367,117 @@ describe('Authz Module Tests', function () {
       };
       await granter.seiWallet.signingClient.signAndBroadcast(
         granter.seiAddress, [revokeMsg], fee, 'cleanup revoke'
+      );
+    });
+  });
+
+  describe('Edge Cases', function () {
+    it('Exec with an empty message list is rejected', async () => {
+      const execMsg = {
+        typeUrl: "/cosmos.authz.v1beta1.MsgExec",
+        value: {
+          grantee: grantee.seiAddress,
+          msgs: [],
+        },
+      };
+      await expectFailure(
+        grantee.seiWallet.signingClient.signAndBroadcast(
+          grantee.seiAddress, [execMsg], fee, 'empty exec'
+        ),
+        'empty',
+        'authz exec with no messages'
+      );
+    });
+
+    it('A grant with a past expiration is accepted but can never be executed', async () => {
+      // sei-cosmos (SDK 0.45) does not validate expiration at grant time, so
+      // the grant tx itself lands. The edge case that matters: the already
+      // expired authorization must not authorize anything.
+      const pastExpiration = {
+        seconds: BigInt(Math.floor(Date.now() / 1000) - 3600),
+        nanos: 0,
+      };
+      const grantMsg = genericGrantMsg(
+        granter.seiAddress, grantee.seiAddress, AUTHZ_MSG_TYPE, pastExpiration
+      );
+      const grantResult = await granter.seiWallet.signingClient.signAndBroadcast(
+        granter.seiAddress, [grantMsg], fee, 'past expiration grant'
+      );
+      expect(grantResult.code).to.be.eq(0);
+
+      const sendMsg = MsgSend.fromPartial({
+        fromAddress: granter.seiAddress,
+        toAddress: grantee.seiAddress,
+        amount: [{ denom: 'usei', amount: SMALL_AUTHZ_SEND_AMOUNT }],
+      });
+      const anyMsgSend = Any.fromPartial({
+        typeUrl: '/cosmos.bank.v1beta1.MsgSend',
+        value: MsgSend.encode(sendMsg).finish(),
+      });
+      const execMsg = {
+        typeUrl: "/cosmos.authz.v1beta1.MsgExec",
+        value: {
+          grantee: grantee.seiAddress,
+          msgs: [anyMsgSend],
+        },
+      };
+      const execResult = await grantee.seiWallet.signingClient.signAndBroadcast(
+        grantee.seiAddress, [execMsg], fee, 'exec expired grant'
+      );
+      expect(execResult.code, 'exec under expired grant must fail').to.not.be.eq(0);
+
+      // Best-effort cleanup: the stale grant may already have been pruned.
+      const revokeMsg = {
+        typeUrl: "/cosmos.authz.v1beta1.MsgRevoke",
+        value: MsgRevoke.fromPartial({
+          granter: granter.seiAddress,
+          grantee: grantee.seiAddress,
+          msgTypeUrl: AUTHZ_MSG_TYPE,
+        }),
+      };
+      await granter.seiWallet.signingClient.signAndBroadcast(
+        granter.seiAddress, [revokeMsg], fee, 'cleanup stale grant'
+      ).catch(() => undefined);
+    });
+
+    it('Re-granting the same message type overwrites instead of duplicating', async () => {
+      const regrantGranter = await UserFactory.createSeiUser(admin, 'authzRegrantGranter');
+      const regrantGrantee = await UserFactory.createSeiUser(admin, 'authzRegrantGrantee');
+
+      const firstGrant = await regrantGranter.seiWallet.signingClient.signAndBroadcast(
+        regrantGranter.seiAddress,
+        [genericGrantMsg(regrantGranter.seiAddress, regrantGrantee.seiAddress)],
+        fee, 'regrant 1'
+      );
+      expect(firstGrant.code).to.be.eq(0);
+
+      const laterExpiration = {
+        seconds: AUTHZ_EXPIRATION_TIMESTAMP.seconds + BigInt(365 * 24 * 3600),
+        nanos: 0,
+      };
+      const secondGrant = await regrantGranter.seiWallet.signingClient.signAndBroadcast(
+        regrantGranter.seiAddress,
+        [genericGrantMsg(regrantGranter.seiAddress, regrantGrantee.seiAddress, AUTHZ_MSG_TYPE, laterExpiration)],
+        fee, 'regrant 2'
+      );
+      expect(secondGrant.code).to.be.eq(0);
+
+      const grants = await queryGranteeGrants(regrantGrantee.seiAddress);
+      const matching = grants.grants.filter(
+        (g: any) => g.granter === regrantGranter.seiAddress && authzMsg(g) === AUTHZ_MSG_TYPE
+      );
+      expect(matching).to.have.length(1);
+
+      const revokeMsg = {
+        typeUrl: "/cosmos.authz.v1beta1.MsgRevoke",
+        value: MsgRevoke.fromPartial({
+          granter: regrantGranter.seiAddress,
+          grantee: regrantGrantee.seiAddress,
+          msgTypeUrl: AUTHZ_MSG_TYPE,
+        }),
+      };
+      await regrantGranter.seiWallet.signingClient.signAndBroadcast(
+        regrantGranter.seiAddress, [revokeMsg], fee, 'regrant cleanup'
       );
     });
   });

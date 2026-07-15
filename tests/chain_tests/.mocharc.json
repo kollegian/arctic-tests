@@ -16,6 +16,7 @@
     "tests/chain_tests/eip1559_tests.ts",
     "tests/chain_tests/nonce_management.spec.ts",
     "tests/chain_tests/tx_execution.spec.ts",
+    "tests/chain_tests/EIPTests.spec.ts",
     "tests/chain_tests/pectra_upgrade/EOA.spec.ts"
   ]
 }

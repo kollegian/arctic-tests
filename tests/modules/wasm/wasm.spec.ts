@@ -1,257 +1,232 @@
 import { SeiUser, UserFactory } from '../../../shared/User';
+import { Cw20Token } from '../../../shared/Token';
+import { existingWasmAddresses } from '../../../shared/utils/testFlags';
 import { execCommandAndReturnJson } from '../../../shared/utils/cliUtils';
 import { waitFor } from '../../../shared/utils/helpers';
-import { deployWasmContract, instantiateCode, registerName } from '../utils/utils';
-import testConfig from '../../../config/testConfig.json';
 import ExpectStatic = Chai.ExpectStatic;
-import {expectTxSuccess} from '../moduleTestUtils';
+import { expectFailure, expectSeiAddress } from '../moduleTestUtils';
 
 let expect: ExpectStatic;
-const CLI_FEE = '50000usei';
-const CLI_GAS = '500000';
-const STORE_FEE = '4800000usei';
-const STORE_GAS = '12000000';
-const LIST_CODE_QUERY = 'seid q wasm list-code --limit 10000 --count-total';
-const CONTRACT_LABEL = 'Our Name Service';
 const INVALID_CONTRACT_ADDRESS = 'sei1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq0yqtl5';
+const MINT_AMOUNT = '1000';
+const TRANSFER_AMOUNT = '250';
 
-describe.skip('Wasm Module Tests', function () {
+// Storing/instantiating wasm code is disabled on arctic-1, so this suite runs
+// exclusively against the pre-deployed CW20 from knownContractAddresses.json
+// (overridable via testConfig.existingWasm). No store/instantiate tests here.
+describe('Wasm Module Tests (existing contracts)', function () {
   this.timeout(5 * 60 * 1000);
   let admin: SeiUser;
   let user: SeiUser;
+  let cw20Address: string;
+  let cw20: Cw20Token;
   let codeId: number;
-  let contractAddress: string;
-  const name = 'firstname';
+  let adminIsMinter = false;
 
-  before('Initializes users and deploys contract', async () => {
+  before('Resolves the existing CW20 contract', async function () {
     const chai = await import('chai');
     ({ expect } = chai);
+
+    const existing = existingWasmAddresses();
+    if (!existing.cw20Address) {
+      this.skip();
+      return;
+    }
+    cw20Address = existing.cw20Address;
+
     admin = await UserFactory.createAdminUser();
     user = await UserFactory.createSeiUser(admin, 'wasmUser');
     await waitFor(1);
 
-    codeId = await deployWasmContract(user.seiWallet.cosmWasmSigningClient, user.seiAddress);
-    contractAddress = await instantiateCode(user.seiWallet.cosmWasmSigningClient, user.seiAddress, codeId);
-    const registerTx = await registerName(user.seiWallet.cosmWasmSigningClient, user.seiAddress, name, contractAddress);
-    expectTxSuccess(registerTx, 'initial wasm register');
+    cw20 = new Cw20Token(admin, cw20Address);
+    const contractInfo = await admin.seiWallet.cosmWasmSigningClient.getContract(cw20Address);
+    codeId = contractInfo.codeId;
+
+    const minterResp = await admin.seiWallet.cosmWasmSigningClient.queryContractSmart(
+      cw20Address, { minter: {} }
+    );
+    adminIsMinter = minterResp?.minter === admin.seiAddress;
   });
 
   describe('seid CLI Tests', function () {
-    it('Queries all codes via seid', async () => {
-      const result = await execCommandAndReturnJson(LIST_CODE_QUERY);
-      expect(result.code_infos).to.be.an('array');
-      expect(result.code_infos.length).to.be.gte(1);
-      expect(result.code_infos.some((info: any) => Number(info.code_id) === codeId)).to.be.true;
-    });
-
-    it('Queries code info by ID via seid', async () => {
+    it('Queries code info for the existing code ID via seid', async () => {
       const result = await execCommandAndReturnJson(`seid q wasm code-info ${codeId}`);
       expect(result.code_id).to.be.eq(String(codeId));
-      expect(result.creator).to.be.eq(user.seiAddress);
+      expectSeiAddress(result.creator, 'code creator');
     });
 
     it('Queries contract info via seid', async () => {
-      const result = await execCommandAndReturnJson(`seid q wasm contract ${contractAddress}`);
-      expect(result.address).to.be.eq(contractAddress);
+      const result = await execCommandAndReturnJson(`seid q wasm contract ${cw20Address}`);
+      expect(result.address).to.be.eq(cw20Address);
       expect(result.contract_info).to.not.be.undefined;
-      expect(result.contract_info.label).to.be.eq(CONTRACT_LABEL);
+      expect(Number(result.contract_info.code_id)).to.be.eq(codeId);
+      expect(result.contract_info.label).to.be.a('string');
     });
 
-    it('Queries contract state via smart query in seid', async () => {
-      const query = JSON.stringify({ resolve_record: { name } });
+    it('Queries contracts by code ID via seid and finds the CW20', async () => {
       const result = await execCommandAndReturnJson(
-        `seid q wasm contract-state smart ${contractAddress} '${query}'`
+        `seid q wasm list-contract-by-code ${codeId} --limit 1000`
       );
-      expect(result.data).to.not.be.undefined;
-      expect(result.data.address).to.be.eq(user.seiAddress);
+      expect(result.contracts).to.be.an('array');
+      expect(result.contracts).to.contain(cw20Address);
     });
 
-    it('Stores code via seid', async () => {
+    it('Queries CW20 token_info via smart query in seid', async () => {
+      const query = JSON.stringify({ token_info: {} });
       const result = await execCommandAndReturnJson(
-        `seid tx wasm store ./tests/modules/module_artifacts/cw_nameservice.wasm --from ${user.seiAddress} --fees ${STORE_FEE} --gas ${STORE_GAS} --broadcast-mode block -y`
+        `seid q wasm contract-state smart ${cw20Address} '${query}'`
       );
-      expect(result.code).to.be.eq(0);
-    });
-
-    it('Instantiates contract via seid', async () => {
-      const cliCodeId = codeId;
-      const initMsg = JSON.stringify({
-        purchase_price: { amount: '100', denom: 'usei' },
-        transfer_price: { amount: '999', denom: 'usei' },
-      });
-      const result = await execCommandAndReturnJson(
-        `seid tx wasm instantiate ${cliCodeId} '${initMsg}' --label "CLI Name Service" --admin ${user.seiAddress} --from ${user.seiAddress} --fees ${CLI_FEE} --gas ${CLI_GAS} --broadcast-mode block -y`
-      );
-      expect(result.code).to.be.eq(0);
+      expect(result.data.name).to.be.a('string');
+      expect(result.data.symbol).to.be.a('string');
+      expect(result.data.decimals).to.be.a('number');
+      expect(result.data.total_supply).to.match(/^[0-9]+$/);
     });
   });
 
   describe('CosmJS Tests', function () {
     describe('Code Queries', function () {
-      it('Can query all uploaded codes', async () => {
-        const allCode = await user.seiWallet.cosmWasmSigningClient.getCodes();
-        expect(allCode).to.be.an('array');
-        expect(allCode).to.have.length.gte(1);
-        const uploaded = allCode.find((c: any) => c.id === codeId);
-        expect(uploaded).to.not.be.undefined;
-      });
-
-      it('Can query specific code by ID', async () => {
+      it('Can query the existing code by ID', async () => {
         const specificCode = await user.seiWallet.cosmWasmSigningClient.getCodeDetails(codeId);
         expect(specificCode.id).to.be.eq(codeId);
-        expect(specificCode.creator).to.be.eq(user.seiAddress);
+        expectSeiAddress(specificCode.creator, 'code creator');
         expect(specificCode.data).to.not.be.undefined;
+        expect(specificCode.data.length).to.be.gt(0);
       });
 
       it('Can query contracts by code ID', async () => {
         const contractsByCodeId = await user.seiWallet.cosmWasmSigningClient.getContracts(codeId);
         expect(contractsByCodeId).to.be.an('array');
         expect(contractsByCodeId).to.have.length.gte(1);
-        expect(contractsByCodeId).to.contain(contractAddress);
+        expect(contractsByCodeId).to.contain(cw20Address);
       });
     });
 
     describe('Contract Queries', function () {
       it('Can query contract info by address', async () => {
-        const contractInfo = await user.seiWallet.cosmWasmSigningClient.getContract(contractAddress);
-        expect(contractInfo.address).to.be.eq(contractAddress);
+        const contractInfo = await user.seiWallet.cosmWasmSigningClient.getContract(cw20Address);
+        expect(contractInfo.address).to.be.eq(cw20Address);
         expect(contractInfo.codeId).to.be.eq(codeId);
-        expect(contractInfo.creator).to.be.eq(user.seiAddress);
-        expect(contractInfo.label).to.be.eq(CONTRACT_LABEL);
+        expectSeiAddress(contractInfo.creator, 'contract creator');
       });
 
-      it('Can query smart contract state', async () => {
-        const queryDataRaw = {
-          resolve_record: { name }
-        };
-        const smartQuery = await user.seiWallet.cosmWasmSigningClient.queryContractSmart(contractAddress, queryDataRaw);
-        expect(smartQuery.address).to.be.eq(user.seiAddress);
+      it('Can query CW20 token info via smart query', async () => {
+        const tokenInfo = await cw20.tokenInfo();
+        expect(tokenInfo.name).to.be.a('string');
+        expect(tokenInfo.symbol).to.be.a('string');
+        expect(BigInt(tokenInfo.total_supply) >= 0n).to.be.true;
       });
 
       it('Can query contract code history', async () => {
-        const contractHistory = await user.seiWallet.cosmWasmSigningClient.getContractCodeHistory(contractAddress);
+        const contractHistory = await user.seiWallet.cosmWasmSigningClient.getContractCodeHistory(cw20Address);
         expect(contractHistory).to.be.an('array');
         expect(contractHistory).to.have.length.gte(1);
-        expect(contractHistory[0].codeId).to.be.eq(codeId);
+        expect(contractHistory.some((entry: any) => entry.codeId === codeId)).to.be.true;
       });
 
-      it('Smart query with unknown name returns error', async () => {
-        const queryDataRaw = {
-          resolve_record: { name: 'nonexistentname' }
-        };
-        try {
-          await user.seiWallet.cosmWasmSigningClient.queryContractSmart(contractAddress, queryDataRaw);
-          expect.fail('Should have thrown for unknown name');
-        } catch (e: any) {
-          expect(e.message).to.be.a('string');
-          expect(e.message.length).to.be.gt(0);
-        }
+      it('Balance query for a fresh address returns zero', async () => {
+        const freshUser = await UserFactory.createUnassociatedUsers(admin, 'wasmFresh');
+        const balance = await cw20.balanceOf(freshUser.seiAddress);
+        expect(balance).to.be.eq('0');
       });
     });
 
     describe('Contract Execution', function () {
-      it('Can register another name on the contract', async () => {
-        const newName = 'secondname';
-        const registerTx = await registerName(user.seiWallet.cosmWasmSigningClient, user.seiAddress, newName, contractAddress);
-        expectTxSuccess(registerTx, 'second wasm register');
-
-        const queryResult = await user.seiWallet.cosmWasmSigningClient.queryContractSmart(contractAddress, {
-          resolve_record: { name: newName }
-        });
-        expect(queryResult.address).to.be.eq(user.seiAddress);
+      it('Admin can mint CW20 tokens to a user', async function () {
+        if (!adminIsMinter) {
+          this.skip();
+          return;
+        }
+        const preBalance = BigInt(await cw20.balanceOf(user.seiAddress));
+        await cw20.mint(user.seiAddress, MINT_AMOUNT);
+        const postBalance = BigInt(await cw20.balanceOf(user.seiAddress));
+        expect(postBalance - preBalance).to.be.eq(BigInt(MINT_AMOUNT));
       });
 
-      it('Can transfer name ownership', async () => {
-        const recipient = await UserFactory.createSeiUser(admin, 'wasmRecipient');
-        const transferName = 'thirdname';
-        const registerTx = await registerName(user.seiWallet.cosmWasmSigningClient, user.seiAddress, transferName, contractAddress);
-        expectTxSuccess(registerTx, 'transfer-name wasm register');
+      it('User can transfer CW20 tokens back to admin', async function () {
+        if (!adminIsMinter) {
+          this.skip();
+          return;
+        }
+        const userPre = BigInt(await cw20.balanceOf(user.seiAddress));
+        const adminPre = BigInt(await cw20.balanceOf(admin.seiAddress));
+        expect(userPre >= BigInt(TRANSFER_AMOUNT)).to.be.true;
 
-        const transferMsg = {
-          transfer: { name: transferName, to: recipient.seiAddress }
-        };
-        await user.seiWallet.cosmWasmSigningClient.execute(
-          user.seiAddress,
-          contractAddress,
-          transferMsg,
-          user.seiWallet.fee,
-          '',
-          [{ denom: 'usei', amount: '999' }]
+        await cw20.transferFromSender(user, admin.seiAddress, TRANSFER_AMOUNT);
+
+        const userPost = BigInt(await cw20.balanceOf(user.seiAddress));
+        const adminPost = BigInt(await cw20.balanceOf(admin.seiAddress));
+        expect(userPre - userPost).to.be.eq(BigInt(TRANSFER_AMOUNT));
+        expect(adminPost - adminPre).to.be.eq(BigInt(TRANSFER_AMOUNT));
+      });
+
+      it('Cannot transfer more CW20 than the sender holds', async () => {
+        const balance = BigInt(await cw20.balanceOf(user.seiAddress));
+        const overBalance = (balance + 1000000n).toString();
+        await expectFailure(
+          cw20.transferFromSender(user, admin.seiAddress, overBalance),
+          undefined,
+          'CW20 transfer above balance'
         );
-
-        const queryResult = await user.seiWallet.cosmWasmSigningClient.queryContractSmart(contractAddress, {
-          resolve_record: { name: transferName }
-        });
-        expect(queryResult.address).to.be.eq(recipient.seiAddress);
       });
     });
   });
 
   describe('Error Cases', function () {
-    it('Cannot instantiate with invalid code ID', async () => {
-      const invalidCodeId = 999999;
-      const instantiateMsg = {
-        purchase_price: { amount: '100', denom: 'usei' },
-        transfer_price: { amount: '999', denom: 'usei' },
-      };
-      try {
-        await user.seiWallet.cosmWasmSigningClient.instantiate(
-          user.seiAddress, invalidCodeId, instantiateMsg, 'Bad Code ID', user.seiWallet.fee
-        );
-        expect.fail('Should have thrown for invalid code ID');
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
-    });
-
     it('Cannot execute on non-existent contract address', async () => {
-      try {
-        await user.seiWallet.cosmWasmSigningClient.execute(
+      await expectFailure(
+        user.seiWallet.cosmWasmSigningClient.execute(
           user.seiAddress,
           INVALID_CONTRACT_ADDRESS,
-          { register: { name: 'test' } },
-          user.seiWallet.fee,
-          '',
-          [{ denom: 'usei', amount: '110' }]
-        );
-        expect.fail('Should have thrown for non-existent contract');
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+          { transfer: { recipient: admin.seiAddress, amount: '1' } },
+          user.seiWallet.fee
+        ),
+        undefined,
+        'execute on non-existent contract'
+      );
     });
 
     it('Cannot query non-existent contract', async () => {
-      try {
-        await user.seiWallet.cosmWasmSigningClient.getContract(INVALID_CONTRACT_ADDRESS);
-        expect.fail('Should have thrown for non-existent contract');
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+      await expectFailure(
+        user.seiWallet.cosmWasmSigningClient.getContract(INVALID_CONTRACT_ADDRESS),
+        undefined,
+        'query non-existent contract'
+      );
+    });
+
+    it('Smart query with unknown message variant returns error', async () => {
+      await expectFailure(
+        user.seiWallet.cosmWasmSigningClient.queryContractSmart(cw20Address, {
+          definitely_not_a_query: {}
+        }),
+        undefined,
+        'smart query with unknown variant'
+      );
     });
   });
 
   describe('Cross-Runtime Consistency', function () {
-    it('Code list via seid matches CosmJS getCodes() count', async () => {
-      const seidResult = await execCommandAndReturnJson(LIST_CODE_QUERY);
-      const cosmjsCodes = await user.seiWallet.cosmWasmSigningClient.getCodes();
-
-      expect(Number(seidResult.pagination.total)).to.be.eq(cosmjsCodes.length);
-      expect(seidResult.code_infos.length).to.be.eq(cosmjsCodes.length);
-    });
-
     it('Contract info via seid matches CosmJS getContract()', async () => {
       const seidResult = await execCommandAndReturnJson(
-        `seid q wasm contract ${contractAddress}`
+        `seid q wasm contract ${cw20Address}`
       );
-      const cosmjsInfo = await user.seiWallet.cosmWasmSigningClient.getContract(contractAddress);
+      const cosmjsInfo = await user.seiWallet.cosmWasmSigningClient.getContract(cw20Address);
 
       expect(seidResult.address).to.be.eq(cosmjsInfo.address);
       expect(seidResult.contract_info.label).to.be.eq(cosmjsInfo.label);
       expect(seidResult.contract_info.creator).to.be.eq(cosmjsInfo.creator);
       expect(Number(seidResult.contract_info.code_id)).to.be.eq(cosmjsInfo.codeId);
+    });
+
+    it('token_info via seid smart query matches CosmJS smart query', async () => {
+      const query = JSON.stringify({ token_info: {} });
+      const seidResult = await execCommandAndReturnJson(
+        `seid q wasm contract-state smart ${cw20Address} '${query}'`
+      );
+      const cosmjsInfo = await cw20.tokenInfo();
+
+      expect(seidResult.data.name).to.be.eq(cosmjsInfo.name);
+      expect(seidResult.data.symbol).to.be.eq(cosmjsInfo.symbol);
+      expect(seidResult.data.decimals).to.be.eq(cosmjsInfo.decimals);
     });
   });
 });

@@ -7,6 +7,11 @@ import POINTER_ABI from './abis/pointer_abi.json';
 import POINTERVIEW_ABI from './abis/pointerview_abi.json';
 import { waitFor } from '../../shared/utils/helpers';
 import { createTokenfactoryDenom } from '../../shared/utils/cliUtils';
+import { isWasmEnabled, getKnownWasmContracts } from '../../shared/utils/testFlags';
+
+// On wasm-disabled nodes we cannot deploy fresh CW contracts, so we fall back
+// to the well-known contracts per network from knownContractAddresses.json.
+const knownWasm = getKnownWasmContracts();
 
 describe('Pointer Precompile Tests', function () {
     this.timeout(5 * 60 * 1000);
@@ -28,7 +33,13 @@ describe('Pointer Precompile Tests', function () {
     describe('addCW20Pointer()', function () {
         let cw20Address: string;
 
-        before('Deploy a CW20 contract', async () => {
+        before('Deploy a CW20 contract', async function () {
+            if (!isWasmEnabled()) {
+                if (!knownWasm.cw20Address) this.skip();
+                cw20Address = knownWasm.cw20Address!;
+                console.log(`Wasm disabled, using known cw20 at ${cw20Address}`);
+                return;
+            }
             const cw20 = await deployer.deployCw20('wasm_store/cw20_base.wasm', {
                 name: 'PointerCW20',
                 symbol: 'PCWT',
@@ -81,7 +92,13 @@ describe('Pointer Precompile Tests', function () {
     describe('addCW721Pointer()', function () {
         let cw721Address: string;
 
-        before('Deploy a CW721 contract', async () => {
+        before('Deploy a CW721 contract', async function () {
+            if (!isWasmEnabled()) {
+                if (!knownWasm.cw721Address) this.skip();
+                cw721Address = knownWasm.cw721Address!;
+                console.log(`Wasm disabled, using known cw721 at ${cw721Address}`);
+                return;
+            }
             const cw721 = await deployer.deployCw721('wasm_store/cw2981_royalties.wasm', {
                 name: 'PointerNFT',
                 symbol: 'PNFT',
@@ -118,7 +135,13 @@ describe('Pointer Precompile Tests', function () {
     describe('addCW1155Pointer()', function () {
         let cw1155Address: string;
 
-        before('Deploy a CW1155 contract', async () => {
+        before('Deploy a CW1155 contract', async function () {
+            if (!isWasmEnabled()) {
+                if (!knownWasm.cw1155Address) this.skip();
+                cw1155Address = knownWasm.cw1155Address!;
+                console.log(`Wasm disabled, using known cw1155 at ${cw1155Address}`);
+                return;
+            }
             const cw1155 = await deployer.deployCw1155('wasm_store/cw1155_base.wasm', {
                 name: 'PointerCW1155',
                 symbol: 'PCW1155',

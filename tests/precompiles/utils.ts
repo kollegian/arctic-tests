@@ -152,15 +152,54 @@ export function findEvent(receipt: any, contract: any, eventName: string) {
     });
 }
 
-export async function waitForRewards(distrContract: any, delegatorAddress: string, maxWaitSeconds = 120): Promise<bigint> {
+/** Sum the pending usei rewards attributable to a single validator. */
+export function validatorRewardsAmount(
+    parsedRewards: { rewards: Array<{ coins: Array<{ amount: string; denom: string }>; validator_address: string }> },
+    validatorAddress: string
+): bigint {
+    let total = BigInt(0);
+    for (const reward of parsedRewards.rewards) {
+        if (reward.validator_address !== validatorAddress) continue;
+        for (const coin of reward.coins) {
+            if (coin.denom === 'usei') total += BigInt(coin.amount);
+        }
+    }
+    return total;
+}
+
+export interface WaitForRewardsOptions {
+    maxWaitSeconds?: number;
+    /** Require EVERY listed validator to have non-zero pending rewards (the total
+     *  across validators can be non-zero while an individual validator's share still
+     *  rounds to zero — and withdrawing zero rewards reverts on the precompile). */
+    validatorAddress?: string | string[];
+}
+
+export async function waitForRewards(
+    distrContract: any,
+    delegatorAddress: string,
+    optionsOrMaxWait: number | WaitForRewardsOptions = {}
+): Promise<bigint> {
+    const options = typeof optionsOrMaxWait === 'number' ? { maxWaitSeconds: optionsOrMaxWait } : optionsOrMaxWait;
+    const maxWaitSeconds = options.maxWaitSeconds ?? 120;
+    const validators = options.validatorAddress
+        ? Array.isArray(options.validatorAddress) ? options.validatorAddress : [options.validatorAddress]
+        : [];
     const pollInterval = 5;
     let elapsed = 0;
     const { waitFor } = await import('../../shared/utils/helpers');
     while (elapsed < maxWaitSeconds) {
         const rewards = await distrContract.rewards(delegatorAddress);
         const parsed = parseRewardsResponse(rewards);
-        const total = calculateTotalRewardsAmount(parsed);
-        if (total > BigInt(0)) return total;
+        if (validators.length > 0) {
+            const perValidator = validators.map((v) => validatorRewardsAmount(parsed, v));
+            if (perValidator.every((amount) => amount > BigInt(0))) {
+                return perValidator.reduce((sum, amount) => sum + amount, BigInt(0));
+            }
+        } else {
+            const total = calculateTotalRewardsAmount(parsed);
+            if (total > BigInt(0)) return total;
+        }
         await waitFor(pollInterval);
         elapsed += pollInterval;
     }

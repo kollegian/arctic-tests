@@ -9,8 +9,15 @@ import path from "path";
 import wasmdAbi from "./abis/wasmd_abi.json";
 import {WASM_PRECOMPILE_ADDRESS} from "./constants";
 import {getLatestContractForCode} from "./wasm.utils";
+import {isWasmEnabled, getKnownWasmContracts} from "../../shared/utils/testFlags";
 
 const WASM_FILE = "wasm_store/cw20_base.wasm";
+
+// On wasm-disabled nodes we cannot upload/instantiate, so query/execute tests
+// run against the well-known cw20 from knownContractAddresses.json (deployed
+// by the same admin, who is also its minter), and the instantiate-dependent
+// tests are skipped.
+const knownWasm = getKnownWasmContracts();
 
 describe("Wasm Precompile Tests", function () {
     this.timeout(5 * 60 * 1000);
@@ -22,11 +29,18 @@ describe("Wasm Precompile Tests", function () {
     let cw20ContractAddress: string;
     let codeId: number;
 
-    before("Initialize users, deploy CW20, and set up wasm precompile contract", async () => {
+    before("Initialize users, deploy CW20, and set up wasm precompile contract", async function () {
         admin = await UserFactory.createAdminUser();
         [alice, bob] = await UserFactory.createSeiUsers(admin, 2);
 
         wasmdContract = new Contract(WASM_PRECOMPILE_ADDRESS, wasmdAbi, admin.evmWallet.wallet);
+
+        if (!isWasmEnabled()) {
+            if (!knownWasm.cw20Address) this.skip();
+            cw20ContractAddress = knownWasm.cw20Address!;
+            console.log(`Wasm disabled, using known cw20 at ${cw20ContractAddress}`);
+            return;
+        }
 
         const uploadFee = calculateFee(10000000, "3.5usei");
         const wasm = fs.readFileSync(path.resolve(WASM_FILE));
@@ -61,10 +75,18 @@ describe("Wasm Precompile Tests", function () {
             const responseBytes = await wasmdContract.query(cw20ContractAddress, req);
             const response = JSON.parse(ethers.toUtf8String(responseBytes));
 
-            expect(response.name).to.eq("WasmPrecompileTest");
-            expect(response.symbol).to.eq("WPT");
-            expect(response.decimals).to.eq(6);
+            // The precompile must return the same data as the cosmos-side query
+            const expected = await admin.seiWallet.cosmWasmSigningClient
+                .queryContractSmart(cw20ContractAddress, queryMsg);
+            expect(response).to.deep.equal(expected);
             expect(Number(response.total_supply)).to.be.gt(0);
+
+            if (isWasmEnabled()) {
+                // Freshly deployed contract, so the init values are known
+                expect(response.name).to.eq("WasmPrecompileTest");
+                expect(response.symbol).to.eq("WPT");
+                expect(response.decimals).to.eq(6);
+            }
         });
 
         it("should query balance of admin", async () => {
@@ -74,7 +96,14 @@ describe("Wasm Precompile Tests", function () {
             const responseBytes = await wasmdContract.query(cw20ContractAddress, req);
             const response = JSON.parse(ethers.toUtf8String(responseBytes));
 
-            expect(Number(response.balance)).to.eq(1000000000);
+            const expected = await admin.seiWallet.cosmWasmSigningClient
+                .queryContractSmart(cw20ContractAddress, queryMsg);
+            expect(response.balance).to.eq(expected.balance);
+            if (isWasmEnabled()) {
+                expect(Number(response.balance)).to.eq(1000000000);
+            } else {
+                expect(Number(response.balance), 'admin needs a balance on the known cw20').to.be.gt(0);
+            }
         });
 
         it("should query balance of alice", async () => {
@@ -84,7 +113,12 @@ describe("Wasm Precompile Tests", function () {
             const responseBytes = await wasmdContract.query(cw20ContractAddress, req);
             const response = JSON.parse(ethers.toUtf8String(responseBytes));
 
-            expect(Number(response.balance)).to.eq(500000000);
+            const expected = await admin.seiWallet.cosmWasmSigningClient
+                .queryContractSmart(cw20ContractAddress, queryMsg);
+            expect(response.balance).to.eq(expected.balance);
+            if (isWasmEnabled()) {
+                expect(Number(response.balance)).to.eq(500000000);
+            }
         });
 
         it("should return zero balance for an address with no tokens", async () => {
@@ -390,7 +424,8 @@ describe("Wasm Precompile Tests", function () {
         });
     });
 
-    describe("instantiate()", function () {
+    // Instantiation is impossible when wasm deployments are disabled
+    (isWasmEnabled() ? describe : describe.skip)("instantiate()", function () {
         it("should instantiate a new CW20 contract via the precompile", async () => {
             const contractsBefore = await admin.seiWallet.cosmWasmSigningClient.getContracts(codeId);
 
@@ -536,7 +571,7 @@ describe("Wasm Precompile Tests", function () {
     });
 
     describe("Cross-function integration", function () {
-        it("should instantiate a contract, execute a mint, and query the result", async () => {
+        (isWasmEnabled() ? it : it.skip)("should instantiate a contract, execute a mint, and query the result", async () => {
             const initMsg = {
                 name: "IntegrationToken",
                 symbol: "INT",

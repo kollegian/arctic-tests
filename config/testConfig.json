@@ -1,8 +1,14 @@
 {
   "adminAddress": "sei1dg8unurclh6p05tu64nsth5642mm6gx5nt86hk",
-  "seiRpcEndpoint": "https://testnet-1.latest.dev.platform.sei.io/tm",
-  "evmRpcEndpoint": "https://testnet-1.latest.dev.platform.sei.io/evm",
-  "restEndpoint": "https://testnet-1.latest.dev.platform.sei.io/cosmos",
+  "seiRpcEndpoint": "https://node-wave-0-rpc.arctic-1.platform.sei.io/",
+  "evmRpcEndpoint": "https://node-wave-0-evm.arctic-1.platform.sei.io/",
+  "restEndpoint": "https://rest.arctic-1.seinetwork.io/",
   "adminMnemonic": "cover brand danger absent gas worth sustain rural powder auction shadow find merge domain promote glimpse burger embody favorite lake rain plate present soda",
-  "chainId": "sei"
+  "chainId": "sei",
+  "network": "arctic-1",
+  "wasmEnabled": true,
+  "existingWasm": {
+    "cw20Address": "",
+    "cw721Address": ""
+  }
 }

@@ -3,6 +3,7 @@ import { expect } from "chai";
 import { SeiUser } from "../../shared/User";
 import { execCommandAndReturnJson } from "../../shared/utils/cliUtils";
 import { waitFor } from "../../shared/utils/helpers";
+import { moduleAddress } from "./utils";
 
 export const USEI_PER_WEI = 10n ** 12n; // 1 usei == 1e12 wei on the Sei EVM
 export const SEI = 1_000_000n;          // 1 SEI == 1_000_000 usei
@@ -14,17 +15,42 @@ export interface ModuleAccountInfo {
     permissions: string[];
 }
 
+/** Module names to probe for. Addresses are derived locally (sha256(name)[:20]),
+ *  so discovery works on live chains where paging `seid q auth accounts` would
+ *  never reach the module accounts. */
+const KNOWN_MODULE_NAMES = [
+    'fee_collector',
+    'mint',
+    'distribution',
+    'gov',
+    'bonded_tokens_pool',
+    'not_bonded_tokens_pool',
+    'transfer',
+    'evm',
+    'tokenfactory',
+    'oracle',
+    'wasm',
+];
+
 /** Discover the chain's genuine ModuleAccounts (typed as ModuleAccount in the auth store). */
 export async function listModuleAccounts(): Promise<ModuleAccountInfo[]> {
-    const res = await execCommandAndReturnJson('seid q auth accounts --limit 1000 --output json');
-    const accounts: any[] = res.accounts ?? [];
-    return accounts
-        .filter((a) => a['@type'] === '/cosmos.auth.v1beta1.ModuleAccount')
-        .map((a) => ({
-            name: a.name,
-            address: a.base_account?.address,
-            permissions: a.permissions ?? [],
-        }));
+    const found: ModuleAccountInfo[] = [];
+    for (const name of KNOWN_MODULE_NAMES) {
+        const address = moduleAddress(name);
+        let account: any;
+        try {
+            account = await execCommandAndReturnJson(`seid q auth account ${address}`);
+        } catch {
+            continue; // module not registered on this chain
+        }
+        if (account['@type'] !== '/cosmos.auth.v1beta1.ModuleAccount') continue;
+        found.push({
+            name: account.name,
+            address: account.base_account?.address,
+            permissions: account.permissions ?? [],
+        });
+    }
+    return found;
 }
 
 /**
@@ -76,13 +102,32 @@ export async function trySendNative(
     }
 }
 
+/** Poll until a broadcast tx is committed and return its result. */
+async function waitForCommittedTx(txhash: string, maxWaitSeconds = 30): Promise<any> {
+    let elapsed = 0;
+    while (elapsed < maxWaitSeconds) {
+        await waitFor(2);
+        elapsed += 2;
+        try {
+            return await execCommandAndReturnJson(`seid q tx ${txhash}`);
+        } catch {
+            // not yet committed
+        }
+    }
+    throw new Error(`tx ${txhash} not committed after ${maxWaitSeconds}s`);
+}
+
 export async function createVesting(user: SeiUser, lockedUsei: bigint) {
     const endTime = Math.floor(Date.now() / 1000) + 3600; // 1h cliff
+    // `--broadcast-mode block` times out against remote RPCs (10s commit window),
+    // so broadcast sync and poll for the committed tx instead.
     const out = await execCommandAndReturnJson(
         `seid tx vesting create-vesting-account ${user.seiAddress} ${lockedUsei}usei ${endTime} ` +
-        `--delayed --from admin --fees 24500usei -y --broadcast-mode block --output json`
+        `--delayed --from admin --fees 24500usei -y --broadcast-mode sync`
     );
-    expect(out.code, `create-vesting-account failed: ${out.raw_log}`).to.equal(0);
+    expect(out.code, `create-vesting-account broadcast failed: ${out.raw_log}`).to.equal(0);
+    const committed = await waitForCommittedTx(out.txhash);
+    expect(committed.code, `create-vesting-account failed: ${committed.raw_log}`).to.equal(0);
     await waitFor(2);
 }
 

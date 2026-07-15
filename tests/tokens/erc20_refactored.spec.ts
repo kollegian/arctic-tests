@@ -6,6 +6,7 @@ import {waitFor} from "../../shared/utils/helpers";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import _ from "lodash";
 import fs from "fs";
+import {isWasmEnabled} from "../../shared/utils/testFlags";
 
 describe('Erc20 Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -139,7 +140,9 @@ describe('Erc20 Tests', function () {
             expect(newUserBalanceAfterAssociation.toString()).to.be.eq(ethers.parseEther('100').toString());
         });
 
-        it('Users cant deploy pointers on wasm runtime for erc20', async () => {
+        // register-cw-pointer instantiates a wasm pointer contract, so it can
+        // only be exercised on nodes where wasm is enabled.
+        (isWasmEnabled() ? it : it.skip)('Users cant deploy pointers on wasm runtime for erc20', async () => {
             const pointer = await erc20Contract.deployPointer(alice.evmAddress);
             expect(pointer).not.to.contain('sei');
         })

@@ -20,6 +20,7 @@ import {returnQueryClient} from "../../precompiles/utils";
 import {QueryClient, setupStakingExtension, StakingExtension} from "@cosmjs/stargate";
 import {TokenDeployer} from "../../../shared/Deployer";
 import {waitFor} from "../../../shared/utils/helpers";
+import {existingWasmAddresses} from "../existingWasm";
 
 /**
  * EIP-7702 delegation designator: SetCode authorizes an EOA to delegate to an
@@ -68,12 +69,13 @@ describe('7702 Account Abstraction Tests', function () {
         const erc721Token = await deployer.deployErc721('PectraEOA', 'P7702', '');
         erc721 = new Erc721Token(alice, erc721Token.getAddress() as string);
 
-        cw721 = await deployer.deployCw721(
-            'wasm_store/cw2981_royalties.wasm',
-            { name: 'pectra-eoa-cw721', symbol: 'PEOA', minter: admin.seiAddress },
-            'pectra-eoa-cw721',
-        );
-        cw721.setSigner(admin);
+        // No wasm store/instantiate: bind the CW721 that already exists on this
+        // network (admin is its minter). Tests that need it skip when the
+        // network has no known instance.
+        const { cw721Address } = existingWasmAddresses();
+        if (cw721Address) {
+            cw721 = new Cw721Token(admin, cw721Address);
+        }
 
         await waitFor(2);
     });
@@ -565,11 +567,11 @@ describe('7702 Account Abstraction Tests', function () {
             console.log(code2)
         });
 
+        const stakingAddress = '0x0000000000000000000000000000000000001005';
         let stakingContract: Contract;
         const validator1 = 'seivaloper17twyyca2j6gdazvm4vkmzdvynf3tr29gzs4znh';
         const validator2 = 'seivaloper1u48s002tu0zank8rxfz02ulzqrrlr6wcw8g5td';
         it('Calls a precompile in batch tx', async () =>{
-            const stakingAddress = '0x0000000000000000000000000000000000001005';
             stakingContract = new Contract(stakingAddress, stakingAbi, alice.evmWallet.wallet);
             const calls = [
                 { target: stakingContract.target, value: ethers.parseEther('0.01'), data: stakingContract.interface.encodeFunctionData("delegate", [validator1]) },
@@ -585,13 +587,11 @@ describe('7702 Account Abstraction Tests', function () {
 
         it('Sets a precompile address in set code tx', async () =>{
             const ferdie = await UserFactory.createSeiUser(alice, 'ferdie');
-            const authorization = await createSelfAuthorization(ferdie, await stakingContract.getAddress());
+            const authorization = await createSelfAuthorization(ferdie, stakingAddress);
             await setCodeForEOA(ferdie, [authorization]);
             const code = await ferdie.evmWallet.signingClient.getCode(ferdie.evmAddress);
             console.log(code);
             expect(code).to.not.equal('0x');
-
-            const data = stakingContract.interface.encodeFunctionData("delegate", [validator1]);
 
             //Now lets try to set another account implementation
             const auth2 = await createSelfAuthorization(ferdie, await simpleAccountContract.getAddress());
@@ -602,14 +602,16 @@ describe('7702 Account Abstraction Tests', function () {
         });
 
         let ercNftId = 1891;
-        let cwNftId = '1891';
+        // The CW721 is a pre-existing contract shared across runs, so token ids
+        // must be unique per run (a re-mint of a claimed id is rejected).
+        const cwNftId = 'pectra-eoa-' + Date.now();
         it('Association done with the set code tx', async () =>{
             ferdie = await UserFactory.createUnassociatedUsers(alice, 'ferdie');
             await UserFactory.fundAddressOnSei(ferdie.seiAddress);
             const nfts = await erc721.safeMint(ferdie.evmAddress, ercNftId);
             await nfts.wait();
 
-            const mintOnSei = await cw721.mint(cwNftId, ferdie.seiAddress);
+            if (cw721) await cw721.mint(cwNftId, ferdie.seiAddress);
 
             const isAssociated = await ferdie.seiWallet.isAssociated();
             console.log(isAssociated);
@@ -625,19 +627,22 @@ describe('7702 Account Abstraction Tests', function () {
             const ownerOf = await erc721.ownerOf(ercNftId);
             expect(ownerOf).to.equal(ferdie.evmAddress);
 
-            const ownerOfNft = await cw721.ownerOf(cwNftId);
-            expect(ownerOfNft).to.equal(ferdie.seiAddress);
+            if (cw721) {
+                const ownerOfNft = await cw721.ownerOf(cwNftId);
+                expect(ownerOfNft).to.equal(ferdie.seiAddress);
+            }
 
             //now try to set code once more
-            const auth2 = await createSelfAuthorization(ferdie, await stakingContract.getAddress());
+            const auth2 = await createSelfAuthorization(ferdie, stakingAddress);
             await setCodeForEOA(ferdie, [auth2]);
             const code2 = await ferdie.evmWallet.signingClient.getCode(ferdie.evmAddress);
             console.log(code2);
             expect(code2).to.not.equal(code);
         });
 
-        it('Cosmos side can handle the set code stuff', async () =>{
-            //now ferdie owns nft 1552
+        it('Cosmos side can handle the set code stuff', async function () {
+            if (!cw721) this.skip(); // no existing CW721 on this network
+            // ferdie owns the CW721 token minted in the previous test
             cw721.setSigner(ferdie);
             const transferTx = await cw721.safeTransferFrom(ferdie.seiAddress, alice.seiAddress, cwNftId);
             await waitFor(1);

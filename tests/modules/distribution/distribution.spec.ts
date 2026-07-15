@@ -6,7 +6,7 @@ import { Querier } from '@sei-js/cosmos/rest';
 import { coin } from '@cosmjs/proto-signing';
 import { coins } from '@cosmjs/amino';
 import ExpectStatic = Chai.ExpectStatic;
-import { expectNonEmptyArray, expectTxSuccess, expectValoperAddress } from '../moduleTestUtils';
+import { expectFailure, expectNonEmptyArray, expectTxSuccess, expectValoperAddress } from '../moduleTestUtils';
 import { getRpcQueryClient, moduleRestEndpoint, toSnakeCase, withRestFallback } from '../utils/rpcQueryClient';
 
 let expect: ExpectStatic;
@@ -39,13 +39,31 @@ const queryDelegation = (delegator: string, validator: string) =>
       ),
   );
 
+/**
+ * Protobuf DecCoin amounts arrive over Tendermint RPC as raw fixed-point
+ * integers (human value × 10^18, no decimal point), while REST and the CLI
+ * emit human-readable decimal strings. Normalize the RPC shape to human
+ * units so assertions are transport-agnostic.
+ */
+const DEC_FACTOR = 1e18;
+function normalizeDecCoins<T extends { amount?: string }>(coins: T[] | undefined): T[] {
+  return (coins ?? []).map((c) =>
+    c.amount && !c.amount.includes('.')
+      ? { ...c, amount: (Number(c.amount) / DEC_FACTOR).toString() }
+      : c,
+  );
+}
+
 const queryDelegationRewards = (delegator: string, validator: string) =>
   withRestFallback(
     'distribution.delegationRewards',
-    async () =>
-      toSnakeCase(
+    async () => {
+      const resp = toSnakeCase(
         await (await getRpcQueryClient()).distribution.delegationRewards(delegator, validator),
-      ),
+      );
+      resp.rewards = normalizeDecCoins(resp.rewards);
+      return resp;
+    },
     () =>
       Querier.cosmos.distribution.v1beta1.DelegationRewards(
         { delegator_address: delegator, validator_address: validator },
@@ -56,10 +74,13 @@ const queryDelegationRewards = (delegator: string, validator: string) =>
 const queryDelegationTotalRewards = (delegator: string) =>
   withRestFallback(
     'distribution.delegationTotalRewards',
-    async () =>
-      toSnakeCase(
+    async () => {
+      const resp = toSnakeCase(
         await (await getRpcQueryClient()).distribution.delegationTotalRewards(delegator),
-      ),
+      );
+      resp.total = normalizeDecCoins(resp.total);
+      return resp;
+    },
     () =>
       Querier.cosmos.distribution.v1beta1.DelegationTotalRewards(
         { delegator_address: delegator },
@@ -93,7 +114,11 @@ const queryDistributionParams = () =>
 const queryCommunityPool = () =>
   withRestFallback(
     'distribution.communityPool',
-    async () => toSnakeCase(await (await getRpcQueryClient()).distribution.communityPool()),
+    async () => {
+      const resp = toSnakeCase(await (await getRpcQueryClient()).distribution.communityPool());
+      resp.pool = normalizeDecCoins(resp.pool);
+      return resp;
+    },
     () =>
       Querier.cosmos.distribution.v1beta1.CommunityPool({}, { pathPrefix: moduleRestEndpoint }),
   );
@@ -101,10 +126,15 @@ const queryCommunityPool = () =>
 const queryValidatorCommission = (validator: string) =>
   withRestFallback(
     'distribution.validatorCommission',
-    async () =>
-      toSnakeCase(
+    async () => {
+      const resp = toSnakeCase(
         await (await getRpcQueryClient()).distribution.validatorCommission(validator),
-      ),
+      );
+      if (resp.commission) {
+        resp.commission.commission = normalizeDecCoins(resp.commission.commission);
+      }
+      return resp;
+    },
     () =>
       Querier.cosmos.distribution.v1beta1.ValidatorCommission(
         { validator_address: validator },
@@ -115,10 +145,15 @@ const queryValidatorCommission = (validator: string) =>
 const queryValidatorOutstandingRewards = (validator: string) =>
   withRestFallback(
     'distribution.validatorOutstandingRewards',
-    async () =>
-      toSnakeCase(
+    async () => {
+      const resp = toSnakeCase(
         await (await getRpcQueryClient()).distribution.validatorOutstandingRewards(validator),
-      ),
+      );
+      if (resp.rewards) {
+        resp.rewards.rewards = normalizeDecCoins(resp.rewards.rewards);
+      }
+      return resp;
+    },
     () =>
       Querier.cosmos.distribution.v1beta1.ValidatorOutstandingRewards(
         { validator_address: validator },
@@ -461,15 +496,15 @@ describe('Distribution Module Tests', function () {
           withdrawAddress: ''
         }
       };
-      try {
-        await user.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        user.seiWallet.signingClient.signAndBroadcast(
           user.seiAddress, [msg], fee, 'empty withdraw addr'
-        );
-        expect.fail('Should have failed');
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+        ),
+        undefined,
+        'set empty withdraw address'
+      );
+      const withdrawAddr = await queryDelegatorWithdrawAddress(user.seiAddress);
+      expect(withdrawAddr.withdraw_address).to.not.be.eq('');
     });
 
     it('Cannot set withdraw address to an invalid address', async () => {
@@ -480,15 +515,142 @@ describe('Distribution Module Tests', function () {
           withdrawAddress: 'invalidaddress123'
         }
       };
-      try {
-        await user.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        user.seiWallet.signingClient.signAndBroadcast(
           user.seiAddress, [msg], fee, 'invalid withdraw addr'
-        );
-        expect.fail('Should have failed');
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
+        ),
+        undefined,
+        'set invalid withdraw address'
+      );
+      const withdrawAddr = await queryDelegatorWithdrawAddress(user.seiAddress);
+      expect(withdrawAddr.withdraw_address).to.not.be.eq('invalidaddress123');
+    });
+  });
+
+  describe('Edge Cases', function () {
+    it('Withdrawing rewards twice in a row succeeds (second withdraw is a no-op)', async () => {
+      const withdrawMsg = {
+        typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward',
+        value: {
+          delegatorAddress: user.seiAddress,
+          validatorAddress: validatorAddress,
+        }
+      };
+      const first = await user.seiWallet.signingClient.signAndBroadcast(
+        user.seiAddress, [withdrawMsg], fee, 'double withdraw 1'
+      );
+      expect(first.code).to.be.eq(0);
+
+      const second = await user.seiWallet.signingClient.signAndBroadcast(
+        user.seiAddress, [withdrawMsg], fee, 'double withdraw 2'
+      );
+      expect(second.code).to.be.eq(0);
+
+      const rewards = await queryDelegationRewards(user.seiAddress, validatorAddress);
+      // Whatever accrued between blocks should be tiny compared to the fee.
+      expect(useiRewardAmount(rewards.rewards)).to.be.lt(STANDARD_FEE_AMOUNT);
+    });
+
+    it('Funding the community pool increases it and debits the depositor', async () => {
+      const fundAmount = 100000;
+      const prePool = await queryCommunityPool();
+      const prePoolAmount = useiRewardAmount(prePool.pool);
+      const preBalance = await user.seiWallet.queryBalance();
+
+      const fundMsg = {
+        typeUrl: '/cosmos.distribution.v1beta1.MsgFundCommunityPool',
+        value: {
+          depositor: user.seiAddress,
+          amount: [coin(String(fundAmount), REWARD_DENOM)],
+        },
+      };
+      const result = await user.seiWallet.signingClient.signAndBroadcast(
+        user.seiAddress, [fundMsg], fee, 'fund community pool'
+      );
+      expectTxSuccess(result, 'fund community pool');
+
+      const postPool = await queryCommunityPool();
+      const postPoolAmount = useiRewardAmount(postPool.pool);
+      // The pool also accrues community tax each block, so it must grow by at
+      // least the deposited amount.
+      expect(postPoolAmount - prePoolAmount).to.be.gte(fundAmount);
+
+      const postBalance = await user.seiWallet.queryBalance();
+      expect(Number(preBalance.amount) - Number(postBalance.amount))
+        .to.be.eq(fundAmount + STANDARD_FEE_AMOUNT);
+    });
+
+    it('Rewards are paid to the configured withdraw address, not the delegator', async function () {
+      // Withdrawals only pay out the integer part of the accrued Dec rewards,
+      // so a small delegation would truncate to 0 usei. Use a 5 sei stake
+      // (well inside standard test-user funding) and wait for whole-usei
+      // rewards to accrue before withdrawing.
+      const redirectDelegator = await UserFactory.createSeiUser(admin, 'distRedirect');
+      const rewardSink = await UserFactory.createUnassociatedUsers(admin, 'distRewardSink');
+
+      const delegateMsg = {
+        typeUrl: '/cosmos.staking.v1beta1.MsgDelegate',
+        value: {
+          delegatorAddress: redirectDelegator.seiAddress,
+          validatorAddress: validatorAddress,
+          amount: coin('5000000', REWARD_DENOM),
+        },
+      };
+      const delegateResult = await redirectDelegator.seiWallet.signingClient.signAndBroadcast(
+        redirectDelegator.seiAddress, [delegateMsg], fee, 'redirect delegation'
+      );
+      expect(delegateResult.code).to.be.eq(0);
+
+      const setMsg = {
+        typeUrl: '/cosmos.distribution.v1beta1.MsgSetWithdrawAddress',
+        value: {
+          delegatorAddress: redirectDelegator.seiAddress,
+          withdrawAddress: rewardSink.seiAddress,
+        }
+      };
+      const setResult = await redirectDelegator.seiWallet.signingClient.signAndBroadcast(
+        redirectDelegator.seiAddress, [setMsg], fee, 'redirect withdraw addr'
+      );
+      expect(setResult.code).to.be.eq(0);
+
+      // Poll until at least 2 whole usei of rewards have accrued (max ~2 min).
+      let pendingWholeUsei = 0;
+      for (let i = 0; i < 24; i++) {
+        await waitFor(5);
+        const pendingRewards = await queryDelegationRewards(redirectDelegator.seiAddress, validatorAddress);
+        pendingWholeUsei = Math.floor(useiRewardAmount(pendingRewards.rewards));
+        if (pendingWholeUsei >= 2) break;
       }
+      if (pendingWholeUsei < 2) {
+        // Reward accrual on this network is too slow to observe a whole-usei
+        // payout within the polling window; skip rather than flake.
+        this.skip();
+        return;
+      }
+
+      const sinkPreBalance = await rewardSink.seiWallet.queryBalance();
+      const delegatorPreBalance = await redirectDelegator.seiWallet.queryBalance();
+
+      const withdrawMsg = {
+        typeUrl: '/cosmos.distribution.v1beta1.MsgWithdrawDelegatorReward',
+        value: {
+          delegatorAddress: redirectDelegator.seiAddress,
+          validatorAddress: validatorAddress,
+        }
+      };
+      const withdrawResult = await redirectDelegator.seiWallet.signingClient.signAndBroadcast(
+        redirectDelegator.seiAddress, [withdrawMsg], fee, 'redirected withdraw'
+      );
+      expect(withdrawResult.code).to.be.eq(0);
+
+      const sinkPostBalance = await rewardSink.seiWallet.queryBalance();
+      const delegatorPostBalance = await redirectDelegator.seiWallet.queryBalance();
+
+      // The sink receives at least the whole-usei rewards we observed pending;
+      // the delegator only pays the fee.
+      expect(Number(sinkPostBalance.amount) - Number(sinkPreBalance.amount)).to.be.gte(pendingWholeUsei);
+      expect(Number(delegatorPreBalance.amount) - Number(delegatorPostBalance.amount))
+        .to.be.eq(STANDARD_FEE_AMOUNT);
     });
   });
 

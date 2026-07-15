@@ -1,12 +1,12 @@
 import {ethers, TransactionReceipt} from "ethers";
 import {SeiUser, UserFactory} from "../../shared/User";
 import {Erc20Token} from "../../shared/Token";
+import {TokenDeployer} from "../../shared/Deployer";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {expect} from "chai";
 import testConfig from "../../config/testConfig.json";
 import {RealGasBurner} from "../../typechain-types";
-import fs from "fs";
 import heavyGasAbi from "../../artifacts/contracts/GasBurner.sol/RealGasBurner.json";
 import {calcNewBaseFee, waitFor, queryEip1559Params, Eip1559Params} from "../../shared/utils/helpers";
 
@@ -24,20 +24,22 @@ describe('Gas tests', function () {
 
     before('Initializes client', async () => {
         admin = await UserFactory.createAdminUser();
-        [alice, bob] = await UserFactory.createSeiUsers(admin, 2, true);
+        [alice, bob] = await UserFactory.createSeiUsers(admin, 2);
         const contractFactory = new ethers.ContractFactory(heavyGasAbi.abi, heavyGasAbi.bytecode, alice.evmWallet.wallet);
         const deploymentTx = await contractFactory.deploy();
         gasBurnerContract = await deploymentTx.waitForDeployment() as unknown as RealGasBurner;
         rpcClient = new EvmRpcClient(testConfig.evmRpcEndpoint, admin.evmWallet.signingClient);
         chainId = (await alice.evmWallet.signingClient.getNetwork()).chainId;
 
-        const contractAddresses = JSON.parse(fs.readFileSync('./tests/tokens/contractAddresses.json', 'utf8'));
-        erc20Contract = new Erc20Token(admin, contractAddresses.erc20Address);
+        // Deploy a fresh ERC20 (self-contained) instead of reading the address the
+        // tokens suite may or may not have left behind in contractAddresses.json.
+        const deployer = new TokenDeployer(admin);
+        erc20Contract = await deployer.deployErc20();
         eip1559Params = await queryEip1559Params();
     });
 
     it('Users can send legacy txs and the gas fee charges specified amount', async () => {
-        const mintTx = await erc20Contract.mint(alice.evmAddress, ethers.parseEther('100'));
+        const mintTx = await erc20Contract.mint(alice.evmAddress, ethers.parseEther('100').toString());
         await mintTx.wait();
         const data = erc20Contract.contract.interface.encodeFunctionData(
             'transfer',
@@ -345,7 +347,7 @@ describe('Gas tests', function () {
 
         expect(Number(block.gasUsed)).to.be.gt(0);
         expect(Number(block.gasUsed)).to.be.lte(Number(block.gasLimit));
-        const tx = block.transactions.find(tx => tx.hash === txHash);
+        const tx = block.transactions.find((tx: any) => tx.hash === txHash);
         const baseFee = BigInt(block.baseFeePerGas);
         const tip = sentMaxPriorityFeePerGas < sentMaxFeePerGas - baseFee ? sentMaxPriorityFeePerGas : sentMaxFeePerGas - baseFee;
         const expectedGasPrice = baseFee + tip;
@@ -357,7 +359,7 @@ describe('Gas tests', function () {
         expect(Number(tx.nonce)).to.be.eq(Number(nonce));
         expect(Number(tx.value)).to.be.eq(0);
         expect(tx.from.toLowerCase()).to.be.eq(alice.evmAddress.toLowerCase());
-        expect(tx.to.toLowerCase()).to.be.eq(erc20Contract.getAddress().toLowerCase());
+        expect(tx.to.toLowerCase()).to.be.eq((erc20Contract.getAddress() as string).toLowerCase());
         expect(tx.input).to.be.eq(data);
         expect(tx.hash).to.be.eq(txHash);
         expect(tx.blockHash).to.be.eq(receipt.blockHash);
@@ -372,7 +374,7 @@ describe('Gas tests', function () {
         expect(block.gasUsed).to.exist;
         expect(block.baseFeePerGas).to.exist;
 
-        const tx = block.transactions.find(tx => tx.hash === txHash);
+        const tx = block.transactions.find((tx: any) => tx.hash === txHash);
         const baseFee = BigInt(block.baseFeePerGas);
         const tip = sentMaxPriorityFeePerGas < sentMaxFeePerGas - baseFee ? sentMaxPriorityFeePerGas : sentMaxFeePerGas - baseFee;
         const expectedGasPrice = baseFee + tip;

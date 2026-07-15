@@ -1,0 +1,25 @@
+{
+  "require": ["tsx"],
+  "timeout": 600000,
+  "exit": true,
+  "reporter": "mochawesome",
+  "reporter-option": [
+    "reportDir=reports/mempool",
+    "reportFilename=mempool-report",
+    "html=true",
+    "json=true",
+    "overwrite=true"
+  ],
+  "spec": [
+    "tests/mempool/admission/*.spec.ts",
+    "tests/mempool/ordering/*.spec.ts",
+    "tests/mempool/parallel/*.spec.ts",
+    "tests/mempool/rpc_surface/*.spec.ts",
+    "tests/mempool/coherency/*.spec.ts",
+    "tests/mempool/sei_specific/*.spec.ts",
+    "tests/mempool/negative/*.spec.ts",
+    "tests/mempool/capacity/*.spec.ts",
+    "tests/mempool/ttl/*.spec.ts",
+    "tests/mempool/broadcast/*.spec.ts"
+  ]
+}

@@ -5,7 +5,7 @@ import { Querier } from '@sei-js/cosmos/rest';
 import { Encoder } from '@sei-js/cosmos/encoding';
 import { ethers } from 'ethers';
 import ExpectStatic = Chai.ExpectStatic;
-import { expectSeiAddress, expectTxSuccess } from '../moduleTestUtils';
+import { expectFailure, expectSeiAddress, expectTxSuccess } from '../moduleTestUtils';
 import { getRpcQueryClient, moduleRestEndpoint, withRestFallback } from '../utils/rpcQueryClient';
 
 let expect: ExpectStatic;
@@ -202,15 +202,14 @@ describe('EVM Module Tests', function () {
       const poorWallet = ethers.Wallet.createRandom().connect(admin.evmWallet.signingClient);
       const recipient = ethers.Wallet.createRandom().address;
 
-      try {
-        await poorWallet.sendTransaction({
+      await expectFailure(
+        poorWallet.sendTransaction({
           to: recipient,
           value: ethers.parseEther('100'),
-        });
-        expect.fail('Should have thrown');
-      } catch (e: any) {
-        expect(e.message).to.contain('insufficient');
-      }
+        }),
+        'insufficient',
+        'transfer from unfunded wallet'
+      );
     });
 
     it('Can query EVM chain ID', async () => {
@@ -237,13 +236,11 @@ describe('EVM Module Tests', function () {
 
   describe('Error Cases', function () {
     it('Cannot query EVM address for invalid sei address format via seid', async () => {
-      try {
-        await execCommandAndReturnJson('seid q evm evm-addr notavalidaddress');
-        expect.fail('Should have thrown for invalid sei address');
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+      await expectFailure(
+        execCommandAndReturnJson('seid q evm evm-addr notavalidaddress'),
+        undefined,
+        'evm-addr query with invalid sei address'
+      );
     });
 
     it('EVM transfer with exact balance fails due to gas', async () => {
@@ -257,15 +254,14 @@ describe('EVM Module Tests', function () {
       });
       await fundTx.wait();
 
-      try {
-        await funded.sendTransaction({
+      await expectFailure(
+        funded.sendTransaction({
           to: recipient,
           value: fundAmount,
-        });
-        expect.fail('Should have failed due to insufficient funds for gas');
-      } catch (e: any) {
-        expect(e.message).to.contain('insufficient');
-      }
+        }),
+        'insufficient',
+        'transfer of exact balance without gas headroom'
+      );
     });
 
     it('Repeated association returns a result and leaves the account associated', async () => {
@@ -336,6 +332,70 @@ describe('EVM Module Tests', function () {
     });
   });
 
+  describe('Edge Cases', function () {
+    it('A 1 wei transfer preserves sub-usei precision on the EVM side', async () => {
+      const recipient = ethers.Wallet.createRandom().address;
+      const tx = await admin.evmWallet.wallet.sendTransaction({
+        to: recipient,
+        value: 1n,
+      });
+      const receipt = await tx.wait();
+      expect(receipt!.status).to.be.eq(1);
+
+      // usei only has 12-decimals-coarser granularity; the wei bank must
+      // still track the exact single wei.
+      const balance = await admin.evmWallet.signingClient.getBalance(recipient);
+      expect(balance).to.eq(1n);
+    });
+
+    it('A transfer of 1 usei + 1 wei keeps the exact wei remainder', async () => {
+      const recipient = ethers.Wallet.createRandom().address;
+      const oneUseiInWei = 10n ** 12n;
+      const tx = await admin.evmWallet.wallet.sendTransaction({
+        to: recipient,
+        value: oneUseiInWei + 1n,
+      });
+      await tx.wait();
+
+      const balance = await admin.evmWallet.signingClient.getBalance(recipient);
+      expect(balance).to.eq(oneUseiInWei + 1n);
+    });
+
+    it('Zero-value transfer succeeds and moves no funds', async () => {
+      const recipient = ethers.Wallet.createRandom().address;
+      const tx = await admin.evmWallet.wallet.sendTransaction({
+        to: recipient,
+        value: 0n,
+      });
+      const receipt = await tx.wait();
+      expect(receipt!.status).to.be.eq(1);
+
+      const balance = await admin.evmWallet.signingClient.getBalance(recipient);
+      expect(balance).to.eq(0n);
+    });
+
+    it('Self-transfer only costs gas', async () => {
+      const funded = ethers.Wallet.createRandom().connect(admin.evmWallet.signingClient);
+      const fundTx = await admin.evmWallet.wallet.sendTransaction({
+        to: funded.address,
+        value: EVM_FUND_AMOUNT,
+      });
+      await fundTx.wait();
+
+      const preBalance = await admin.evmWallet.signingClient.getBalance(funded.address);
+      const tx = await funded.sendTransaction({
+        to: funded.address,
+        value: EVM_TRANSFER_AMOUNT,
+      });
+      const receipt = await tx.wait();
+      expect(receipt!.status).to.be.eq(1);
+
+      const gasCost = receipt!.gasUsed * receipt!.gasPrice;
+      const postBalance = await admin.evmWallet.signingClient.getBalance(funded.address);
+      expect(preBalance - postBalance).to.eq(gasCost);
+    });
+  });
+
   describe('Gas and Fee Tests', function () {
     it('Simple transfer gas used is within expected range', async () => {
       const recipient = ethers.Wallet.createRandom().address;
@@ -360,16 +420,17 @@ describe('EVM Module Tests', function () {
 
       const preBalance = await admin.evmWallet.signingClient.getBalance(funded.address);
 
-      try {
-        const failTx = await funded.sendTransaction({
-          to: ethers.Wallet.createRandom().address,
-          value: ethers.parseEther('100'),
-        });
-        await failTx.wait();
-        expect.fail('Should have failed');
-      } catch (_) {
-        // expected
-      }
+      await expectFailure(
+        (async () => {
+          const failTx = await funded.sendTransaction({
+            to: ethers.Wallet.createRandom().address,
+            value: ethers.parseEther('100'),
+          });
+          return failTx.wait();
+        })(),
+        'insufficient',
+        'oversized native transfer'
+      );
 
       const postBalance = await admin.evmWallet.signingClient.getBalance(funded.address);
       expect(postBalance).to.eq(preBalance);

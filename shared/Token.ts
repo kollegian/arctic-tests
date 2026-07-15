@@ -177,7 +177,9 @@ export class Cw20Token implements IFungibleToken {
     async decimals() { const res = await this.query<{ decimals: number }>({ decimals: {} }); return res.decimals; }
     async totalSupply() { const res = await this.query<{ total_supply: string }>({ total_supply: {} }); return res.total_supply; }
     async balanceOf(address?: string) { const res = await this.query<{ balance: string }>({ balance: { address: address ?? this.user.seiAddress } }); return res.balance; }
-    async tokenInfo() { const res = await this.query<{ token_info: { name: string, symbol: string, decimals: number, total_supply: string } }>({ token_info: {} }); return res.token_info;}
+    // The cw20 `token_info` query returns its fields at the top level of the
+    // response (not wrapped in a `token_info` key).
+    async tokenInfo() { return await this.query<{ name: string, symbol: string, decimals: number, total_supply: string }>({ token_info: {} }); }
     transfer(to: string, amount: string | number) { return this.exec({ transfer: { recipient: to, amount: amount.toString() } }); }
     transferFromSender(from: SeiUser, to: string, amount: string | number) {
         const msg = {transfer: { recipient: to, amount: amount.toString()}};

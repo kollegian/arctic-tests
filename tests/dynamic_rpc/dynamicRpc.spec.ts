@@ -20,9 +20,24 @@ describe('Dynamic RPC queries', function () {
 
     let currentBlock: Block;
     it('Gets current block', async () => {
-        currentBlock = await rpcClient.getBlockByNumber('latest', false);
-        blockNumber = ethers.toQuantity(Number(currentBlock.number) - 10);
+        // The chain may be quiet, so guarantee a busy block by bursting a batch
+        // of nonce-sequenced transfers and picking the block where most landed.
+        const wallet = admin.evmWallet.wallet;
+        const startNonce = await wallet.getNonce();
+        const burst = await Promise.all(
+            Array.from({length: 12}, (_, i) =>
+                wallet.sendTransaction({to: wallet.address, value: 1n, nonce: startNonce + i})),
+        );
+        const receipts = await Promise.all(burst.map(tx => tx.wait()));
+        const txsPerBlock = new Map<number, number>();
+        for (const receipt of receipts) {
+            txsPerBlock.set(receipt!.blockNumber, (txsPerBlock.get(receipt!.blockNumber) ?? 0) + 1);
+        }
+        const busiest = [...txsPerBlock.entries()].sort((a, b) => b[1] - a[1])[0][0];
+
+        blockNumber = ethers.toQuantity(busiest);
         let blockData = await rpcClient.getBlockByNumber(blockNumber, false);
+        // Fallback: if the burst spread too thin, scan backwards as before.
         while (blockData.transactions.length < 6) {
             blockNumber = ethers.toQuantity(Number(blockNumber) - 1);
             blockData = await rpcClient.getBlockByNumber(blockNumber, false);
@@ -58,10 +73,11 @@ describe('Dynamic RPC queries', function () {
             expect(txFromBlock.transactionIndex).to.be.eq(txFromReceipt.transactionIndex, 'tx index didnt match');
             expect(txFromBlock.type).to.be.eq(txFromReceipt.type, 'type didnt match');
             expect(txFromBlock.value).to.be.eq(txFromReceipt.value, 'type didnt match');
-            expect(txFromBlock.chainId).to.be.eq(txFromReceipt.chainId, 'type didnt match');
+            expect(txFromBlock.chainId).to.be.eq(txFromReceipt.chainId, 'chainId didnt match');
             expect(txFromBlock.v).to.be.eq(txFromReceipt.v, 'v didnt match');
             expect(txFromBlock.r).to.be.eq(txFromReceipt.r, 'r didnt match');
-            expect(txFromBlock.c).to.be.eq(txFromReceipt.c, 'c didnt match');
+            expect(txFromBlock.s).to.be.eq(txFromReceipt.s, 's didnt match');
+            expect(txFromBlock.s, 'signature s component missing').to.not.be.undefined;
         }
     })
 
@@ -187,24 +203,27 @@ describe('Dynamic RPC queries', function () {
         }
     });
 
-    it('Replays each internal call via eth_call and matches trace.returnValue', async () => {
+    it('Replays each call via eth_call and matches the debug_traceCall output at the same state', async () => {
+        // eth_call and debug_traceCall replay the exact same state when pinned to
+        // the same historical block, so their outputs must agree byte-for-byte.
+        // (Comparing against debug_traceTransaction instead would be wrong: the
+        // mined tx executed against intra-block state, not the pre-block state.)
+        const preStateBlock = ethers.toQuantity(Number(blockNumber) - 1);
         for (const tx of txInfoFromGetBlockCall.values()) {
-            if (!tx.input || tx.input === '0x') continue;
-
-            const trace = await rpcClient.debugTraceTransaction(tx.hash, {tracer: 'callTracer'});
-            const expected = (trace as any).returnValue as string;
-
-            // 2) do the same call via eth_call at that block
             const callObj = {
                 to: tx.to,
-                data: tx.input,
+                data: (tx as any).input,
                 from: tx.from,
-                value: tx.value,
+                value: ethers.toQuantity((tx as any).value ?? 0),
             };
 
-            const actual = await rpcClient.callTx(callObj, ethers.toQuantity(Number(tx.blockNumber) - 1));
-            console.log(actual);
-            // expect(_.isEqual(actual, expected)).to.true;
+            const [callResult, callTrace] = await Promise.all([
+                rpcClient.callTx(callObj, preStateBlock),
+                rpcClient.debugTraceCall(callObj, preStateBlock, {tracer: 'callTracer'}),
+            ]);
+            expect(callTrace.type, `trace type for tx ${tx.hash}`).to.be.oneOf(['CALL', 'CREATE']);
+            expect(callResult, `eth_call vs debug_traceCall output for tx ${tx.hash}`)
+                .to.be.eq(callTrace.output ?? '0x');
         }
     });
 

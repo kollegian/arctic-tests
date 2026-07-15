@@ -9,7 +9,7 @@ import util from 'node:util';
 import fs from 'fs';
 import {Tendermint34Client} from '@cosmjs/tendermint-rpc';
 import testConfig from '../../../config/testConfig.json';
-import {expectTxSuccess, expectUseiBalanceDelta, expectUseiCoin} from '../moduleTestUtils';
+import {expectFailure, expectTxFailure, expectTxSuccess, expectUseiBalanceDelta, expectUseiCoin} from '../moduleTestUtils';
 
 const exec = util.promisify(require('node:child_process').exec);
 
@@ -24,6 +24,23 @@ const CLI_FEE = '24200usei';
 const STANDARD_SIGN_AND_SEND_FEE = { amount: coins(50000, 'usei'), gas: '500000' };
 const HIGH_MULTISEND_FEE = { amount: coins(250000, 'usei'), gas: '2500000' };
 const VERY_HIGH_BUT_VALID_FEE = { amount: coins(100000, 'usei'), gas: '500000' };
+
+// JSON artifacts produced by the generate-only/sign/broadcast CLI flows.
+// Tracked here so the suite can clean them up instead of littering the repo.
+const GENERATED_TX_FILES = [
+  'unsignedNegative.json',
+  'signed_tx.json',
+  'zeroAmount.json',
+  'signed_zero_tx.json',
+  'fractionAmount.json',
+  'signed_fraction_tx.json',
+  'overMaxMemo.json',
+  'overMaxMemoSigned.json',
+  'unsupportedChars.json',
+  'unsupported_signed_tx.json',
+  'duplicateUnsigned.json',
+  'duplicateSigned.json',
+];
 
 async function getCurrentBlockMaxGas(rpcEndpoint: string): Promise<number> {
   const result = await execCommandAndReturnJson(
@@ -77,6 +94,12 @@ describe('Sei Bank Module Tests', function () {
     };
   });
 
+  after('Removes generated tx artifacts', () => {
+    for (const file of GENERATED_TX_FILES) {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
   describe('Bank balance tests', function () {
     afterEach(() => {
       alice.seiWallet.fee = { ...STANDARD_SIGN_AND_SEND_FEE };
@@ -110,14 +133,13 @@ describe('Sei Bank Module Tests', function () {
         SEND_AMOUNT,
         'usei'
       );
-      try {
-        await alice.seiWallet.signAndSend(sendMessage);
-        expect.fail('Expected over-max-gas send to fail');
-      } catch (e: any) {
-        const gasPaid = getPaidGasFee(senderPreBalance, await alice.seiWallet.queryBalance(), '0');
-        expect(e.message).to.contain(`exceeds block max gas limit ${blockMaxGasAmount}: out of gas`);
-        expect(gasPaid).to.be.eq(0);
-      }
+      await expectFailure(
+        alice.seiWallet.signAndSend(sendMessage),
+        `exceeds block max gas limit ${blockMaxGasAmount}: out of gas`,
+        'over-max-gas send'
+      );
+      const gasPaid = getPaidGasFee(senderPreBalance, await alice.seiWallet.queryBalance(), '0');
+      expect(gasPaid).to.be.eq(0);
     });
 
     it('Alice can send txs with max allowed gas limit', async () => {
@@ -137,12 +159,7 @@ describe('Sei Bank Module Tests', function () {
 
     it('Alice cant send amounts with signs', async () => {
       const command = `seid tx bank send ${alice.seiAddress} ${unassociatedUser.seiAddress} +${SEND_AMOUNT}usei --fees ${CLI_FEE} --from ${alice.seiAddress} -y`;
-      try {
-        await exec(command);
-        expect.fail('Expected signed amount to be rejected');
-      } catch (e: any) {
-        expect(e.message).to.contain('invalid decimal coin expression');
-      }
+      await expectFailure(exec(command), 'invalid decimal coin expression', 'send with signed amount');
     });
 
     it('Alice can only pay fees with usei', async () => {
@@ -220,7 +237,7 @@ describe('Sei Bank Module Tests', function () {
         'usei'
       );
       const tx = await alice.seiWallet.signAndSend(sendMessage);
-      expect(tx.rawLog).to.contain('insufficient funds');
+      expectTxFailure(tx, 'insufficient funds');
     });
 
     it('Alice cant send to invalid address', async () => {
@@ -230,12 +247,11 @@ describe('Sei Bank Module Tests', function () {
         SEND_AMOUNT,
         'usei'
       );
-      try {
-        const tx = await alice.seiWallet.signAndSend(sendMessage);
-        assert.fail('Transaction should have failed');
-      } catch (e: any) {
-        expect(e.message).to.contain('Invalid recipient address');
-      }
+      await expectFailure(
+        alice.seiWallet.signAndSend(sendMessage),
+        'Invalid recipient address',
+        'send to invalid address'
+      );
     });
 
     it('Alice can perform valid multi-send with inputs equal to outputs', async () => {
@@ -282,12 +298,11 @@ describe('Sei Bank Module Tests', function () {
       ];
 
       const sendMessage = bankSei.coinMultiSendMessage(inputs, outputs);
-      try {
-        const tx = await alice.seiWallet.signAndSend(sendMessage);
-        assert.fail('Transaction should have failed');
-      } catch (e: any) {
-        expect(e.message).to.contain('sum inputs != sum outputs');
-      }
+      await expectFailure(
+        alice.seiWallet.signAndSend(sendMessage),
+        'sum inputs != sum outputs',
+        'mismatched multisend'
+      );
       const outputAddress1AfterBalance = await userWithBalanceOnSei.seiWallet.queryBalance();
       const outputAddress2AfterBalance = await unassociatedUser.seiWallet.queryBalance();
       const inputAfterBalance = await alice.seiWallet.queryBalance();
@@ -325,20 +340,39 @@ describe('Sei Bank Module Tests', function () {
         'invalidDenom'
       );
       const tx = await alice.seiWallet.signAndSend(sendMessage);
-      expect(tx.rawLog).to.contain('insufficient funds');
+      expectTxFailure(tx, 'insufficient funds');
     });
 
     it('Alice cannot send amount with fractions', async () => {
-      const tx = await execCommandAndReturnJson(`seid tx bank send ${alice.seiAddress} ${unassociatedUser.seiAddress} 10000invalidDenom --fees 24200usei -y --broadcast-mode block`);
-      expect(tx.raw_log).to.contain('insufficient funds');
+      // The CLI normalizes decimal amounts, so build the fractional amount by
+      // editing a generate-only tx: the flow must fail at sign or broadcast.
+      const alicePreBalance = await alice.seiWallet.queryBalance();
+      await exec(`seid tx bank send ${alice.seiAddress} ${unassociatedUser.seiAddress} ${SEND_AMOUNT}usei --fees 24200usei -y --from ${alice.seiAddress} --generate-only > fractionAmount.json`);
+      await waitFor(0.5);
+
+      const msg = JSON.parse(fs.readFileSync('fractionAmount.json', 'utf8'));
+      msg.body.messages[0].amount[0].amount = '10000.5';
+      fs.writeFileSync('fractionAmount.json', JSON.stringify(msg, null, 2));
+
+      await expectFailure(
+        (async () => {
+          await exec(`seid tx sign fractionAmount.json --from ${alice.seiAddress} --chain-id sei-chain > signed_fraction_tx.json`);
+          return execCommandAndReturnJson(`seid tx broadcast signed_fraction_tx.json --from ${alice.seiAddress} --broadcast-mode block`);
+        })(),
+        undefined,
+        'send with fractional amount'
+      );
+
+      const alicePostBalance = await alice.seiWallet.queryBalance();
+      expect(alicePostBalance.amount).to.be.eq(alicePreBalance.amount);
     });
 
     it('Alice cannot send txs with empty amounts', async () => {
-      try {
-        const response = await execCommandAndReturnJson(`seid tx bank send ${alice.seiAddress} ${userWithBalanceOnSei.seiAddress} --fees 24200usei -y --from ${alice.seiAddress} --broadcast-mode block`);
-      } catch (e: any) {
-        expect(e.message).to.contain('Command failed');
-      }
+      await expectFailure(
+        execCommandAndReturnJson(`seid tx bank send ${alice.seiAddress} ${userWithBalanceOnSei.seiAddress} --fees 24200usei -y --from ${alice.seiAddress} --broadcast-mode block`),
+        'Command failed',
+        'send with empty amount'
+      );
     });
 
     it('Ferdie with no available balance cannot send tokens', async () => {
@@ -350,12 +384,11 @@ describe('Sei Bank Module Tests', function () {
         SEND_AMOUNT,
         'usei'
       );
-      try {
-        const tx = await noBalanceUser.seiWallet.signAndSend(sendMessage);
-        assert.fail('Transaction should have failed due to insufficient funds');
-      } catch (e: any) {
-        expect(e.message).to.contain('does not exist on chain');
-      }
+      await expectFailure(
+        noBalanceUser.seiWallet.signAndSend(sendMessage),
+        'does not exist on chain',
+        'send from unfunded account'
+      );
     });
 
     it('Alice can send tokens with specifying very high fee', async () => {
@@ -392,12 +425,11 @@ describe('Sei Bank Module Tests', function () {
         SEND_AMOUNT,
         'usei'
       );
-      try {
-        const tx = await alice.seiWallet.signAndSend(sendMessage);
-        assert.fail('Transaction should have failed due to insufficient fee');
-      } catch (e: any) {
-        expect(e.message).to.contain('insufficient fees');
-      }
+      await expectFailure(
+        alice.seiWallet.signAndSend(sendMessage),
+        'insufficient fees',
+        'send with below-minimum fee'
+      );
 
       // Reset fee to default
       alice.seiWallet.fee = { ...STANDARD_SIGN_AND_SEND_FEE };
@@ -499,11 +531,11 @@ describe('Sei Bank Module Tests', function () {
         '1000',
         'usei'
       );
-      try{
-        const tx = await alice.seiWallet.signAndSend(sendMessage, memo);
-      } catch(e: any) {
-        expect(e.message).to.contain('maximum number of characters is 256 but received 257 characters: memo too large');
-      }
+      await expectFailure(
+        alice.seiWallet.signAndSend(sendMessage, memo),
+        'maximum number of characters is 256 but received 257 characters: memo too large',
+        'send with over-max memo'
+      );
 
       const command = await exec(`seid tx bank send ${alice.seiAddress} ${userWithBalanceOnSei.seiAddress} ${SEND_AMOUNT}usei --fees 24200usei -y  --from ${alice.seiAddress} --note ${memo} --generate-only > overMaxMemo.json`);
       await waitFor(0.5);
@@ -539,12 +571,11 @@ describe('Sei Bank Module Tests', function () {
       ];
       const outputs: any[] = [];
       const sendMessage = bankSei.coinMultiSendMessage(inputs, outputs);
-      try {
-        await alice.seiWallet.signAndSend(sendMessage);
-        assert.fail('Transaction should have failed due to no outputs');
-      } catch (e: any) {
-        expect(e.message).to.contain('Broadcasting transaction failed');
-      }
+      await expectFailure(
+        alice.seiWallet.signAndSend(sendMessage),
+        'Broadcasting transaction failed',
+        'multisend with no outputs'
+      );
     });
 
     it('Alice can send dust amount (minimum unit)', async () => {
@@ -556,10 +587,6 @@ describe('Sei Bank Module Tests', function () {
       );
       const tx = await alice.seiWallet.signAndSend(sendMessage);
       expect(tx.code).to.be.eq(0);
-    });
-
-    it('Tests new addition into final script', async () => {
-      return true;
     });
   });
 
@@ -628,14 +655,13 @@ describe('Sei Bank Module Tests', function () {
     })
 
     it('RPC denom metadata query for usei reports missing metadata', async () =>{
-      try {
-        await withBankQueryClient((queryClient) =>
+      await expectFailure(
+        withBankQueryClient((queryClient) =>
           queryClient.bank.denomMetadata('usei')
-        );
-        assert.fail('Expected denom metadata query to fail for usei');
-      } catch (e: any) {
-        expect(e.message).to.contain('key not found');
-      }
+        ),
+        'key not found',
+        'denom metadata query for usei'
+      );
     });
 
     it('Alice can query all total supplies through RPC', async () =>{
@@ -767,6 +793,74 @@ describe('Sei Bank Module Tests', function () {
 
       const postBalance = await selfUser.seiWallet.queryBalance();
       expect(Number(preBalance.amount) - Number(postBalance.amount)).to.be.eq(Number(STANDARD_SIGN_AND_SEND_FEE.amount[0].amount));
+    });
+
+    it('Rebroadcasting the same signed tx is rejected and does not execute twice', async () => {
+      // Unlike the expected-failure sign flows above, this tx must actually
+      // land, so it needs the node's real chain id rather than a placeholder.
+      const chainId = await alice.seiWallet.signingClient.getChainId();
+      await exec(`seid tx bank send ${alice.seiAddress} ${unassociatedUser.seiAddress} 1000usei --fees ${CLI_FEE} -y --from ${alice.seiAddress} --generate-only > duplicateUnsigned.json`);
+      await waitFor(0.5);
+      await exec(`seid tx sign duplicateUnsigned.json --from ${alice.seiAddress} --chain-id ${chainId} > duplicateSigned.json`);
+      await waitFor(0.5);
+
+      const first = await execCommandAndReturnJson('seid tx broadcast duplicateSigned.json --broadcast-mode block');
+      expect(first.code).to.be.eq(0);
+
+      // Replaying the exact same bytes must fail. The node rejects it from
+      // the mempool cache (sdk code 19, "tx already in cache", empty raw_log);
+      // if the cache were evicted it would fail sequence verification
+      // (sdk code 32) instead. Either way the tx must not execute twice.
+      const second = await execCommandAndReturnJson('seid tx broadcast duplicateSigned.json --broadcast-mode block');
+      expectTxFailure(second);
+      expect(second.code).to.be.oneOf([19, 32]);
+      expect(second.codespace).to.be.eq('sdk');
+    });
+
+    it('Send of an astronomically large amount fails without overflow issues', async () => {
+      const preBalance = await alice.seiWallet.queryBalance();
+      const sendMessage = bankSei.coinSendMessage(
+        alice.seiAddress,
+        userWithBalanceOnSei.seiAddress,
+        '1000000000000000000000000000000', // 10^30 usei, far beyond total supply
+        'usei'
+      );
+      const tx = await alice.seiWallet.signAndSend(sendMessage);
+      expectTxFailure(tx, 'insufficient funds');
+
+      const postBalance = await alice.seiWallet.queryBalance();
+      // Only the fee may have been deducted; the principal must be untouched.
+      const deducted = BigInt(preBalance.amount) - BigInt(postBalance.amount);
+      expect(deducted <= BigInt(alice.seiWallet.fee.amount[0].amount)).to.be.true;
+    });
+
+    it('Multi-send with the same recipient listed twice credits the sum', async () => {
+      const recipient = await UserFactory.createUnassociatedUsers(admin, 'bankDupOutput');
+      const preBalance = await recipient.seiWallet.queryBalance();
+
+      const inputs = [
+        {address: alice.seiAddress, amount: [{amount: '3000', denom: 'usei'}]},
+      ];
+      const outputs = [
+        {address: recipient.seiAddress, amount: [{amount: '1000', denom: 'usei'}]},
+        {address: recipient.seiAddress, amount: [{amount: '2000', denom: 'usei'}]},
+      ];
+      const tx = await alice.seiWallet.signAndSend(bankSei.coinMultiSendMessage(inputs, outputs));
+      expectTxSuccess(tx, 'multisend with duplicate outputs');
+
+      const postBalance = await recipient.seiWallet.queryBalance();
+      expectUseiBalanceDelta(preBalance, postBalance, 3000, 'duplicate-output recipient');
+    });
+
+    it('Denoms are case sensitive: sending USEI fails despite holding usei', async () => {
+      const sendMessage = bankSei.coinSendMessage(
+        alice.seiAddress,
+        userWithBalanceOnSei.seiAddress,
+        '1000',
+        'USEI'
+      );
+      const tx = await alice.seiWallet.signAndSend(sendMessage);
+      expectTxFailure(tx, 'insufficient funds');
     });
   });
 });

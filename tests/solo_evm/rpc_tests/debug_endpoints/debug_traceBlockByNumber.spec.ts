@@ -71,7 +71,7 @@ describe('Debug Trace Block By Number Tests', function () {
       await recorder.recordBlock(receipt, 'Type 0 Legacy', 0);
     });
 
-    it.skip('sends Type 1 (Access List) transactions - not supported on Sei', async () => {
+    it('sends Type 1 (Access List) transactions', async () => {
       const user = users[1];
       const erc20Address = await erc20.getAddress();
 

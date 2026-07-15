@@ -3,11 +3,12 @@ import { execCommandAndReturnJson } from '../../../shared/utils/cliUtils';
 import { Querier } from '@sei-js/cosmos/rest';
 
 import { SeiUser, UserFactory } from '../../../shared/User';
+import { waitFor } from '../../../shared/utils/helpers';
 import { BasicAllowance } from 'cosmjs-types/cosmos/feegrant/v1beta1/feegrant';
 import { MsgGrantAllowance } from 'cosmjs-types/cosmos/feegrant/v1beta1/tx';
 import { QueryClientImpl as FeegrantQueryClientImpl } from 'cosmjs-types/cosmos/feegrant/v1beta1/query';
 import ExpectStatic = Chai.ExpectStatic;
-import { expectTxSuccess, expectUseiCoin } from '../moduleTestUtils';
+import { expectFailure, expectTxSuccess, expectUseiCoin } from '../moduleTestUtils';
 import { getRpcQueryClient, moduleRestEndpoint, toSnakeCase, withRestFallback } from '../utils/rpcQueryClient';
 
 let expect: ExpectStatic;
@@ -302,14 +303,13 @@ describe('Feegrant Module Tests', function () {
         gas: FEE_GRANT_GAS,
         granter: payer.seiAddress,
       };
-      try {
-        await payee.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        payee.seiWallet.signingClient.signAndBroadcast(
           payee.seiAddress, [msgSend], grantedFee, 'revoked feegrant tx'
-        );
-        expect.fail('Should have failed with revoked grant');
-      } catch (e: any) {
-        expect(e.message).to.contain('not found');
-      }
+        ),
+        'not found',
+        'send using revoked feegrant'
+      );
     });
 
     it('Cannot revoke non-existent allowance', async () => {
@@ -347,14 +347,13 @@ describe('Feegrant Module Tests', function () {
           allowance: selfAllowance,
         }),
       };
-      try {
-        const result = await payer.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        payer.seiWallet.signingClient.signAndBroadcast(
           payer.seiAddress, [grantMsg], fee, 'self grant'
-        );
-        expect(result.code).to.not.be.eq(0);
-      } catch (e: any) {
-        expect(e.message).to.contain('cannot self-grant fee authorization');
-      }
+        ),
+        'cannot self-grant fee authorization',
+        'self feegrant'
+      );
     });
 
     it('Cannot grant with zero spend limit (CosmJS)', async () => {
@@ -376,15 +375,13 @@ describe('Feegrant Module Tests', function () {
           allowance: zeroAllowance,
         }),
       };
-      try {
-        const result = await payer.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        payer.seiWallet.signingClient.signAndBroadcast(
           payer.seiAddress, [grantMsg], fee, 'zero spend grant'
-        );
-        expect(result.code).to.not.be.eq(0);
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+        ),
+        undefined,
+        'feegrant with zero spend limit'
+      );
     });
 
     it('Grantee cannot exceed spend limit', async () => {
@@ -424,15 +421,13 @@ describe('Feegrant Module Tests', function () {
         gas: FEE_GRANT_GAS,
         granter: payer.seiAddress,
       };
-      try {
-        await payee.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        payee.seiWallet.signingClient.signAndBroadcast(
           payee.seiAddress, [msgSend], grantedFee, 'exceed limit'
-        );
-        expect.fail('Should have failed exceeding spend limit');
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+        ),
+        undefined,
+        'fee exceeding feegrant spend limit'
+      );
 
       const revokeMsg = {
         typeUrl: '/cosmos.feegrant.v1beta1.MsgRevokeAllowance',
@@ -462,14 +457,117 @@ describe('Feegrant Module Tests', function () {
         gas: FEE_GRANT_GAS,
         granter: unrelatedUser.seiAddress,
       };
-      try {
-        await payee.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        payee.seiWallet.signingClient.signAndBroadcast(
           payee.seiAddress, [msgSend], grantedFee, 'unrelated granter'
-        );
-        expect.fail('Should have failed with unrelated granter');
-      } catch (e: any) {
-        expect(e.message).to.contain('not found');
-      }
+        ),
+        'not found',
+        'fee via unrelated granter'
+      );
+    });
+  });
+
+  describe('Edge Cases', function () {
+    function basicAllowanceAny(spendLimit: string, expiration?: { seconds: bigint; nanos: number }) {
+      return {
+        typeUrl: "/cosmos.feegrant.v1beta1.BasicAllowance",
+        value: Uint8Array.from(
+          BasicAllowance.encode(
+            BasicAllowance.fromPartial({
+              spendLimit: [{ denom: USEI_DENOM, amount: spendLimit }],
+              ...(expiration ? { expiration } : {}),
+            }),
+          ).finish(),
+        ),
+      };
+    }
+
+    function grantMsgFor(granter: SeiUser, grantee: SeiUser, allowanceAny: any) {
+      return {
+        typeUrl: `/cosmos.feegrant.v1beta1.MsgGrantAllowance`,
+        value: MsgGrantAllowance.fromPartial({
+          granter: granter.seiAddress,
+          grantee: grantee.seiAddress,
+          allowance: allowanceAny,
+        }),
+      };
+    }
+
+    function grantedSendMsg(grantee: SeiUser, toAddress: string) {
+      return {
+        typeUrl: '/cosmos.bank.v1beta1.MsgSend',
+        value: {
+          fromAddress: grantee.seiAddress,
+          toAddress,
+          amount: [{ denom: USEI_DENOM, amount: MICRO_SEND_AMOUNT }]
+        }
+      };
+    }
+
+    it('An exactly depleted allowance is pruned and cannot be reused', async () => {
+      const edPayer = await UserFactory.createSeiUser(admin, 'fgEdPayer');
+      const edPayee = await UserFactory.createSeiUser(admin, 'fgEdPayee');
+
+      // Spend limit equals exactly one fee, so a single use empties it.
+      const grantResult = await edPayer.seiWallet.signingClient.signAndBroadcast(
+        edPayer.seiAddress,
+        [grantMsgFor(edPayer, edPayee, basicAllowanceAny(String(FEE_GRANT_FEE_AMOUNT)))],
+        fee, 'exact-fee grant'
+      );
+      expect(grantResult.code).to.be.eq(0);
+
+      const grantedFee = {
+        amount: coins(FEE_GRANT_FEE_AMOUNT, USEI_DENOM),
+        gas: FEE_GRANT_GAS,
+        granter: edPayer.seiAddress,
+      };
+      const useResult = await edPayee.seiWallet.signingClient.signAndBroadcast(
+        edPayee.seiAddress, [grantedSendMsg(edPayee, admin.seiAddress)], grantedFee, 'deplete exactly'
+      );
+      expect(useResult.code).to.be.eq(0);
+
+      // Fully spent basic allowances are removed from state.
+      const allowances = await queryAllowances(edPayee.seiAddress);
+      expect(allowances.allowances).to.have.length(0);
+
+      await expectFailure(
+        edPayee.seiWallet.signingClient.signAndBroadcast(
+          edPayee.seiAddress, [grantedSendMsg(edPayee, admin.seiAddress)], grantedFee, 'reuse depleted'
+        ),
+        'not found',
+        'fee via depleted allowance'
+      );
+    });
+
+    it('An expired allowance cannot be used for fees', async () => {
+      const expPayer = await UserFactory.createSeiUser(admin, 'fgExpPayer');
+      const expPayee = await UserFactory.createSeiUser(admin, 'fgExpPayee');
+
+      const shortExpiration = {
+        seconds: BigInt(Math.floor(Date.now() / 1000) + 5),
+        nanos: 0,
+      };
+      const grantResult = await expPayer.seiWallet.signingClient.signAndBroadcast(
+        expPayer.seiAddress,
+        [grantMsgFor(expPayer, expPayee, basicAllowanceAny(BASIC_SPEND_LIMIT, shortExpiration))],
+        fee, 'short-lived grant'
+      );
+      expect(grantResult.code).to.be.eq(0);
+
+      await waitFor(10);
+
+      const grantedFee = {
+        amount: coins(FEE_GRANT_FEE_AMOUNT, USEI_DENOM),
+        gas: FEE_GRANT_GAS,
+        granter: expPayer.seiAddress,
+      };
+      await expectFailure(
+        expPayee.seiWallet.signingClient.signAndBroadcast(
+          expPayee.seiAddress, [grantedSendMsg(expPayee, admin.seiAddress)], grantedFee, 'use expired grant'
+        ),
+        'expired',
+        'fee via expired allowance'
+      );
     });
   });
 

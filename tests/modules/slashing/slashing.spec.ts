@@ -9,7 +9,7 @@ import { fromBase64, toBase64, toBech32 } from '@cosmjs/encoding';
 import { sha256 } from '@cosmjs/crypto';
 import { PubKey as Ed25519PubKey } from 'cosmjs-types/cosmos/crypto/ed25519/keys';
 import ExpectStatic = Chai.ExpectStatic;
-import { expectNonEmptyArray, expectValoperAddress } from '../moduleTestUtils';
+import { expectFailure, expectNonEmptyArray, expectValoperAddress } from '../moduleTestUtils';
 import { getRpcQueryClient, moduleRestEndpoint, toSnakeCase, withRestFallback } from '../utils/rpcQueryClient';
 
 let expect: ExpectStatic;
@@ -160,15 +160,13 @@ describe('Slashing Module Tests', function () {
           validatorAddr: validatorAddr
         }
       };
-      try {
-        const response = await user.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        user.seiWallet.signingClient.signAndBroadcast(
           user.seiAddress, [unjailMsg], fee, 'unjail tx'
-        );
-        expect(response.code).to.not.be.eq(0);
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+        ),
+        undefined,
+        'unjail from non-validator sender'
+      );
     });
 
     it('Queries signing info for a specific validator', async () => {
@@ -195,6 +193,28 @@ describe('Slashing Module Tests', function () {
       expect(response.val_signing_info!.jailed_until).to.be.a('string');
       expect(Number(response.val_signing_info!.start_height)).to.be.gte(0);
     });
+
+    it('Slashing params are within sane on-chain bounds', async () => {
+      const response = await querySlashingParams();
+      const params = response.params!;
+
+      expect(Number(params.signed_blocks_window)).to.be.gt(0);
+
+      const minSignedPerWindow = parseFloat(params.min_signed_per_window);
+      expect(minSignedPerWindow).to.be.gte(0);
+      expect(minSignedPerWindow).to.be.lte(1);
+
+      const doubleSignFraction = parseFloat(params.slash_fraction_double_sign);
+      expect(doubleSignFraction).to.be.gte(0);
+      expect(doubleSignFraction).to.be.lte(1);
+
+      const downtimeFraction = parseFloat(params.slash_fraction_downtime);
+      expect(downtimeFraction).to.be.gte(0);
+      expect(downtimeFraction).to.be.lte(1);
+
+      // Double-sign slashing should never be softer than downtime slashing.
+      expect(doubleSignFraction).to.be.gte(downtimeFraction);
+    });
   });
 
   describe('Error Cases', function () {
@@ -205,26 +225,22 @@ describe('Slashing Module Tests', function () {
           validatorAddr: validatorAddr,
         },
       };
-      try {
-        const response = await admin.seiWallet.signingClient.signAndBroadcast(
+      await expectFailure(
+        admin.seiWallet.signingClient.signAndBroadcast(
           admin.seiAddress, [unjailMsg], fee, 'unjail non-jailed'
-        );
-        expect(response.code).to.not.be.eq(0);
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+        ),
+        undefined,
+        'unjail non-jailed validator'
+      );
     });
 
     it('Query signing info for invalid consensus address fails', async () => {
       const invalidConsAddr = 'seivalcons1invalidaddressxxxxxxxxxxxxxxxxxx';
-      try {
-        await querySigningInfo(invalidConsAddr);
-        expect.fail('Should have thrown for invalid consensus address');
-      } catch (e: any) {
-        expect(e.message).to.be.a('string');
-        expect(e.message.length).to.be.gt(0);
-      }
+      await expectFailure(
+        querySigningInfo(invalidConsAddr),
+        undefined,
+        'signing info query for invalid consensus address'
+      );
     });
   });
 
