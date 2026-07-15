@@ -9,24 +9,6 @@ import { sleep, waitForMined, waitUntil } from '../helpers/waitFor';
 import { isHash } from '../helpers/hex';
 import { flushOnFailure } from '../helpers/cleanup';
 
-/**
- * Nonce-gap ("queued") semantics — asserted against standard Ethereum node
- * behavior (the blockchain-first contract), NOT against observed Sei quirks:
- *
- *   - a gap-blocked tx is accepted, surfaces under txpool_content.QUEUED
- *     (and never under `pending`), cannot mine, and does not advance the
- *     pending nonce;
- *   - filling the gap promotes and mines it;
- *   - an exact duplicate resubmission is refused as already-known.
- *
- * Where Sei diverges (e.g. gapped txs surfacing under `pending` or in
- * neither bucket — seen on arctic-1 and atlantic-2), these tests FAIL by
- * design: that is a finding to report, not a behavior to tolerate.
- *
- * NOTE: gapped txs are TTL-evicted after a number of blocks, and Sei blocks
- * are sub-second — every test fills its gap promptly rather than letting
- * queued txs linger.
- */
 describe('Mempool / Admission / Nonce queueing semantics', function () {
     this.timeout(180_000);
 

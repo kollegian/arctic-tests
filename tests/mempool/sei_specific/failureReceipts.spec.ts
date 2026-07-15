@@ -8,19 +8,6 @@ import { BuildContext, buildContext, signTransfer } from '../helpers/txFactory';
 import { waitForMined } from '../helpers/waitFor';
 
 /**
- * EVM failure-receipt taxonomy — Sei v6.6 (giga executor + CON-256).
- *
- * These tests pin the PRECISE receipt shape of each failure class, which is
- * intentional Sei behavior confirmed against the sei-chain source:
- *
- *   - x/evm/keeper/msg_server.go        (EVM execution → receipt with gasUsed)
- *   - x/evm/keeper/abci.go:124-134      (ante-failure → receipt, no gasUsed)
- *   - x/evm/keeper/deferred.go:24-37    ("reverted during execution ... ante")
- *   - app/ante/evm_delivertx.go         (DecorateNonceCallback bumps nonce)
- *   - x/evm/AGENTS.md "Receipts for Failure Scenarios"
- *   - CHANGELOG v6.6 PR #3383 "write receipt for state-transition errors that
- *     bump the nonce", PR #3372 "recheck=false from Autobahn block-finalize"
- *
  * The single load-bearing distinction: **gasUsed tells you WHERE a tx failed.**
  *   status=1                       → success
  *   status=0, gasUsed  > 0         → failed INSIDE the EVM (revert/OOG/INVALID);

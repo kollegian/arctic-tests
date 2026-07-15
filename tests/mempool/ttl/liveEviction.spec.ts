@@ -175,7 +175,6 @@ describe('Mempool / TTL / Gapped-tx eviction on a live network (pool-bloat guard
         ).to.equal(true);
 
         await waitForMined(ctxD.provider, drain.hash, 60_000);
-        // The pooled tx is now unaffordable and must never mine.
         const doomedMined = await tryWaitMined(doomed.hash, 30_000);
         if (doomedMined) {
             const receipt = await ctxD.provider.getTransactionReceipt(doomed.hash);
@@ -215,15 +214,4 @@ describe('Mempool / TTL / Gapped-tx eviction on a live network (pool-bloat guard
         const depth = await poolDepth(ctxD.provider, dave.evmAddress);
         expect(depth.pending + depth.queued).to.equal(0, 'no pool residue for the sender');
     });
-
-    /*
-     * NOT COVERED HERE (and why):
-     *  - Fee-stuck txs (maxFeePerGas falling below a rising base fee after
-     *    admission): not engineerable on arctic-1 — the block gas limit (~5B)
-     *    dwarfs the 250k base-fee target, so test traffic cannot move the base
-     *    fee meaningfully. Covered conceptually by the local-only capacity
-     *    suite where mempool config is controllable.
-     *  - Replacement losers: covered by ordering/replacementByFee.spec.ts
-     *    (the replaced tx never mines and the nonce advances exactly once).
-     */
 });
