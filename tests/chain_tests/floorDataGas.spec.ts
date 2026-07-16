@@ -98,13 +98,18 @@ describe('EIP-7623 floor-data-gas failure semantics', function () {
 
     it('returns the canonical v2 failure receipt (executor parity, sei-chain#3768)', async () => {
         // v2 records this failure via its EndBlock synthetic receipt, which
-        // zeroes the gas fields. Pre-#3768 giga returned gasUsed=gasLimit,
-        // type=2, and a populated effectiveGasPrice for the same tx — the
-        // mixed-fleet RPC divergence #3768 fixed. A mismatch here means the
-        // serving node's executor drifted from canonical v2 behavior.
+        // zeroes the gas fields; the RPC layer backfills from/to/type from
+        // the raw tx and pins gasUsed=0 for such receipts (evmrpc/tx.go), so
+        // type reflects the submitted tx while the gas fields stay zeroed.
+        // Pre-#3768 giga stored a full receipt instead — served as-is with
+        // gasUsed=gasLimit and a populated effectiveGasPrice — the
+        // mixed-fleet RPC divergence #3768 fixed. Constants verified against
+        // a live mixed-executor chain (giga node: gasUsed=0x6b6c,
+        // effectiveGasPrice=6 gwei; v2 node: both 0x0; same tx hash).
         expect(BigInt(receipt.gasUsed), 'gasUsed').to.equal(0n);
-        expect(Number(receipt.type), 'type').to.equal(0);
+        expect(BigInt(receipt.cumulativeGasUsed), 'cumulativeGasUsed').to.equal(0n);
         expect(BigInt(receipt.effectiveGasPrice), 'effectiveGasPrice').to.equal(0n);
+        expect(Number(receipt.type), 'type').to.equal(2);
         expect(receipt.logs ?? [], 'logs').to.have.length(0);
     });
 
