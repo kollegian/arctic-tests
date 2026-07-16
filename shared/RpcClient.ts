@@ -28,11 +28,26 @@ export class EvmRpcClient {
             -H 'Content-Type: application/json' \
             -d '${JSON.stringify(payload, null, 2)}'`;
 
-        const resp = await fetch(url, options);
-        if (!resp.ok) throw new Error(`RPC HTTP error: ${resp.status} ${resp.statusText}`);
-        const json = await resp.json();
-        if (json.error) throw new Error(`RPC error: ${json.error.code} ${json.error.message}`);
-        return json.result;
+        // Many specs query logs with toBlock = <tx block> + N; the node rejects
+        // a toBlock above its indexed tip (-32000), and the missing blocks land
+        // within a couple of block times. Retry that one transient boundary so
+        // every look-ahead call site is covered at the choke point (nightly
+        // failures 2026-07-16: sei_getLogs.spec.ts:127, erc721_refactored:188).
+        const lookaheadError = /-32000 requested toBlock \d+ is after latest available block \d+/;
+        for (let attempt = 0; ; attempt++) {
+            const resp = await fetch(url, options);
+            if (!resp.ok) throw new Error(`RPC HTTP error: ${resp.status} ${resp.statusText}`);
+            const json = await resp.json();
+            if (json.error) {
+                const message = `RPC error: ${json.error.code} ${json.error.message}`;
+                if (attempt < 20 && lookaheadError.test(message)) {
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                    continue;
+                }
+                throw new Error(message);
+            }
+            return json.result;
+        }
     }
 
     // web3 namespace
