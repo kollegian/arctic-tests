@@ -118,6 +118,9 @@ describe('Sei get logs tests', function() {
             rpcClient,
         );
         multipleSyntheticAndOneFailingEvmTx = cosmosResponse;
+        // toBlock looks 2 blocks past the tx height; the RPC follower rejects
+        // a toBlock above its indexed tip, so let those blocks land first.
+        await waitFor(4);
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) -2),
             toBlock: ethers.toQuantity(Number(multipleSyntheticAndOneFailingEvmTx.height) + 2),
