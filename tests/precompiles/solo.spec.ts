@@ -237,7 +237,8 @@ describe('Solo precompile tests', function () {
         expect(Number(alicePostBalance - alicePreBalance)).to.be.gt(900000)
     });
 
-    it('Vested balances fails', async () => {
+    // Skipped: create-vesting-account is rejected off the allowlisted chain-ids; nightly's chain-id isn't allowlisted.
+    it.skip('Vested balances fails - creation deprecated off allowlisted chain-ids (sei-chain #3714)', async () => {
         const newUser = await UserFactory.createUnassociatedUsers(admin, 'dave', true);
         const currentTime = Math.floor(Date.now() / 1000);
         const endTime = currentTime + 600;
