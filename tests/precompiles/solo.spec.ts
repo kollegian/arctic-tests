@@ -237,16 +237,26 @@ describe('Solo precompile tests', function () {
         expect(Number(alicePostBalance - alicePreBalance)).to.be.gt(900000)
     });
 
-    // Skipped: create-vesting-account is rejected off the allowlisted chain-ids; nightly's chain-id isn't allowlisted.
-    it.skip('Vested balances fails - creation deprecated off allowlisted chain-ids (sei-chain #3714)', async () => {
-        const newUser = await UserFactory.createUnassociatedUsers(admin, 'dave', true);
-        const currentTime = Math.floor(Date.now() / 1000);
-        const endTime = currentTime + 600;
-        const res = await execCommandAndReturnJson(`seid tx vesting create-vesting-account ${newUser.seiAddress} 1000000usei ${endTime} --from admin --fees 24200usei -y`);
-        await newUser.seiWallet.associate();
-        await UserFactory.fundAddressOnSei(newUser.seiAddress, 'usei', '1000000');
-        //now user has 2 sei 1 vested and locked
-        const senderBalancePre = await newUser.seiWallet.queryBalance();
+    it('Vested balances cannot be drained via solo', async () => {
+        // The account under test is seeded in genesis as a continuous vesting
+        // account (nightly harness: SeiNetwork spec.genesis.accounts[].vesting)
+        // rather than created by a live `seid tx vesting create-vesting-account`,
+        // which sei-chain #3714 now rejects on any chain-id off its allowlist
+        // (nightly's isn't). The fixture holds 2 sei with 1 sei locked to 2030,
+        // so ~1 sei is spendable (enough to associate + pay fees) while 1 sei
+        // stays locked for the whole run. The harness hands us its mnemonic via
+        // SEI_VESTING_MNEMONIC.
+        const vestingMnemonic = process.env.SEI_VESTING_MNEMONIC;
+        if (!vestingMnemonic) {
+            throw new Error('SEI_VESTING_MNEMONIC is required (the genesis-seeded vesting fixture)');
+        }
+        // Register 'dave' in the CLI keyring (toBeAddedToCli) so print-claim can
+        // sign --from dave below.
+        const dave = new SeiUser(admin.seiRpcEndpoint, admin.evmRpcEndpoint, admin.restEndpoint);
+        await dave.initialize(vestingMnemonic, 'dave', true);
+        await dave.seiWallet.associate();
+
+        const senderBalancePre = await dave.seiWallet.queryBalance();
         const recvrBalancePre = await admin.seiWallet.queryBalance();
         const payload = await getSoloAllPayload('dave', admin.evmAddress);
         const payloadArr = hex2uint8(payload);
@@ -260,7 +270,7 @@ describe('Solo precompile tests', function () {
         const recvrBalanceAfter = await admin.seiWallet.queryBalance();
         //verifies that balance is decreased and not increased
         expect(Number(recvrBalanceAfter.amount)).to.be.lt(Number(recvrBalancePre.amount));
-        const senderBalanceAfter = await newUser.seiWallet.queryBalance();
+        const senderBalanceAfter = await dave.seiWallet.queryBalance();
         expect(JSON.stringify(senderBalanceAfter)).to.equal(JSON.stringify(senderBalancePre));
     });
 
