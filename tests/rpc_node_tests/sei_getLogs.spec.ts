@@ -175,8 +175,7 @@ describe('Sei get logs tests', function() {
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedErc20, admin),
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedErc721, admin),
         ]);
-        await waitFor(4);
-        const tx = await rpcClient.getTransactionReceipt(results[0]);
+        const tx = await AtomicTxSender.requireEvmReceipt(rpcClient, results[0]);
         const logParams1 = {
             fromBlock: ethers.toQuantity(Number(tx.blockNumber) - 1),
             toBlock: ethers.toQuantity(Number(tx.blockNumber) + 2),

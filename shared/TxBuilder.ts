@@ -7,6 +7,44 @@ import {NonceManager} from "../tests/load_tests/NonceManager";
 
 export class AtomicTxSender {
 
+    // sendRawTransaction resolves on mempool admission, so the receipt is null
+    // until a block containing the tx is committed and that block is visible to
+    // the RPC pod being queried. A fixed sleep sized to the block interval is a
+    // race: it fails whenever inclusion or receipt visibility runs long, and a
+    // single-shot read then null-derefs on the caller's next line.
+    // Returns null when the budget expires; callers for which that is fatal
+    // should use requireEvmReceipt. The result is EvmRpcClient's raw JSON-RPC
+    // shape (hex-string fields), not an ethers TransactionReceipt.
+    static async waitForEvmReceipt(
+        rpcClient: EvmRpcClient,
+        txHash: string,
+        timeoutMs = 10_000,
+        pollMs = 500,
+    ): Promise<any> {
+        const deadline = Date.now() + timeoutMs;
+        let receipt: any = null;
+        while (Date.now() < deadline && !receipt) {
+            receipt = await rpcClient.getTransactionReceipt(txHash);
+            if (!receipt) await waitFor(pollMs / 1000);
+        }
+        return receipt;
+    }
+
+    // waitForEvmReceipt, but an expired budget raises an error naming the tx
+    // instead of a TypeError on the caller's next property access.
+    static async requireEvmReceipt(
+        rpcClient: EvmRpcClient,
+        txHash: string,
+        timeoutMs = 10_000,
+        pollMs = 500,
+    ): Promise<any> {
+        const receipt = await this.waitForEvmReceipt(rpcClient, txHash, timeoutMs, pollMs);
+        if (!receipt) {
+            throw new Error(`no EVM receipt for ${txHash} within ${timeoutMs}ms`);
+        }
+        return receipt;
+    }
+
     static async sendMultipleEvmTxs(evmCalls: string[], rpcUrl: string, sender: SeiUser) {
         return await Promise.all(evmCalls.map(evmCall => this.sendRawTransaction(rpcUrl, evmCall, sender)));
     }
@@ -112,14 +150,7 @@ export class AtomicTxSender {
                 cosmosTxPromise,
             ]);
 
-            // Poll for the EVM receipt; single-shot can return null on a
-            // lagging RPC pod and the next line null-derefs.
-            let evmReceipt: TransactionReceipt | null = null;
-            const receiptDeadline = Date.now() + 10_000;
-            while (Date.now() < receiptDeadline && !evmReceipt) {
-                evmReceipt = await rpcClient.getTransactionReceipt(evmHash);
-                if (!evmReceipt) await waitFor(0.5);
-            }
+            const evmReceipt = await AtomicTxSender.waitForEvmReceipt(rpcClient, evmHash);
             if (!evmReceipt) {
                 console.warn(
                     `sendRawUntilSameBlock attempt ${attempt}: evm receipt for ${evmHash} not produced within 10s; retrying`,

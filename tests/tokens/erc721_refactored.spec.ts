@@ -5,7 +5,6 @@ import { expect } from "chai";
 import { AtomicTxSender } from "../../shared/TxBuilder";
 import { EvmRpcClient } from "../../shared/RpcClient";
 import fs from "fs";
-import {waitFor} from "../../shared/utils/helpers";
 import {clearSetCode} from "../chain_tests/pectra_upgrade/utils";
 
 describe('ERC721 Tests', function () {
@@ -68,13 +67,26 @@ describe('ERC721 Tests', function () {
                 AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx1, admin),
                 AtomicTxSender.sendRawTransaction(users[0].evmRpcEndpoint, signedTx2, users[0]),
             ]);
-            await waitFor(1);
             failedTxHash = txHashes[0];
-            failedTxBlockNumber = (await rpcClient.getTransactionReceipt(failedTxHash)).blockNumber;
-            failedTxBlockHash = (await rpcClient.getTransactionReceipt(failedTxHash)).blockHash;
+            const receipt = await AtomicTxSender.requireEvmReceipt(rpcClient, failedTxHash);
+            failedTxBlockNumber = receipt.blockNumber;
+            failedTxBlockHash = receipt.blockHash;
         });
 
+        // The five cases below read the failed tx's coordinates from the test
+        // above. Without this gate an unset coordinate reaches the node as JSON
+        // null and comes back as an argument-decode error, so one root failure
+        // reports as six unrelated-looking ones.
+        function requireFailedTxContext() {
+            if (!failedTxHash || !failedTxBlockNumber || !failedTxBlockHash) {
+                throw new Error(
+                    'failed-tx coordinates unset — the preceding "mint an already mined nft" test did not complete; fix that failure first',
+                );
+            }
+        }
+
         it('Alice will see the failed tx event on eth_getBlocksByNumber', async () => {
+            requireFailedTxContext();
             const blockResult = await rpcClient.getBlockByNumber(failedTxBlockNumber, true);
             const rpcResult = await rpcClient.getTransactionReceipt(failedTxHash);
             expect(blockResult.transactions.length).to.be.greaterThan(0);
@@ -92,6 +104,7 @@ describe('ERC721 Tests', function () {
         });
 
         it('Alice will see the failed tx event on sei_getBlocksByNumber', async () => {
+            requireFailedTxContext();
             const blockResult = await rpcClient.sei_getBlockByNumber(failedTxBlockNumber, true);
             expect(blockResult.transactions.length).to.be.greaterThan(0);
             const rpcResult = await rpcClient.getTransactionReceipt(failedTxHash);
@@ -110,6 +123,7 @@ describe('ERC721 Tests', function () {
         });
 
         it('Alice will see the failed tx event on eth_getBlocksByHash', async () => {
+            requireFailedTxContext();
             const blockResult = await rpcClient.getBlockByHash(failedTxBlockHash, true);
             expect(blockResult.transactions.length).to.be.greaterThan(0);
 
@@ -129,6 +143,7 @@ describe('ERC721 Tests', function () {
         });
 
         it('Alice will see the failed tx event on sei_getBlocksByHash', async () => {
+            requireFailedTxContext();
             const blockResult = await rpcClient.sei_getBlockByHash(failedTxBlockHash, true);
             expect(blockResult.transactions.length).to.be.greaterThan(0);
 
@@ -148,6 +163,7 @@ describe('ERC721 Tests', function () {
         });
 
         it('Alice will see the failed tx event on eth_getTransactionReceipt', async () => {
+            requireFailedTxContext();
             const receipt = await rpcClient.getTransactionReceipt(failedTxHash);
             expect(receipt).to.not.be.null;
             expect(receipt.status).to.equal(ethers.toQuantity(0), 'Transaction did not fail');
@@ -176,12 +192,11 @@ describe('ERC721 Tests', function () {
                 AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx1, admin),
                 AtomicTxSender.sendRawTransaction(bob.evmRpcEndpoint, signedTx2, bob),
             ]);
-            await waitFor(3);
-            const transferTxReceipt = await rpcClient.getTransactionReceipt(transferTx);
+            const transferTxReceipt = await AtomicTxSender.requireEvmReceipt(rpcClient, transferTx);
 
             const logParams = {
-                fromBlock: ethers.toQuantity(Number(transferTxReceipt!.blockNumber) - 2),
-                toBlock: ethers.toQuantity(Number(transferTxReceipt!.blockNumber) + 3),
+                fromBlock: ethers.toQuantity(Number(transferTxReceipt.blockNumber) - 2),
+                toBlock: ethers.toQuantity(Number(transferTxReceipt.blockNumber) + 3),
                 address: erc721Contract.getAddress() as string,
             };
 

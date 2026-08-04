@@ -124,12 +124,11 @@ describe('Evm Rpc Tests', function () {
             AtomicTxSender.sendRawTransaction(admin.evmRpcEndpoint, signedTx3, admin),
         ]);
 
-        await waitFor(3);
         // The failing tx may be admitted with status=0 OR rejected at CheckTx
         // (RPC-pod state-prop lag, sequence race). Fall back to a successful
         // tx's receipt for the block number — same block batch.
-        let receipt = await rpcClient.getTransactionReceipt(results[0]);
-        if (!receipt) receipt = await rpcClient.getTransactionReceipt(results[1]);
+        let receipt = await AtomicTxSender.waitForEvmReceipt(rpcClient, results[0]);
+        if (!receipt) receipt = await AtomicTxSender.waitForEvmReceipt(rpcClient, results[1]);
         if (!receipt) throw new Error('no tx receipt available within wait budget');
         multipleSyntheticAndOneFailingEvmTx = receipt.blockNumber;
         failingTxHash = results[0];

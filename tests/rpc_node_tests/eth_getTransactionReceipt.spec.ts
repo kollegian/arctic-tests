@@ -304,9 +304,10 @@ describe('Eth Get Transaction Receipt Tests', function () {
         });
 
         it('Validates receipt for finalized block', async () => {
-            // Wait for block to be finalized
-            await waitFor(2);
-            const receipt = await rpcClient.getTransactionReceipt(successfulTxReceipt.hash);
+            // waitForEvmReceipt, not requireEvmReceipt: the null check below is what
+            // this test asserts, and a helper that throws on null would make it
+            // unfalsifiable.
+            const receipt = await AtomicTxSender.waitForEvmReceipt(rpcClient, successfulTxReceipt.hash);
             expect(receipt).to.not.be.null;
             expect(receipt.status).to.equal('0x1');
         });
