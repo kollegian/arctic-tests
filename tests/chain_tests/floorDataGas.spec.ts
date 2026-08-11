@@ -11,20 +11,20 @@ import {waitFor} from "../../shared/utils/helpers";
 // CheckTx, enters a block, then fails as a state-transition error before
 // any opcode runs.
 //
-// This is the only known failure class that reaches that branch, and it is
-// exactly where the giga executor historically diverged from v2:
-//   - an early giga build dropped the receipt entirely, so
-//     eth_getTransactionReceipt returned null forever;
-//   - pre-fix giga stamped a full receipt (gasUsed=gasLimit, type=2,
-//     populated effectiveGasPrice) while v2 writes its EndBlock synthetic
-//     receipt with zeroed gas fields — an RPC-level divergence on mixed
-//     fleets, fixed by routing these failures to the v2 fallback
-//     (sei-chain#3768).
+// This is the only known failure class that reaches that branch. Both
+// executors converge on it: giga falls back to v2 on execution errors
+// (sei-chain#3768) rather than writing its own receipt, so both route
+// through the same v2 WriteReceipt call — the canonical values below are
+// v2's, and giga inherits them by construction.
 //
-// This spec locks the canonical (v2) behavior at the RPC surface, so it
+// This spec locks that canonical (v2) behavior at the RPC surface, so it
 // fails against any executor that drifts from it regardless of which
-// executor the serving node runs.
-describe('EIP-7623 floor-data-gas failure semantics', function () {
+// executor the serving node runs. Current canonical values (sei-chain#3768,
+// #3871/CON-359): a real failed receipt is written — gasUsed=gasLimit,
+// a populated effectiveGasPrice, and cumulativeGasUsed tracking the
+// per-block running total — rather than the all-zero synthetic receipt
+// this class used to get.
+describe('EIP-7623 floor-data-gas failure semantics (sei-chain#3768/#3871)', function () {
     this.timeout(10 * 60 * 1000);
 
     // 1000 zero bytes: intrinsic (EIP-2028) = 21000 + 4*1000 = 25000,
@@ -96,19 +96,37 @@ describe('EIP-7623 floor-data-gas failure semantics', function () {
         ).to.equal(0);
     });
 
-    it('returns the canonical v2 failure receipt (executor parity, sei-chain#3768)', async () => {
-        // v2 records this failure via its EndBlock synthetic receipt, which
-        // zeroes the gas fields; the RPC layer backfills from/to/type from
-        // the raw tx and pins gasUsed=0 for such receipts (evmrpc/tx.go), so
-        // type reflects the submitted tx while the gas fields stay zeroed.
-        // Pre-#3768 giga stored a full receipt instead — served as-is with
-        // gasUsed=gasLimit and a populated effectiveGasPrice — the
-        // mixed-fleet RPC divergence #3768 fixed. Constants verified against
-        // a live mixed-executor chain (giga node: gasUsed=0x6b6c,
-        // effectiveGasPrice=6 gwei; v2 node: both 0x0; same tx hash).
-        expect(BigInt(receipt.gasUsed), 'gasUsed').to.equal(0n);
-        expect(BigInt(receipt.cumulativeGasUsed), 'cumulativeGasUsed').to.equal(0n);
-        expect(BigInt(receipt.effectiveGasPrice), 'effectiveGasPrice').to.equal(0n);
+    it('returns the canonical v2 failure receipt (executor parity)', async () => {
+        // gasUsed: this failure now writes a real receipt charging the full
+        // gas limit (rather than the old zero-value synthetic receipt), so
+        // gasUsed == GAS_LIMIT.
+        //
+        // effectiveGasPrice: asserted against `feePerGas`, not a fixed
+        // constant — tip == feeCap (set above) pins
+        // min(tipCap + baseFee, feeCap) to exactly feePerGas, matching the
+        // fee-charge assertion later in this spec — and is non-zero, since
+        // this is a real (not synthetic) receipt.
+        //
+        // cumulativeGasUsed: the per-tx receipt starts at 0, but the
+        // per-block flush recomputes it as a running sum of GasUsed across
+        // the block's receipts before persisting, so it's at least this
+        // tx's own gasUsed — more if another EVM tx landed earlier in the
+        // same block. Asserted as a lower bound, not an exact match: unlike
+        // the fee-charge assertion below (which only needs this sender to
+        // be untouched by other txs — guaranteed by the fresh, dedicated
+        // user above), this field depends on block composition, which
+        // nothing here isolates.
+        //
+        // `.at.least` is a chai range comparator, and this repo pins
+        // chai@4.5.0, whose range comparators (least/above/below/most)
+        // type-check for `number`|`Date` and throw on BigInt regardless of
+        // value — unlike `.equal`, which chai deep-compares and accepts
+        // BigInt fine. GAS_LIMIT is well inside Number's safe integer
+        // range, so cast for this comparator only (sibling specs do the
+        // same for gas fields under range comparators, e.g. debug.spec.ts).
+        expect(BigInt(receipt.gasUsed), 'gasUsed').to.equal(GAS_LIMIT);
+        expect(Number(receipt.cumulativeGasUsed), 'cumulativeGasUsed').to.be.at.least(Number(GAS_LIMIT));
+        expect(BigInt(receipt.effectiveGasPrice), 'effectiveGasPrice').to.equal(feePerGas);
         expect(Number(receipt.type), 'type').to.equal(2);
         expect(receipt.logs ?? [], 'logs').to.have.length(0);
     });
