@@ -8,6 +8,7 @@ import {EvmRpcClient} from "../../shared/RpcClient";
 import {ContractTransactionReceipt, ethers, TransactionReceipt} from "ethers";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {erc20} from "../../typechain-types/@openzeppelin/contracts/token";
+import {requireLegacyComponents} from '../../shared/seiLegacyComponents';
 
 describe('Cw721 Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -36,13 +37,15 @@ describe('Cw721 Tests', function () {
         expect(nftOwner).to.be.equal(admin.seiAddress);
     });
 
-    it('Before pointer deployment, synthetic events are not recorded with sei_getBlockByNumber', async () => {
+    it('Before pointer deployment, synthetic events are not recorded with sei_getBlockByNumber', async function () {
+        requireLegacyComponents(this);
         const rpcResult = await evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(mintTxHeight), true);
         const tx = rpcResult.transactions.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
         expect(tx).to.be.undefined;
     });
 
-    it('Before pointer deployment, synthetic events are not thrown with sei_getBlockByHash', async () => {
+    it('Before pointer deployment, synthetic events are not thrown with sei_getBlockByHash', async function () {
+        requireLegacyComponents(this);
         const hash = (await evmRpcClient.getBlockByNumber(ethers.toQuantity(mintTxHeight), true)).hash;
         const rpcResult = await evmRpcClient.sei_getBlockByHash(hash, true);
         const tx = rpcResult.transactions.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());

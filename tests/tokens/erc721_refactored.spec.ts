@@ -6,6 +6,7 @@ import { AtomicTxSender } from "../../shared/TxBuilder";
 import { EvmRpcClient } from "../../shared/RpcClient";
 import fs from "fs";
 import {clearSetCode} from "../chain_tests/pectra_upgrade/utils";
+import {requireLegacyComponents} from '../../shared/seiLegacyComponents';
 
 describe('ERC721 Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -103,7 +104,8 @@ describe('ERC721 Tests', function () {
             expect(rpcResult.status).to.equal(ethers.toQuantity(0), 'Transaction did not fail');
         });
 
-        it('Alice will see the failed tx event on sei_getBlocksByNumber', async () => {
+        it('Alice will see the failed tx event on sei_getBlocksByNumber', async function () {
+            requireLegacyComponents(this);
             requireFailedTxContext();
             const blockResult = await rpcClient.sei_getBlockByNumber(failedTxBlockNumber, true);
             expect(blockResult.transactions.length).to.be.greaterThan(0);
@@ -142,7 +144,8 @@ describe('ERC721 Tests', function () {
             expect(rpcResult.status).to.equal(ethers.toQuantity(0), 'Transaction did not fail');
         });
 
-        it('Alice will see the failed tx event on sei_getBlocksByHash', async () => {
+        it('Alice will see the failed tx event on sei_getBlocksByHash', async function () {
+            requireLegacyComponents(this);
             requireFailedTxContext();
             const blockResult = await rpcClient.sei_getBlockByHash(failedTxBlockHash, true);
             expect(blockResult.transactions.length).to.be.greaterThan(0);
@@ -276,7 +279,8 @@ describe('ERC721 Tests', function () {
             expect(transferEvent?.args.tokenId.toString()).to.equal((nftStartId + 1).toString());
         });
 
-        it('Alice can see the nft mint event with sei_getLogs', async () => {
+        it('Alice can see the nft mint event with sei_getLogs', async function () {
+            requireLegacyComponents(this);
             const logParams = {
                 fromBlock: ethers.toQuantity(mintTxReceipt.blockNumber - 2),
                 toBlock: ethers.toQuantity(mintTxReceipt.blockNumber + 3),
@@ -313,7 +317,8 @@ describe('ERC721 Tests', function () {
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
 
-        it('Alice can see the nft mint event with sei_getBlocksByNumber', async () => {
+        it('Alice can see the nft mint event with sei_getBlocksByNumber', async function () {
+            requireLegacyComponents(this);
             const block = await rpcClient.sei_getBlockByNumber(ethers.toQuantity(mintTxReceipt.blockNumber), true);
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
@@ -323,7 +328,8 @@ describe('ERC721 Tests', function () {
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
 
-        it('Alice can see the nft mint event with sei_getBlocksByHash', async () => {
+        it('Alice can see the nft mint event with sei_getBlocksByHash', async function () {
+            requireLegacyComponents(this);
             const block = await rpcClient.sei_getBlockByHash(mintTxReceipt.blockHash, true);
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
@@ -364,7 +370,8 @@ describe('ERC721 Tests', function () {
             expect(transferEvent?.args.tokenId.toString()).to.equal((nftStartId + 3).toString());
         });
 
-        it('Alice can see the nft transfer event with sei_getLogs', async () => {
+        it('Alice can see the nft transfer event with sei_getLogs', async function () {
+            requireLegacyComponents(this);
             const logParams = {
                 fromBlock: ethers.toQuantity(transferTxReceipt.blockNumber - 2),
                 toBlock: ethers.toQuantity(transferTxReceipt.blockNumber + 3),
@@ -402,7 +409,8 @@ describe('ERC721 Tests', function () {
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
 
-        it('Alice can see the nft transfer event with sei_getBlocksByNumber', async () => {
+        it('Alice can see the nft transfer event with sei_getBlocksByNumber', async function () {
+            requireLegacyComponents(this);
             const block = await rpcClient.sei_getBlockByNumber(ethers.toQuantity(transferTxReceipt.blockNumber), true);
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
@@ -412,7 +420,8 @@ describe('ERC721 Tests', function () {
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
 
-        it('Alice can see the nft transfer event with sei_getBlocksByHash', async () => {
+        it('Alice can see the nft transfer event with sei_getBlocksByHash', async function () {
+            requireLegacyComponents(this);
             const block = await rpcClient.sei_getBlockByHash(transferTxReceipt.blockHash, true);
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
@@ -454,7 +463,8 @@ describe('ERC721 Tests', function () {
             expect(approvalEvent?.args.tokenId.toString()).to.equal((nftStartId + 3).toString());
         });
 
-        it('Alice can see nft approve event with sei_getLogs', async () => {
+        it('Alice can see nft approve event with sei_getLogs', async function () {
+            requireLegacyComponents(this);
             const logParams = {
                 fromBlock: ethers.toQuantity(approvalTxReceipt.blockNumber - 2),
                 toBlock: ethers.toQuantity(approvalTxReceipt.blockNumber + 2),
@@ -488,7 +498,8 @@ describe('ERC721 Tests', function () {
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
 
-        it('Alice can see nft approve event with sei_getBlocksByNumber', async () => {
+        it('Alice can see nft approve event with sei_getBlocksByNumber', async function () {
+            requireLegacyComponents(this);
             const block = await rpcClient.sei_getBlockByNumber(ethers.toQuantity(approvalTxReceipt.blockNumber), true);
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
@@ -522,7 +533,8 @@ describe('ERC721 Tests', function () {
             expect(transferEvent?.args.tokenId.toString()).to.equal((nftStartId + 3).toString());
         });
 
-        it('Bobs transfer will appear correctly on sei_getLogs', async () => {
+        it('Bobs transfer will appear correctly on sei_getLogs', async function () {
+            requireLegacyComponents(this);
             const logParams = {
                 fromBlock: ethers.toQuantity(transferTxReceipt.blockNumber - 2),
                 toBlock: ethers.toQuantity(transferTxReceipt.blockNumber + 2),
@@ -555,7 +567,8 @@ describe('ERC721 Tests', function () {
             const block = await rpcClient.getBlockByNumber(ethers.toQuantity(transferTxReceipt.blockNumber), true);
             expect(block.transactions.length).to.be.greaterThan(0, 'No transactions found in the block');
         });
-        it('Given that there are multiple txs in the same block Alice can see the nft transfer event with sei_getLogs', async () => {
+        it('Given that there are multiple txs in the same block Alice can see the nft transfer event with sei_getLogs', async function () {
+            requireLegacyComponents(this);
             const logParams = {
                 fromBlock: ethers.toQuantity(transferTxReceipt.blockNumber - 2),
                 toBlock: ethers.toQuantity(transferTxReceipt.blockNumber + 3),
@@ -576,7 +589,8 @@ describe('ERC721 Tests', function () {
             expect(block.transactions.length).to.be.gte(1, 'Expected multiple transactions in the block');
         });
 
-        it('Given that there are multiple txs in the same block Alice can see the nft transfer event with sei_getBlocksByNumber', async () => {
+        it('Given that there are multiple txs in the same block Alice can see the nft transfer event with sei_getBlocksByNumber', async function () {
+            requireLegacyComponents(this);
             const block = await rpcClient.sei_getBlockByNumber(ethers.toQuantity(transferTxReceipt.blockNumber), true);
             expect(block.transactions.length).to.be.gte(1, 'Expected multiple transactions in the block');
         });
@@ -586,7 +600,8 @@ describe('ERC721 Tests', function () {
             expect(block.transactions.length).to.be.gte(1, 'Expected multiple transactions in the block');
         });
 
-        it('Given that there are multiple txs in the same block Alice can see the nft transfer event with sei_getBlocksByHash', async () => {
+        it('Given that there are multiple txs in the same block Alice can see the nft transfer event with sei_getBlocksByHash', async function () {
+            requireLegacyComponents(this);
             const block = await rpcClient.sei_getBlockByHash(transferTxReceipt.blockHash, true);
             expect(block.transactions.length).to.be.gte(1, 'Expected multiple transactions in the block');
         });

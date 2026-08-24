@@ -4,6 +4,7 @@ import {ethers} from "ethers";
 import {AtomicTxSender} from "./TxBuilder";
 import {EvmRpcClient} from "./RpcClient";
 import {waitFor} from "./utils/helpers";
+import {legacyComponentsEnabled} from './seiLegacyComponents';
 
 export default class TransactionBuilder {
     // it should be able to create txs for cw721, cw20, erc20, erc721
@@ -84,8 +85,13 @@ export default class TransactionBuilder {
 
     };
 
+    // findCombinedBlockTx locates a block whose sei transaction count exceeds
+    // its eth count, i.e. one holding synthetic and EVM txs together. Without
+    // the legacy surface that comparison is unavailable, so it returns the
+    // current height; both callers use the wait, not the number.
     async findCombinedBlockTx() {
         let blockNumber = await this.evmRpcClient.getBlockNumber();
+        if (!legacyComponentsEnabled()) return blockNumber;
         let seiTxs = await this.evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(blockNumber), true);
         let evmTxs = await this.evmRpcClient.getBlockByNumber(ethers.toQuantity(blockNumber), true);
         let index = 0;

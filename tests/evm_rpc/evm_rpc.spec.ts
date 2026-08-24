@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import { SeiUser, UserFactory } from '../../shared/User';
 import { TokenDeployer } from '../../shared/Deployer';
 import { waitFor } from '../../shared/utils/helpers';
+import {requireLegacyComponents} from '../../shared/seiLegacyComponents';
 
 describe('EVM RPC Tests', function () {
     this.timeout(5 * 60 * 1000);
@@ -286,7 +287,8 @@ describe('EVM RPC Tests', function () {
             expect(cosmosTxHash.length).to.be.above(0);
         });
 
-        it('sei_getEvmTx returns EVM tx hash for a cosmos tx hash', async () => {
+        it('sei_getEvmTx returns EVM tx hash for a cosmos tx hash', async function () {
+            requireLegacyComponents(this);
             const tx = await admin.evmWallet.wallet.sendTransaction({
                 to: alice.evmAddress,
                 value: ethers.parseEther('0.001'),

@@ -10,6 +10,7 @@ import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
 import {TokenDeployer} from "../../shared/Deployer";
 import {expectContiguousBlockLogIndexes, filterLogsByTxHash} from "./logAssertions";
 import fs from "fs";
+import {requireLegacyComponents} from '../../shared/seiLegacyComponents';
 
 describe('Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -228,7 +229,8 @@ describe('Evm Rpc Tests', function () {
         expect(logIndexes.size).to.be.eq(users.length);
     });
 
-    it('Can read topics with both synthetic and evm txs', async () => {
+    it('Can read topics with both synthetic and evm txs', async function () {
+        requireLegacyComponents(this);
         const logsParams = {
             fromBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) -1),
             toBlock: ethers.toQuantity(Number(oneSyntheticOneEvmTx.blockNumber) + 1),

@@ -8,6 +8,7 @@ import { waitFor } from "../../shared/utils/helpers";
 import { AtomicTxSender } from "../../shared/TxBuilder";
 import { TokenDeployer } from "../../shared/Deployer";
 import { expectContiguousBlockLogIndexes, filterLogsByTxHash } from "./logAssertions";
+import {requireLegacyComponents} from '../../shared/seiLegacyComponents';
 
 
 describe('Sei get logs tests', function() {
@@ -23,6 +24,11 @@ describe('Sei get logs tests', function() {
     let multipleSyntheticAndOneFailingEvmTx: any;
     let multipleSyntheticAndEvmTx: any;
     let multipleTxBlock: any;
+
+    // Every assertion in this file calls sei_getLogs.
+    before(function () {
+        requireLegacyComponents(this);
+    });
 
     before('Initializes', async () => {
         admin = await UserFactory.createAdminUser();
@@ -258,36 +264,11 @@ describe('Sei get logs tests', function() {
     });
 
     it('Sei get logs supports finalized, safe, latest, pending tags', async () => {
-        // Test intent: verify each tag is genuinely SUPPORTED — both that
-        // the tag resolves to a real block (not silently dropped) and
-        // that sei_getLogs accepts it. The prior shape (poll for a fresh
-        // Transfer event in fromBlock=tag..latest) was racy because on
-        // ephemeral chains the window is near-zero-width; relaxing to
-        // "returns an array" was too weak (a broken handler that returns
-        // [] for any unrecognized tag would pass).
-        //
-        // Stronger checks:
-        //   1. Each tag resolves via eth_getBlockByNumber to a non-null
-        //      block with a positive number — guards against silent
-        //      tag-resolution failures.
-        //   2. Resolved heights honor the canonical ordering
-        //      finalized ≤ safe ≤ latest ≤ pending — guards against a
-        //      handler that maps everything to the same block silently.
-        //   3. sei_getLogs accepts each tag value without error — the
-        //      original surface this test was named for.
+        // sei_getLogs accepts each tag value without error. Asserting only
+        // "returns an array" is deliberately weak on its own — the tag
+        // resolution and ordering half of this check lives in
+        // eth_getBlockByNumber.spec.ts, which runs without the legacy surface.
         const tags = ['finalized', 'safe', 'latest', 'pending'] as const;
-        const heights: Record<string, number> = {};
-        for (const tag of tags) {
-            const block = await rpcClient.getBlockByNumber(tag) as Block | null;
-            expect(block, `eth_getBlockByNumber(${tag}) returned null`).to.not.be.null;
-            const n = Number(block!.number);
-            expect(n, `eth_getBlockByNumber(${tag}) returned block.number=${n}`).to.be.greaterThan(0);
-            heights[tag] = n;
-        }
-        expect(heights.finalized).to.be.lte(heights.safe);
-        expect(heights.safe).to.be.lte(heights.latest);
-        expect(heights.latest).to.be.lte(heights.pending);
-
         for (const tag of tags) {
             const rpc = await rpcClient.sei_getLogs({
                 fromBlock: tag,

@@ -9,6 +9,7 @@ import {ContractTransactionReceipt, ethers, TransactionReceipt} from "ethers";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {unwrapErrorMessage} from "../../shared/utils/errors";
 import {erc20} from "../../typechain-types/@openzeppelin/contracts/token";
+import {requireLegacyComponents} from '../../shared/seiLegacyComponents';
 
 describe('Cw20 Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -38,13 +39,15 @@ describe('Cw20 Tests', function () {
         expect(Number(afterBalance)).to.equal(Number(preBalance) + Number('100000000'));
     });
 
-    it('Synthetic events from cw20 mints appear in sei_getBlockByNumber', async () =>{
+    it('Synthetic events from cw20 mints appear in sei_getBlockByNumber', async function () {
+        requireLegacyComponents(this);
         const rpcResult = await evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(mintTxHeight), true);
         const tx = rpcResult.transactions.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());
         expect(tx).to.not.be.undefined;
     });
 
-    it('Synthetic events from cw20 mints appear in sei_getBlockByHash', async () =>{
+    it('Synthetic events from cw20 mints appear in sei_getBlockByHash', async function () {
+        requireLegacyComponents(this);
         const hash = (await evmRpcClient.getBlockByNumber(ethers.toQuantity(mintTxHeight), true)).hash;
         const rpcResult = await evmRpcClient.sei_getBlockByHash(hash, true);
         const tx = rpcResult.transactions.find(tx => tx.from.toLowerCase() === admin.evmAddress.toLowerCase());

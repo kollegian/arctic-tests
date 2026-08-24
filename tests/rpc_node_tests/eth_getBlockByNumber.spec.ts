@@ -8,6 +8,7 @@ import {expect} from "chai";
 import {AtomicTxSender} from "../../shared/TxBuilder";
 import {ExecuteResult} from "@cosmjs/cosmwasm-stargate";
 import {waitFor} from "../../shared/utils/helpers";
+import {requireLegacyComponents, legacyComponentsEnabled} from '../../shared/seiLegacyComponents';
 
 describe('Evm Rpc Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -153,8 +154,9 @@ describe('Evm Rpc Tests', function () {
             delayed(signed3),
         ])
         multipleSyntheticAndEvmTx = results[2];
-        const blockData = await rpcClient.sei_getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTx.height), true);
-        console.log(blockData);
+        if (legacyComponentsEnabled()) {
+            console.log(await rpcClient.sei_getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTx.height), true));
+        }
 
 
     });
@@ -199,7 +201,8 @@ describe('Evm Rpc Tests', function () {
         expect(indexes.sort((a, b) => b - a)[0]).to.be.eq(blockInfo.transactions.length - 1);
     });
 
-    it('Given that there are synthetic and evm tx on a block synthetic tx index includes all txs', async () =>{
+    it('Given that there are synthetic and evm tx on a block synthetic tx index includes all txs', async function () {
+        requireLegacyComponents(this);
         const provider = admin.evmWallet.signingClient;
         const blockInfo = await provider.send('sei_getBlockByNumber', [ethers.toQuantity(syntheticEvmBlockHeight()), true]);
         const indexes = blockInfo.transactions.map(tx => ethers.toNumber(tx.transactionIndex));
@@ -224,7 +227,8 @@ describe('Evm Rpc Tests', function () {
         }
     });
 
-    it('Eth get block by number matches with sei getBlock by Number', async () =>{
+    it('Eth get block by number matches with sei getBlock by Number', async function () {
+        requireLegacyComponents(this);
         const ethBlock = await rpcClient.getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTx.height), true);
         const seiBlock = await rpcClient.sei_getBlockByNumber(ethers.toQuantity(multipleSyntheticAndEvmTx.height), true);
         expect(ethBlock.baseFeePerGas).to.be.eq(seiBlock.baseFeePerGas);
@@ -290,4 +294,22 @@ describe('Evm Rpc Tests', function () {
             await waitFor(3);
         })
     }
+
+    // Each tag resolves to a real block, and the resolved heights hold the
+    // canonical order. A handler that maps every tag to the same block, or
+    // drops one, satisfies the per-tag tests above and fails here.
+    it('Eth get block by number resolves finalized, safe, latest and pending in order', async () => {
+        const tagList = ['finalized', 'safe', 'latest', 'pending'] as const;
+        const heights: Record<string, number> = {};
+        for (const tag of tagList) {
+            const block = await rpcClient.getBlockByNumber(tag);
+            expect(block, `eth_getBlockByNumber(${tag}) returned null`).to.not.be.null;
+            const height = Number(block.number);
+            expect(height, `eth_getBlockByNumber(${tag}) returned block.number=${height}`).to.be.greaterThan(0);
+            heights[tag] = height;
+        }
+        expect(heights.finalized).to.be.lte(heights.safe);
+        expect(heights.safe).to.be.lte(heights.latest);
+        expect(heights.latest).to.be.lte(heights.pending);
+    });
 })

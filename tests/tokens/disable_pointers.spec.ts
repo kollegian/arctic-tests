@@ -5,6 +5,7 @@ import {ethers} from "ethers";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import {expect} from "chai";
 import * as abi from "../../artifacts/contracts/TestERC1155.sol/TestERC1155.json";
+import {requireLegacyComponents, legacyComponentsEnabled} from '../../shared/seiLegacyComponents';
 describe('@state-required Tests', function () {
     this.timeout(3 * 60 * 1000);
     let admin: SeiUser;
@@ -187,8 +188,9 @@ describe('@state-required Tests', function () {
         const rpcRes = await evmRpcClient.getLogs(logs);
         console.log(rpcRes);
 
-        const syntheticLogs = await evmRpcClient.sei_getLogs(logs);
-        console.log(syntheticLogs);
+        if (legacyComponentsEnabled()) {
+            console.log(await evmRpcClient.sei_getLogs(logs));
+        }
     });
 
     it('User can transfer on evm runtime', async () => {
@@ -206,7 +208,8 @@ describe('@state-required Tests', function () {
         console.log(aliceWasmBalance);
     });
 
-    it('Sei logs dont return whereas eth logs returns', async () =>{
+    it('Sei logs dont return whereas eth logs returns', async function () {
+        requireLegacyComponents(this);
         const logs = {
             fromBlock: ethers.toQuantity(50500),
             toBlock: ethers.toQuantity(50562),
@@ -293,8 +296,9 @@ describe('@state-required Tests', function () {
         const result = await evmRpcClient.getLogs(logs);
         console.log(result);
 
-        const response = await evmRpcClient.sei_getLogs(logs);
-        console.log(response);
+        if (legacyComponentsEnabled()) {
+            console.log(await evmRpcClient.sei_getLogs(logs));
+        }
     });
 
     it('Queries approvals', async () => {
@@ -308,8 +312,9 @@ describe('@state-required Tests', function () {
         const result = await evmRpcClient.getLogs(logs);
         console.log(result);
 
-        const synth = await evmRpcClient.sei_getLogs(logs);
-        console.log(synth);
+        if (legacyComponentsEnabled()) {
+            console.log(await evmRpcClient.sei_getLogs(logs));
+        }
     });
 
     it('Lets try transfer ', async () =>{

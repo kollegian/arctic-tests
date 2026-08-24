@@ -8,6 +8,7 @@ import {waitFor} from "../../shared/utils/helpers";
 import {EvmRpcClient} from "../../shared/RpcClient";
 import _, {initial} from "lodash";
 import fs from "fs";
+import {requireLegacyComponents} from '../../shared/seiLegacyComponents';
 
 describe('Erc20 Tests', function () {
     this.timeout(10 * 60 * 1000);
@@ -205,7 +206,8 @@ describe('Erc20 Tests', function () {
                 expect(input[1].toString()).to.be.eq(ethers.parseEther('1000').toString());
             });
 
-            it('sei get block by number returns info on evm erc20 txs', async () =>{
+            it('sei get block by number returns info on evm erc20 txs', async function () {
+                requireLegacyComponents(this);
                 const rpcResult = await evmRpcClient.sei_getBlockByNumber(ethers.toQuantity(evmOnlyTxBlock), true);
                 const txs = rpcResult.transactions.filter(tx => tx.from.toLowerCase() === alice.evmAddress.toLowerCase());
                 expect(txs.length).to.be.gte(1);
@@ -219,7 +221,8 @@ describe('Erc20 Tests', function () {
                 }
             });
 
-            it('sei get block by hash returns info on erc erc20 txs', async () =>{
+            it('sei get block by hash returns info on erc erc20 txs', async function () {
+                requireLegacyComponents(this);
                 const blockHash = (await evmRpcClient.getBlockByNumber(ethers.toQuantity(evmOnlyTxBlock), true)).hash;
                 const rpcResult = await evmRpcClient.sei_getBlockByHash(blockHash, true);
                 const txs = rpcResult.transactions.filter(tx => tx.from.toLowerCase() === alice.evmAddress.toLowerCase());
@@ -275,12 +278,14 @@ describe('Erc20 Tests', function () {
                 expect(filterResults.length).to.be.eq(1);
             });
 
-            it('Sei logs endpoint returns info on wasm erc20 txs', async () =>{
+            it('Sei logs endpoint returns info on wasm erc20 txs', async function () {
+                requireLegacyComponents(this);
                 const logs = await evmRpcClient.sei_getLogs(seiLogs);
                 expect(logs.length).to.be.eq(1);
             });
 
-            it('Sei filter logs returns info on wasm erc20 txs', async () =>{
+            it('Sei filter logs returns info on wasm erc20 txs', async function () {
+                requireLegacyComponents(this);
                 // Sei filters are pod-local: `sei_newFilter` creates the
                 // filter on whichever RPC pod the ClusterIP load-balances
                 // to; the next `sei_getFilterLogs` may hit a different pod
