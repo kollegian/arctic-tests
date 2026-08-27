@@ -1,15 +1,8 @@
 /** Fund and associate a disposable mnemonic on the local Sei Docker devnet. */
 import { promisify } from 'node:util';
 import { execFile as execFileCallback } from 'node:child_process';
-import { coins } from '@cosmjs/amino';
-import { DirectSecp256k1HdWallet, Registry } from '@cosmjs/proto-signing';
-import {
-    assertIsDeliverTxSuccess,
-    defaultRegistryTypes,
-    SigningStargateClient,
-    StargateClient,
-} from '@cosmjs/stargate';
-import { seiProtoRegistry, Encoder } from '@sei-js/cosmos/encoding';
+import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
+import { StargateClient } from '@cosmjs/stargate';
 import { ethers } from 'ethers';
 
 const execFile = promisify(execFileCallback);
@@ -61,38 +54,13 @@ async function fundCosmosAddress(address: string): Promise<void> {
     ]);
 }
 
-async function associate(address: string): Promise<void> {
-    const wallet = await seiWallet();
-    const registry = new Registry([...seiProtoRegistry, ...defaultRegistryTypes]);
-    const client = await SigningStargateClient.connectWithSigner(
-        COSMOS_RPC,
-        wallet,
-        { registry },
-    );
-    try {
-        const result = await client.signAndBroadcast(
-            address,
-            [
-                {
-                    typeUrl: `/${Encoder.evm.MsgAssociate.$type}`,
-                    value: Encoder.evm.MsgAssociate.fromPartial({
-                        sender: address,
-                        custom_message: 'EEST GitHub runner bootstrap',
-                    }),
-                },
-            ],
-            { amount: coins(21000, 'usei'), gas: '200000' },
-            'associate EEST runner',
-        );
-        assertIsDeliverTxSuccess(result);
-    } finally {
-        client.disconnect();
-    }
-}
-
 async function main(): Promise<void> {
     const evm = new ethers.JsonRpcProvider(EVM_RPC);
-    const evmAdmin = ethers.HDNodeWallet.fromPhrase(ADMIN_MNEMONIC, '', HD_PATH);
+    const evmAdmin = ethers.HDNodeWallet.fromPhrase(
+        ADMIN_MNEMONIC,
+        '',
+        HD_PATH,
+    ).connect(evm);
     const wallet = await seiWallet();
     const [account] = await wallet.getAccounts();
     const cosmos = await StargateClient.connect(COSMOS_RPC);
@@ -104,10 +72,15 @@ async function main(): Promise<void> {
             async () => BigInt((await cosmos.getBalance(account.address, 'usei')).amount) > 0n,
             'Cosmos funding transaction',
         );
-        await associate(account.address);
+        const associationTx = await evmAdmin.sendTransaction({
+            to: evmAdmin.address,
+            value: 0,
+            gasLimit: 21_000,
+        });
+        await associationTx.wait();
         await waitFor(
             async () => (await evm.getBalance(evmAdmin.address)) > 0n,
-            'EVM account association',
+            'EVM balance after association transaction',
         );
         console.log(`funded EEST account ${evmAdmin.address}`);
     } finally {
