@@ -151,7 +151,7 @@ multiplies RPC and mempool pressure.
 For an end-to-end GitHub-hosted run, dispatch the `EEST four-shard run`
 workflow. It builds the selected `sei-chain` revision once, then starts four
 matrix runners. Each runner owns a fresh four-node devnet and one shard. The
-default `ubuntu-large` label can be overridden when dispatching, and each shard
+default `ubuntu-latest` label can be overridden when dispatching, and each shard
 uploads its JUnit report as a workflow artifact.
 
 Transaction inclusion is polled every 0.2 seconds by default. Override

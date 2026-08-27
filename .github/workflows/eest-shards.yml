@@ -14,7 +14,7 @@ on:
       runner_label:
         description: GitHub runner label with enough capacity for a four-node devnet
         required: true
-        default: ubuntu-large
+        default: ubuntu-latest
         type: string
       eest_parallelism:
         description: EEST workers per chain
@@ -38,7 +38,7 @@ env:
 jobs:
   prepare-chain:
     name: Build shared Sei devnet
-    runs-on: ${{ inputs.runner_label || 'ubuntu-large' }}
+    runs-on: ${{ inputs.runner_label || 'ubuntu-latest' }}
     timeout-minutes: 75
     permissions:
       contents: read
@@ -122,7 +122,7 @@ jobs:
   shard:
     name: EEST shard ${{ matrix.shard }}
     needs: prepare-chain
-    runs-on: ${{ inputs.runner_label || 'ubuntu-large' }}
+    runs-on: ${{ inputs.runner_label || 'ubuntu-latest' }}
     timeout-minutes: 240
     permissions:
       contents: read
