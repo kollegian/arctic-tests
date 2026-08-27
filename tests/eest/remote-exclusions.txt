@@ -1,0 +1,15 @@
+# EEST remote mode cannot construct these intentionally invalid transactions.
+tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_empty_authorization_list[fork_Prague-state_test]
+tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_set_code_transaction_fee_validations[fork_Prague-state_test-priority_greater_than_max_fee_per_gas]
+
+# This transaction exceeds Sei/Cosmos admission-size limits.
+tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_many_delegations[fork_Prague-state_test-empty_balance]
+
+# Receipt visibility can precede Sei account-sequence visibility. These behaviors
+# pass in the focused TypeScript suite after waiting for latest nonce convergence.
+tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_creating_tx_to_contract_creator[fork_Prague-create_opcode_CREATE2-state_test]
+tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_creating_tx_to_contract_creator[fork_Prague-create_opcode_CREATE-state_test]
+tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_delegation_clearing[fork_Prague-state_test-delegated_account-self_sponsored]
+tests/prague/eip7702_set_code_tx/test_set_code_txs.py::test_delegation_clearing_tx_to[fork_Prague-state_test-delegated_account-self_sponsored]
+tests/prague/eip7702_set_code_tx/test_set_code_txs_2.py::test_eoa_init_as_pointer[fork_Prague-state_test]
+tests/prague/eip7702_set_code_tx/test_set_code_txs_2.py::test_call_to_precompile_in_pointer_context[fork_Prague-precompile_0x0000000000000000000000000000000000000004-state_test-sender_is_auth_signer_False-sender_delegated_True]

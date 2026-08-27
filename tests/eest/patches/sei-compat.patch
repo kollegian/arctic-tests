@@ -1,0 +1,211 @@
+diff --git a/packages/testing/src/execution_testing/cli/pytest_commands/plugins/execute/pre_alloc.py b/packages/testing/src/execution_testing/cli/pytest_commands/plugins/execute/pre_alloc.py
+index 45ab14ec8..fa1f4e503 100644
+--- a/packages/testing/src/execution_testing/cli/pytest_commands/plugins/execute/pre_alloc.py
++++ b/packages/testing/src/execution_testing/cli/pytest_commands/plugins/execute/pre_alloc.py
+@@ -70,6 +70,17 @@ def pytest_addoption(parser: pytest.Parser) -> None:
+         type=int,
+         help="The start private key from which tests will deploy EOAs.",
+     )
++    pre_alloc_group.addoption(
++        "--eoa-fund-amount-default",
++        action="store",
++        dest="eoa_fund_amount_default",
++        default=10**17,
++        type=int,
++        help=(
++            "Fallback wei amount for pre.fund_eoa() accounts that do not send "
++            "a transaction during the test."
++        ),
++    )
+     pre_alloc_group.addoption(
+         "--skip-cleanup",
+         action="store_true",
+@@ -388,6 +399,7 @@ class Alloc(SharedAlloc):
+     _block_number: int = PrivateAttr()
+     _timestamp: int = PrivateAttr()
+     _verify_full: bool = PrivateAttr(default=False)
++    _eoa_fund_amount_default: int = PrivateAttr()
+ 
+     def __init__(
+         self,
+@@ -396,6 +408,7 @@ class Alloc(SharedAlloc):
+         eth_rpc: EthRPC,
+         eoa_iterator: Iterator[EOA],
+         chain_id: int,
++        eoa_fund_amount_default: int,
+         node_id: str = "",
+         address_stubs: AddressStubs | None = None,
+         block_number: int = 0,
+@@ -416,6 +429,7 @@ class Alloc(SharedAlloc):
+         self._timestamp = timestamp
+         self._funding_gas_limit = funding_gas_limit
+         self._verify_full = verify_full
++        self._eoa_fund_amount_default = eoa_fund_amount_default
+ 
+     def code_pre_processor(self, code: Bytecode) -> Bytecode:
+         """Pre-processes the code before setting it."""
+@@ -1197,19 +1211,9 @@ class Alloc(SharedAlloc):
+         )
+         for tx in self._pending_txs:
+             if tx.value is None:
+-                # WARN: This currently fails if there's an account with
+-                # `pre.fund_eoa()` that never sends a transaction during test.
+-                if tx.to not in sender_balances:
+-                    error_message = (
+-                        "Sender balance must be set before sending:"
+-                        f"\nTransaction: {tx.model_dump_json(indent=2)}"
+-                    )
+-                    if tx.metadata is not None:
+-                        metadata_json = tx.metadata.model_dump_json(indent=2)
+-                        error_message += f"\nMetadata: {metadata_json}"
+-                    logger.error(error_message)
+-                    raise ValueError(error_message)
+-                sender_balance = sender_balances[tx.to]
++                sender_balance = sender_balances.get(
++                    tx.to, self._eoa_fund_amount_default
++                )
+                 bal_eth = sender_balance / 10**18
+                 logger.info(
+                     f"Deferred EOA balance for {tx.to} set to "
+@@ -1281,6 +1285,12 @@ def alloc_flags(
+     return alloc_flags_from_test_markers
+ 
+ 
++@pytest.fixture(scope="session")
++def eoa_fund_amount_default(request: pytest.FixtureRequest) -> int:
++    """Return the fallback funding amount for non-sender EOAs."""
++    return request.config.getoption("eoa_fund_amount_default")
++
++
+ @pytest.fixture(autouse=True, scope="function")
+ def pre(
+     fork: Fork,
+@@ -1296,6 +1306,7 @@ def pre(
+     max_priority_fee_per_gas: int,
+     dry_run: bool,
+     sender_fund_refund_gas_limit: int,
++    eoa_fund_amount_default: int,
+     request: pytest.FixtureRequest,
+ ) -> Generator[Alloc, None, None]:
+     """Return default pre allocation for all tests (Empty alloc)."""
+@@ -1312,6 +1323,7 @@ def pre(
+         eth_rpc=eth_rpc,
+         eoa_iterator=eoa_iterator,
+         chain_id=chain_config.chain_id,
++        eoa_fund_amount_default=eoa_fund_amount_default,
+         node_id=request.node.nodeid,
+         address_stubs=address_stubs,
+         funding_gas_limit=sender_fund_refund_gas_limit,
+diff --git a/packages/testing/src/execution_testing/rpc/rpc.py b/packages/testing/src/execution_testing/rpc/rpc.py
+index 58cfb1403..69caa4e7f 100644
+--- a/packages/testing/src/execution_testing/rpc/rpc.py
++++ b/packages/testing/src/execution_testing/rpc/rpc.py
+@@ -797,6 +797,7 @@ class EthRPC(BaseRPC):
+         self, transaction_hash: Hash
+     ) -> TransactionByHashResponse | None:
+         """`eth_getTransactionByHash`: Returns transaction details."""
++        response: Any = None
+         try:
+             logger.info(f"Requesting tx details of {transaction_hash}")
+             response = self.post_request(
+@@ -811,6 +812,17 @@ class EthRPC(BaseRPC):
+                 response, context=self.response_validation_context
+             )
+         except ValidationError as e:
++            if (
++                os.getenv("EEST_TOLERATE_MALFORMED_PENDING_TX") == "1"
++                and isinstance(response, dict)
++                and response.get("blockHash") is None
++                and response.get("block_hash") is None
++            ):
++                logger.warning(
++                    "Ignoring malformed pending transaction response for "
++                    f"{transaction_hash}; polling will retry after inclusion"
++                )
++                return None
+             pprint(e.errors())
+             raise e
+ 
+@@ -839,12 +851,26 @@ class EthRPC(BaseRPC):
+             if result is None:
+                 results.append(None)
+             else:
+-                results.append(
+-                    TransactionByHashResponse.model_validate(
++                try:
++                    parsed_result = TransactionByHashResponse.model_validate(
+                         result,
+                         context=self.response_validation_context,
+                     )
+-                )
++                except ValidationError:
++                    if (
++                        os.getenv("EEST_TOLERATE_MALFORMED_PENDING_TX") == "1"
++                        and isinstance(result, dict)
++                        and result.get("blockHash") is None
++                        and result.get("block_hash") is None
++                    ):
++                        logger.warning(
++                            "Ignoring malformed pending transaction response; "
++                            "polling will retry after inclusion"
++                        )
++                        parsed_result = None
++                    else:
++                        raise
++                results.append(parsed_result)
+         return results
+ 
+     def get_transaction_receipt(
+diff --git a/tests/prague/eip7702_set_code_tx/conftest.py b/tests/prague/eip7702_set_code_tx/conftest.py
+new file mode 100644
+index 000000000..d3aad6367
+--- /dev/null
++++ b/tests/prague/eip7702_set_code_tx/conftest.py
+@@ -0,0 +1,21 @@
++"""Sei-specific skips for EIP-7702 remote execution."""
++
++import pytest
++
++UNAVAILABLE_SYSTEM_CONTRACTS = (
++    "system_contract_0x0000f90827f1c53a10cb7a02335b175320002935",
++    "system_contract_0x000f3df6d732807ef1319fb7b8bb8522d0beac02",
++)
++
++
++def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
++    """Skip cases requiring Ethereum system-contract bytecode absent from Sei."""
++    for item in items:
++        if item.originalname != "test_set_code_to_system_contract":
++            continue
++        if any(contract in item.name for contract in UNAVAILABLE_SYSTEM_CONTRACTS):
++            item.add_marker(
++                pytest.mark.skip(
++                    reason="Sei genesis does not contain Ethereum system-contract bytecode"
++                )
++            )
+diff --git a/tests/prague/eip7702_set_code_tx/test_set_code_txs.py b/tests/prague/eip7702_set_code_tx/test_set_code_txs.py
+index a4f0a681b..524a4fca8 100644
+--- a/tests/prague/eip7702_set_code_tx/test_set_code_txs.py
++++ b/tests/prague/eip7702_set_code_tx/test_set_code_txs.py
+@@ -3412,8 +3412,8 @@ def test_eoa_tx_after_set_code(
+                     sender=auth_signer,
+                     to=auth_signer,
+                     value=0,
+-                    max_fee_per_gas=1_000,
+-                    max_priority_fee_per_gas=1_000,
++                    max_fee_per_gas=2_000_000_000,
++                    max_priority_fee_per_gas=2_000_000_000,
+                 )
+             )
+         case 3:
+@@ -3423,8 +3423,8 @@ def test_eoa_tx_after_set_code(
+                     sender=auth_signer,
+                     to=auth_signer,
+                     value=0,
+-                    max_fee_per_gas=1_000,
+-                    max_priority_fee_per_gas=1_000,
++                    max_fee_per_gas=2_000_000_000,
++                    max_priority_fee_per_gas=2_000_000_000,
+                     max_fee_per_blob_gas=fork.min_base_fee_per_blob_gas() * 10,
+                     blob_versioned_hashes=add_kzg_version(
+                         [Hash(1)],

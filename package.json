@@ -1,6 +1,9 @@
 {
   "name": "arctic_tests",
   "scripts": {
+    "eest:install": "bash scripts/installEest.sh",
+    "test:eest:eip7702": "EEST_TEST_TARGET=tests/prague/eip7702_set_code_tx bash scripts/runEestRemote.sh",
+    "test:eest:nightly": "bash scripts/runEestNightly.sh",
     "release-test": "tsx bin/release-test.ts",
     "release-test:chain-agnostic": "TEST_TARGET=chain-agnostic tsx bin/release-test.ts",
     "release-test:state-required": "TEST_TARGET=state-required tsx bin/release-test.ts"

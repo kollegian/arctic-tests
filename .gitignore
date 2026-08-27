@@ -34,3 +34,10 @@ ignition/deployments/chain-31337
 tests/tokens/contractAddresses.json
 tests/rpc_node_tests/contractAddresses.json
 config/mnemonics.json
+
+# Reproducible EEST checkout and reports.
+/.cache/
+/exec-specs/
+/eest-report/
+__pycache__/
+*.pyc

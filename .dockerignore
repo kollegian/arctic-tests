@@ -1,8 +1,14 @@
 .git
 .github
+.cache
+.claude
 node_modules
 mochawesome-report
 release-test-report
+eest-report
+exec-specs
+se-cosmos
+sei-chain
 *.iml
 README.md
 

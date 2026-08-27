@@ -1,0 +1,286 @@
+name: EEST four-shard run
+
+on:
+  workflow_dispatch:
+    inputs:
+      sei_chain_ref:
+        description: sei-protocol/sei-chain commit or branch to test
+        required: true
+        default: d8e2500a2e22b0bb60b5a85c6e1bbcf27f672001
+        type: string
+      runner_label:
+        description: GitHub runner label with enough capacity for a four-node devnet
+        required: true
+        default: ubuntu-large
+        type: string
+      eest_parallelism:
+        description: EEST workers per chain
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "2"
+
+concurrency:
+  group: eest-four-shard-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GHCR_LOCALNODE: ghcr.io/${{ github.repository_owner }}/arctic-eest-localnode
+  GHCR_RPCNODE: ghcr.io/${{ github.repository_owner }}/arctic-eest-rpcnode
+  # Disposable devnet identity; never use this mnemonic outside local CI.
+  EEST_ADMIN_MNEMONIC: cover brand danger absent gas worth sustain rural powder auction shadow find merge domain promote glimpse burger embody favorite lake rain plate present soda
+
+jobs:
+  prepare-chain:
+    name: Build shared Sei devnet
+    runs-on: ${{ inputs.runner_label }}
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out sei-chain
+        uses: actions/checkout@v4
+        with:
+          repository: sei-protocol/sei-chain
+          ref: ${{ inputs.sei_chain_ref }}
+          path: sei-chain
+
+      - name: Reclaim runner disk
+        run: bash sei-chain/.github/scripts/ci-free-disk.sh
+
+      - name: Relocate Docker data
+        run: bash sei-chain/.github/scripts/ci-relocate-docker-data-root.sh
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.6"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build localnode image
+        uses: docker/build-push-action@v6
+        with:
+          context: sei-chain/docker/localnode
+          file: sei-chain/docker/localnode/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: sei-chain/localnode
+          cache-from: type=gha,scope=eest-localnode
+          cache-to: type=gha,scope=eest-localnode,mode=max
+
+      - name: Build rpcnode image
+        uses: docker/build-push-action@v6
+        with:
+          context: sei-chain/docker/rpcnode
+          file: sei-chain/docker/rpcnode/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: sei-chain/rpcnode
+          cache-from: type=gha,scope=eest-rpcnode
+          cache-to: type=gha,scope=eest-rpcnode,mode=max
+
+      - name: Build seid once
+        working-directory: sei-chain
+        env:
+          DOCKER_PLATFORM: linux/amd64
+        run: make build-seid-in-localnode-ci
+
+      - name: Publish run-scoped devnet images
+        working-directory: sei-chain
+        run: |
+          set -euo pipefail
+          source .github/scripts/docker-registry-retry.sh
+          docker tag sei-chain/localnode "${GHCR_LOCALNODE}:${{ github.run_id }}"
+          docker tag sei-chain/rpcnode "${GHCR_RPCNODE}:${{ github.run_id }}"
+          push_with_retry "${GHCR_LOCALNODE}:${{ github.run_id }}"
+          push_with_retry "${GHCR_RPCNODE}:${{ github.run_id }}"
+
+      - name: Package seid
+        working-directory: sei-chain
+        run: tar -czf integration-build.tar.gz build/seid
+
+      - name: Upload seid
+        uses: actions/upload-artifact@v4
+        with:
+          name: eest-seid-${{ github.run_id }}
+          path: sei-chain/integration-build.tar.gz
+          retention-days: 1
+
+  shard:
+    name: EEST shard ${{ matrix.shard }}
+    needs: prepare-chain
+    runs-on: ${{ inputs.runner_label }}
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - name: Check out arctic-tests
+        uses: actions/checkout@v4
+
+      - name: Check out sei-chain
+        uses: actions/checkout@v4
+        with:
+          repository: sei-protocol/sei-chain
+          ref: ${{ inputs.sei_chain_ref }}
+          path: sei-chain
+
+      - name: Reclaim runner disk
+        run: bash sei-chain/.github/scripts/ci-free-disk.sh
+
+      - name: Relocate Docker data
+        run: bash sei-chain/.github/scripts/ci-relocate-docker-data-root.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.6"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.5"
+          enable-cache: true
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download seid
+        uses: actions/download-artifact@v4
+        with:
+          name: eest-seid-${{ github.run_id }}
+
+      - name: Load shared devnet build
+        working-directory: sei-chain
+        run: |
+          set -euo pipefail
+          tar -xzf ../integration-build.tar.gz
+          source .github/scripts/docker-registry-retry.sh
+          pull_with_retry "${GHCR_LOCALNODE}:${{ github.run_id }}"
+          pull_with_retry "${GHCR_RPCNODE}:${{ github.run_id }}"
+          docker tag "${GHCR_LOCALNODE}:${{ github.run_id }}" sei-chain/localnode
+          docker tag "${GHCR_RPCNODE}:${{ github.run_id }}" sei-chain/rpcnode
+
+      - name: Install arctic-tests dependencies
+        run: npm ci
+
+      - name: Install patched execution-specs
+        run: npm run eest:install
+
+      - name: Start isolated Sei devnet
+        run: DOCKER_DETACH=true INVARIANT_CHECK_INTERVAL=10 make -C sei-chain docker-cluster-start-ci
+
+      - name: Wait for EVM RPC
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            launched=0
+            if [[ -f sei-chain/build/generated/launch.complete ]]; then
+              launched=$(wc -l < sei-chain/build/generated/launch.complete)
+            fi
+            if [[ "$launched" -ge 4 ]] && curl --fail --silent \
+              --header "Content-Type: application/json" \
+              --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+              http://127.0.0.1:8545 >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Sei devnet did not become EVM-ready within 300 seconds." >&2
+          exit 1
+
+      - name: Fund EEST runner account
+        env:
+          SEI_ADMIN_MNEMONIC: ${{ env.EEST_ADMIN_MNEMONIC }}
+          LOCAL_EVM_RPC: http://127.0.0.1:8545
+          SEI_COSMOS_RPC: http://127.0.0.1:26657
+        run: npx tsx scripts/fundLocalAdmin.ts
+
+      - name: Run EEST shard
+        env:
+          SEI_EVM_JSON_RPC: http://127.0.0.1:8545
+          SEI_ADMIN_MNEMONIC: ${{ env.EEST_ADMIN_MNEMONIC }}
+          EEST_SHARD_COUNT: "4"
+          EEST_SHARD_INDEX: ${{ matrix.shard }}
+          EEST_PARALLELISM: ${{ inputs.eest_parallelism }}
+          EEST_POLL_INTERVAL: "0.2"
+        run: npm run test:eest:nightly
+
+      - name: Upload shard report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eest-junit-shard-${{ matrix.shard }}-${{ github.run_id }}
+          path: eest-report/junit-shard-${{ matrix.shard }}.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Print devnet diagnostics
+        if: failure()
+        run: |
+          docker ps -a
+          for container in $(docker ps -a --format '{{.Names}}'); do
+            [[ "$container" == sei-node-* ]] || continue
+            echo "::group::${container}"
+            docker logs --tail 200 "$container" || true
+            echo "::endgroup::"
+          done
+
+      - name: Stop isolated Sei devnet
+        if: always()
+        run: make -C sei-chain docker-cluster-stop
+
+  cleanup-images:
+    name: Remove run-scoped devnet images
+    if: always()
+    needs: [prepare-chain, shard]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Delete run-scoped GHCR versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          OWNER_TYPE: ${{ github.event.repository.owner.type }}
+          RUN_TAG: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [[ "$OWNER_TYPE" == "Organization" ]]; then
+            base="/orgs/${OWNER}/packages/container"
+          else
+            base="/users/${OWNER}/packages/container"
+          fi
+          for package in arctic-eest-localnode arctic-eest-rpcnode; do
+            versions="$(
+              gh api --paginate "${base}/${package}/versions" \
+                --jq ".[] | select(.metadata.container.tags | index(\"${RUN_TAG}\")) | .id" ||
+                true
+            )"
+            while read -r version; do
+              [[ -n "$version" ]] || continue
+                gh api --method DELETE "${base}/${package}/versions/${version}" || true
+            done <<<"$versions"
+          done

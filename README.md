@@ -78,3 +78,91 @@ Mocha's live output goes to stderr; the summary lands on stdout as a single line
 | 2 | Infra failure (RPC dial, missing config, mocha crash) |
 
 See [`docs/design/seictl-harness.md`](docs/design/seictl-harness.md) for the full design.
+
+## Ethereum execution-spec tests
+
+The EEST runner uses the `ethereum-execution-testing` package and Python tests
+from the same pinned `ethereum/execution-specs` Amsterdam checkout. The package
+cannot be installed from PyPI by itself: its `ethereum-execution` dependency is
+developed in lockstep, and the upstream test files are not included as package
+data.
+
+Install the pinned checkout and apply the Sei compatibility patch:
+
+```sh
+npm run eest:install
+```
+
+Run the complete EIP-7702 source suite against a local chain:
+
+```sh
+npm run test:eest:eip7702
+```
+
+Run all remote-compatible tests applicable to a Prague Sei chain:
+
+```sh
+SEI_EVM_JSON_RPC=http://127.0.0.1:8545 \
+SEI_ADMIN_MNEMONIC="<funded genesis mnemonic>" \
+  npm run test:eest:nightly
+```
+
+The nightly command covers every fork suite from Frontier through Prague plus
+the canonical `ported_static` tests. EEST automatically removes transition
+formats that remote execution cannot run and skips tests requiring mutable
+pre-allocation. At the pinned revision this collects 13,571 tests after the
+configured exclusions; two system-contract cases are marked skipped, leaving
+13,569 runnable tests.
+
+Suites that require unsupported payload fields, transaction types, or
+per-block Ethereum system processing are listed in
+`tests/eest/prague-nightly-ignores.txt`. Individual remote-runner
+incompatibilities are listed in `tests/eest/remote-exclusions.txt`. The
+installed compatibility patch marks two EIP-7702 tests skipped because they
+delegate to Ethereum system-contract bytecode absent from Sei. Known Sei
+execution failures are not excluded. Set `EEST_INCLUDE_NON_APPLICABLE=1` or
+`EEST_INCLUDE_REMOTE_EXCLUSIONS=1` to include the excluded groups for diagnostic
+runs. The nightly command writes JUnit XML to `eest-report/junit.xml`.
+
+The runner is sequential by default to minimize shared-chain interference.
+Set `EEST_PARALLELISM` above `1` to use EEST's isolated worker accounts after
+validating the target chain's capacity. The all-spec run sweeps 100,000 SEI
+into its worker account by default; override `EEST_SWEEP_AMOUNT` if the nightly
+genesis uses a different allocation.
+
+For parallel chains, launch one fresh chain and one EEST Job per shard. Every
+Job uses the same shard count and a unique zero-based index:
+
+```sh
+EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=0 npm run test:eest:nightly
+EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=1 npm run test:eest:nightly
+EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=2 npm run test:eest:nightly
+EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=3 npm run test:eest:nightly
+```
+
+Test node IDs are deterministically hashed across shards, so their union is the
+complete selection with no overlap. At the pinned revision, four shards collect
+3,387, 3,355, 3,376, and 3,453 tests; shards 1 and 3 each skip one
+system-contract case at runtime. Sharded reports default to
+`eest-report/junit-shard-<index>.xml`. Start with
+`EEST_PARALLELISM=1` per chain; raising both chain count and per-chain workers
+multiplies RPC and mempool pressure.
+
+For an end-to-end GitHub-hosted run, dispatch the `EEST four-shard run`
+workflow. It builds the selected `sei-chain` revision once, then starts four
+matrix runners. Each runner owns a fresh four-node devnet and one shard. The
+default `ubuntu-large` label can be overridden when dispatching, and each shard
+uploads its JUnit report as a workflow artifact.
+
+Transaction inclusion is polled every 0.2 seconds by default. Override
+`EEST_POLL_INTERVAL` with another positive number if RPC load or block time
+makes a slower interval preferable.
+
+The checkout comes from the Amsterdam development branch, but `--fork=Prague`
+is intentional because the flag must name the fork active on the target Sei
+chain. The supplied mnemonic must control a sufficiently funded EVM account.
+
+The release-test image contains the patched EEST checkout. A Kubernetes job can
+override the image entrypoint with `/app/scripts/runEestNightly.sh` and provide
+`SEI_EVM_JSON_RPC` plus either `SEI_ADMIN_MNEMONIC`,
+`SEI_ADMIN_PRIVATE_KEY`, or `EEST_SEED_KEY`.
