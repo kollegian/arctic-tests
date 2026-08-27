@@ -1,6 +1,9 @@
 name: EEST four-shard run
 
 on:
+  push:
+    branches:
+      - tests/eth-exec
   workflow_dispatch:
     inputs:
       sei_chain_ref:
@@ -35,7 +38,7 @@ env:
 jobs:
   prepare-chain:
     name: Build shared Sei devnet
-    runs-on: ${{ inputs.runner_label }}
+    runs-on: ${{ inputs.runner_label || 'ubuntu-large' }}
     timeout-minutes: 75
     permissions:
       contents: read
@@ -45,7 +48,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: sei-protocol/sei-chain
-          ref: ${{ inputs.sei_chain_ref }}
+          ref: ${{ inputs.sei_chain_ref || 'd8e2500a2e22b0bb60b5a85c6e1bbcf27f672001' }}
           path: sei-chain
 
       - name: Reclaim runner disk
@@ -119,7 +122,7 @@ jobs:
   shard:
     name: EEST shard ${{ matrix.shard }}
     needs: prepare-chain
-    runs-on: ${{ inputs.runner_label }}
+    runs-on: ${{ inputs.runner_label || 'ubuntu-large' }}
     timeout-minutes: 240
     permissions:
       contents: read
@@ -136,7 +139,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: sei-protocol/sei-chain
-          ref: ${{ inputs.sei_chain_ref }}
+          ref: ${{ inputs.sei_chain_ref || 'd8e2500a2e22b0bb60b5a85c6e1bbcf27f672001' }}
           path: sei-chain
 
       - name: Reclaim runner disk
@@ -223,7 +226,7 @@ jobs:
           SEI_ADMIN_MNEMONIC: ${{ env.EEST_ADMIN_MNEMONIC }}
           EEST_SHARD_COUNT: "4"
           EEST_SHARD_INDEX: ${{ matrix.shard }}
-          EEST_PARALLELISM: ${{ inputs.eest_parallelism }}
+          EEST_PARALLELISM: ${{ inputs.eest_parallelism || '1' }}
           EEST_POLL_INTERVAL: "0.2"
         run: npm run test:eest:nightly
 
