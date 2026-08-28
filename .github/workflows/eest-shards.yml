@@ -197,6 +197,8 @@ jobs:
       - name: Wait for devnet RPCs
         run: |
           set -euo pipefail
+          evm_status=""
+          cosmos_status=""
           for _ in $(seq 1 60); do
             launched=0
             if [[ -f sei-chain/build/generated/launch.complete ]]; then
@@ -213,10 +215,6 @@ jobs:
                 && jq -e '
                   (.result.sync_info.latest_block_hash // "") != ""
                   and ((.result.sync_info.latest_block_height // "0") | tonumber) > 0
-                  and (
-                    .result.sync_info.catching_up == false
-                    or .result.sync_info.catching_up == "false"
-                  )
                 ' <<<"$cosmos_status" >/dev/null 2>&1; then
                 exit 0
               fi
@@ -224,6 +222,8 @@ jobs:
             sleep 5
           done
           echo "Sei devnet RPCs did not become ready within 300 seconds." >&2
+          echo "Last EVM response: $evm_status" >&2
+          echo "Last Cosmos response: $cosmos_status" >&2
           exit 1
 
       - name: Fund EEST runner account
