@@ -194,36 +194,23 @@ jobs:
       - name: Start isolated Sei devnet
         run: DOCKER_DETACH=true INVARIANT_CHECK_INTERVAL=0 make -C sei-chain docker-cluster-start-ci
 
-      - name: Wait for devnet RPCs
+      - name: Wait for EVM RPC
         run: |
           set -euo pipefail
-          evm_status=""
-          cosmos_status=""
           for _ in $(seq 1 60); do
             launched=0
             if [[ -f sei-chain/build/generated/launch.complete ]]; then
               launched=$(wc -l < sei-chain/build/generated/launch.complete)
             fi
-            if [[ "$launched" -ge 4 ]]; then
-              evm_status=$(curl --fail --silent \
-                --header "Content-Type: application/json" \
-                --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-                http://127.0.0.1:8545 || true)
-              cosmos_status=$(curl --fail --silent \
-                http://127.0.0.1:26657/status || true)
-              if jq -e '.result != null' <<<"$evm_status" >/dev/null 2>&1 \
-                && jq -e '
-                  (.result.sync_info.latest_block_hash // "") != ""
-                  and ((.result.sync_info.latest_block_height // "0") | tonumber) > 0
-                ' <<<"$cosmos_status" >/dev/null 2>&1; then
-                exit 0
-              fi
+            if [[ "$launched" -ge 4 ]] && curl --fail --silent \
+              --header "Content-Type: application/json" \
+              --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+              http://127.0.0.1:8545 >/dev/null; then
+              exit 0
             fi
             sleep 5
           done
-          echo "Sei devnet RPCs did not become ready within 300 seconds." >&2
-          echo "Last EVM response: $evm_status" >&2
-          echo "Last Cosmos response: $cosmos_status" >&2
+          echo "Sei devnet did not become EVM-ready within 300 seconds." >&2
           exit 1
 
       - name: Fund EEST runner account
