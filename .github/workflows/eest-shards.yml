@@ -1,4 +1,4 @@
-name: EEST four-shard run
+name: EEST eight-shard run
 
 on:
   push:
@@ -26,7 +26,7 @@ on:
           - "2"
 
 concurrency:
-  group: eest-four-shard-${{ github.ref }}
+  group: eest-eight-shard-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -130,7 +130,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - name: Check out arctic-tests
         uses: actions/checkout@v4
@@ -192,9 +192,9 @@ jobs:
         run: npm run eest:install
 
       - name: Start isolated Sei devnet
-        run: DOCKER_DETACH=true INVARIANT_CHECK_INTERVAL=10 make -C sei-chain docker-cluster-start-ci
+        run: DOCKER_DETACH=true INVARIANT_CHECK_INTERVAL=0 make -C sei-chain docker-cluster-start-ci
 
-      - name: Wait for EVM RPC
+      - name: Wait for devnet RPCs
         run: |
           set -euo pipefail
           for _ in $(seq 1 60); do
@@ -202,15 +202,28 @@ jobs:
             if [[ -f sei-chain/build/generated/launch.complete ]]; then
               launched=$(wc -l < sei-chain/build/generated/launch.complete)
             fi
-            if [[ "$launched" -ge 4 ]] && curl --fail --silent \
-              --header "Content-Type: application/json" \
-              --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-              http://127.0.0.1:8545 >/dev/null; then
-              exit 0
+            if [[ "$launched" -ge 4 ]]; then
+              evm_status=$(curl --fail --silent \
+                --header "Content-Type: application/json" \
+                --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+                http://127.0.0.1:8545 || true)
+              cosmos_status=$(curl --fail --silent \
+                http://127.0.0.1:26657/status || true)
+              if jq -e '.result != null' <<<"$evm_status" >/dev/null 2>&1 \
+                && jq -e '
+                  (.result.sync_info.latest_block_hash // "") != ""
+                  and ((.result.sync_info.latest_block_height // "0") | tonumber) > 0
+                  and (
+                    .result.sync_info.catching_up == false
+                    or .result.sync_info.catching_up == "false"
+                  )
+                ' <<<"$cosmos_status" >/dev/null 2>&1; then
+                exit 0
+              fi
             fi
             sleep 5
           done
-          echo "Sei devnet did not become EVM-ready within 300 seconds." >&2
+          echo "Sei devnet RPCs did not become ready within 300 seconds." >&2
           exit 1
 
       - name: Fund EEST runner account
@@ -224,7 +237,7 @@ jobs:
         env:
           SEI_EVM_JSON_RPC: http://127.0.0.1:8545
           SEI_ADMIN_MNEMONIC: ${{ env.EEST_ADMIN_MNEMONIC }}
-          EEST_SHARD_COUNT: "4"
+          EEST_SHARD_COUNT: "8"
           EEST_SHARD_INDEX: ${{ matrix.shard }}
           EEST_PARALLELISM: ${{ inputs.eest_parallelism || '1' }}
           EEST_POLL_INTERVAL: "0.2"

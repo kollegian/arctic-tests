@@ -12,7 +12,7 @@ EEST_EOA_FUND_AMOUNT_DEFAULT="${EEST_EOA_FUND_AMOUNT_DEFAULT:-100000000000000000
 EEST_SKIP_CLEANUP="${EEST_SKIP_CLEANUP:-1}"
 EEST_TOLERATE_MALFORMED_PENDING_TX="${EEST_TOLERATE_MALFORMED_PENDING_TX:-1}"
 EEST_POLL_INTERVAL="${EEST_POLL_INTERVAL:-0.2}"
-EEST_MAX_TX_PER_BATCH="${EEST_MAX_TX_PER_BATCH:-1}"
+EEST_ORDERED_TX_SUBMISSION="${EEST_ORDERED_TX_SUBMISSION:-1}"
 EEST_TX_WAIT_TIMEOUT="${EEST_TX_WAIT_TIMEOUT:-120}"
 EEST_RPC_ENDPOINT="${EEST_RPC_ENDPOINT:-${SEI_EVM_JSON_RPC:-http://localhost:8545}}"
 EEST_RPC_WAIT_SECONDS="${EEST_RPC_WAIT_SECONDS:-120}"
@@ -24,8 +24,8 @@ if ! python3 -c \
     echo "EEST_POLL_INTERVAL must be a positive number of seconds." >&2
     exit 2
 fi
-if [[ ! "${EEST_MAX_TX_PER_BATCH}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "EEST_MAX_TX_PER_BATCH must be a positive integer." >&2
+if [[ ! "${EEST_ORDERED_TX_SUBMISSION}" =~ ^[01]$ ]]; then
+    echo "EEST_ORDERED_TX_SUBMISSION must be 0 or 1." >&2
     exit 2
 fi
 if [[ ! "${EEST_TX_WAIT_TIMEOUT}" =~ ^[1-9][0-9]*$ ]]; then
@@ -133,7 +133,6 @@ execute_command=(
     --seed-account-sweep-amount="${EEST_SWEEP_AMOUNT}"
     --default-max-fee-per-blob-gas="${EEST_MAX_FEE_PER_BLOB_GAS}"
     --eoa-fund-amount-default="${EEST_EOA_FUND_AMOUNT_DEFAULT}"
-    --max-tx-per-batch="${EEST_MAX_TX_PER_BATCH}"
     --tx-wait-timeout="${EEST_TX_WAIT_TIMEOUT}"
 )
 if [[ "${EEST_SKIP_CLEANUP}" == "1" ]]; then
@@ -151,5 +150,6 @@ execute_command+=("$@")
 cd "${EEST_DIR}"
 RPC_SEED_KEY="${EEST_SEED_KEY}" \
 EEST_TOLERATE_MALFORMED_PENDING_TX="${EEST_TOLERATE_MALFORMED_PENDING_TX}" \
+EEST_ORDERED_TX_SUBMISSION="${EEST_ORDERED_TX_SUBMISSION}" \
 EEST_POLL_INTERVAL="${EEST_POLL_INTERVAL}" \
 exec "${execute_command[@]}"

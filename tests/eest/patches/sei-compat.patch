@@ -184,6 +184,15 @@ diff --git a/packages/testing/src/execution_testing/rpc/rpc.py b/packages/testin
 index 58cfb1403..69caa4e7f 100644
 --- a/packages/testing/src/execution_testing/rpc/rpc.py
 +++ b/packages/testing/src/execution_testing/rpc/rpc.py
+@@ -72,7 +72,7 @@ TimeoutType = float | tuple[float, float] | None
+ # request whose packets are silently dropped (e.g. by docker network
+ # churn in hive) blocks until the kernel abandons TCP retransmission,
+ # which takes ~15 minutes on Linux.
+-DEFAULT_REQUEST_TIMEOUT: TimeoutType = (10.0, 300.0)
++DEFAULT_REQUEST_TIMEOUT: TimeoutType = (10.0, 10.0)
+ 
+ 
+ class SendTransactionExceptionError(Exception):
 @@ -797,6 +797,7 @@ class EthRPC(BaseRPC):
          self, transaction_hash: Hash
      ) -> TransactionByHashResponse | None:
@@ -240,6 +249,21 @@ index 58cfb1403..69caa4e7f 100644
          return results
  
      def get_transaction_receipt(
+@@ -1023,6 +1049,14 @@ class EthRPC(BaseRPC):
+         if not transactions:
+             return []
+ 
++        if os.getenv("EEST_ORDERED_TX_SUBMISSION") == "1":
++            logger.info(
++                "Submitting %d transactions as ordered individual "
++                "RPC requests",
++                len(transactions),
++            )
++            return [self.send_transaction(tx) for tx in transactions]
++
+         calls = [
+             RPCCall(
+                 method="sendRawTransaction",
 diff --git a/tests/istanbul/eip1344_chainid/test_chainid.py b/tests/istanbul/eip1344_chainid/test_chainid.py
 index 963a7b3..319249e 100644
 --- a/tests/istanbul/eip1344_chainid/test_chainid.py
@@ -537,3 +561,88 @@ index 000000000..5c16ae210
 +    for item in items:
 +        if reason := _known_failure_reason(item):
 +            item.add_marker(pytest.mark.skip(reason=reason))
+diff --git a/packages/testing/src/execution_testing/rpc/tests/test_batch_requests.py b/packages/testing/src/execution_testing/rpc/tests/test_batch_requests.py
+index 9175972..396112b 100644
+--- a/packages/testing/src/execution_testing/rpc/tests/test_batch_requests.py
++++ b/packages/testing/src/execution_testing/rpc/tests/test_batch_requests.py
+@@ -6,7 +6,11 @@ from unittest.mock import MagicMock, patch
+ import pytest
+ 
+ from execution_testing.base_types import Hash
+-from execution_testing.rpc import EthRPC, RPCCall
++from execution_testing.rpc import (
++    EthRPC,
++    RPCCall,
++    SendTransactionExceptionError,
++)
+ 
+ 
+ def echo_batch_response(*_args: Any, **kwargs: Any) -> MagicMock:
+@@ -75,3 +79,67 @@ def test_chunked_receipts_keep_request_order(
+     receipts = rpc.get_transaction_receipts(hashes)
+     assert post.call_count == 3
+     assert receipts == [hex(i) for i in range(1, 6)]
++
++
++def test_ordered_transaction_submission_preserves_order(rpc: EthRPC) -> None:
++    """Ordered mode sends individually and leaves receipt polling batchable."""
++    transactions = [MagicMock(), MagicMock(), MagicMock()]
++    hashes = [Hash(1), Hash(2), Hash(3)]
++
++    with (
++        patch.dict("os.environ", {"EEST_ORDERED_TX_SUBMISSION": "1"}),
++        patch.object(
++            rpc,
++            "send_transaction",
++            side_effect=hashes,
++        ) as send_transaction,
++        patch.object(rpc, "post_batch_request") as post_batch,
++    ):
++        results = rpc.send_transactions(transactions)
++
++    assert results == hashes
++    submitted = [call.args[0] for call in send_transaction.call_args_list]
++    assert submitted == transactions
++    post_batch.assert_not_called()
++
++
++def test_ordered_submission_keeps_receipt_polling_batched(rpc: EthRPC) -> None:
++    """Ordered sends retain one batched wait for all receipts."""
++    transactions = [MagicMock(), MagicMock(), MagicMock()]
++    receipts = [MagicMock(), MagicMock(), MagicMock()]
++
++    with (
++        patch.dict("os.environ", {"EEST_ORDERED_TX_SUBMISSION": "1"}),
++        patch.object(rpc, "send_transaction"),
++        patch.object(
++            rpc,
++            "wait_for_transactions",
++            return_value=receipts,
++        ) as wait_for_transactions,
++    ):
++        results = rpc.send_wait_transactions(transactions)
++
++    assert results == receipts
++    wait_for_transactions.assert_called_once_with(transactions)
++
++
++def test_ordered_transaction_submission_stops_after_failure(
++    rpc: EthRPC,
++) -> None:
++    """A failed nonce prevents submission of all later transactions."""
++    transactions = [MagicMock(), MagicMock(), MagicMock()]
++    error = SendTransactionExceptionError("incorrect account sequence")
++
++    with (
++        patch.dict("os.environ", {"EEST_ORDERED_TX_SUBMISSION": "1"}),
++        patch.object(
++            rpc,
++            "send_transaction",
++            side_effect=[Hash(1), error],
++        ) as send_transaction,
++        pytest.raises(SendTransactionExceptionError),
++    ):
++        rpc.send_transactions(transactions)
++
++    submitted = [call.args[0] for call in send_transaction.call_args_list]
++    assert submitted == transactions[:2]

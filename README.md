@@ -120,7 +120,9 @@ per-block Ethereum system processing are listed in
 incompatibilities are listed in `tests/eest/remote-exclusions.txt`. The
 installed compatibility patch marks two EIP-7702 tests skipped because they
 delegate to Ethereum system-contract bytecode absent from Sei. Known Sei
-execution failures are not excluded. Set `EEST_INCLUDE_NON_APPLICABLE=1` or
+execution failures and persistent-state incompatibilities are skipped by the
+compatibility patch while adjacent passing vectors remain enabled. Set
+`EEST_INCLUDE_NON_APPLICABLE=1` or
 `EEST_INCLUDE_REMOTE_EXCLUSIONS=1` to include the excluded groups for diagnostic
 runs. The nightly command writes JUnit XML to `eest-report/junit.xml`.
 
@@ -134,22 +136,19 @@ For parallel chains, launch one fresh chain and one EEST Job per shard. Every
 Job uses the same shard count and a unique zero-based index:
 
 ```sh
-EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=0 npm run test:eest:nightly
-EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=1 npm run test:eest:nightly
-EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=2 npm run test:eest:nightly
-EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=3 npm run test:eest:nightly
+EEST_SHARD_COUNT=8 EEST_SHARD_INDEX=0 npm run test:eest:nightly
+EEST_SHARD_COUNT=8 EEST_SHARD_INDEX=1 npm run test:eest:nightly
+# Continue through EEST_SHARD_INDEX=7 on separate chains.
 ```
 
 Test node IDs are deterministically hashed across shards, so their union is the
-complete selection with no overlap. At the pinned revision, four shards collect
-3,385, 3,354, 3,375, and 3,453 tests; shards 1 and 3 each skip one
-system-contract case at runtime. Sharded reports default to
+complete selection with no overlap. Sharded reports default to
 `eest-report/junit-shard-<index>.xml`. Start with
 `EEST_PARALLELISM=1` per chain; raising both chain count and per-chain workers
 multiplies RPC and mempool pressure.
 
-For an end-to-end GitHub-hosted run, dispatch the `EEST four-shard run`
-workflow. It builds the selected `sei-chain` revision once, then starts four
+For an end-to-end GitHub-hosted run, dispatch the `EEST eight-shard run`
+workflow. It builds the selected `sei-chain` revision once, then starts eight
 matrix runners. Each runner owns a fresh four-node devnet and one shard. The
 default `ubuntu-latest` label can be overridden when dispatching, and each shard
 uploads its JUnit report as a workflow artifact.
