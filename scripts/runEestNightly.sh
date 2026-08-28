@@ -68,7 +68,11 @@ if [[ "${EEST_SHARD_COUNT}" -gt 1 ]]; then
     execute_options+=(-p eestShard)
 fi
 
-exec bash "${REPO_ROOT}/scripts/runEestRemote.sh" \
-    "${execute_options[@]}" \
-    "${test_paths[@]}" \
-    "$@"
+execute_command=(bash "${REPO_ROOT}/scripts/runEestRemote.sh")
+if (( ${#execute_options[@]} > 0 )); then
+    execute_command+=("${execute_options[@]}")
+fi
+execute_command+=("${test_paths[@]}")
+execute_command+=("$@")
+
+exec "${execute_command[@]}"

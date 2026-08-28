@@ -110,9 +110,9 @@ SEI_ADMIN_MNEMONIC="<funded genesis mnemonic>" \
 The nightly command covers every fork suite from Frontier through Prague plus
 the canonical `ported_static` tests. EEST automatically removes transition
 formats that remote execution cannot run and skips tests requiring mutable
-pre-allocation. At the pinned revision this collects 13,571 tests after the
+pre-allocation. At the pinned revision this collects 13,567 tests after the
 configured exclusions; two system-contract cases are marked skipped, leaving
-13,569 runnable tests.
+13,565 runnable tests.
 
 Suites that require unsupported payload fields, transaction types, or
 per-block Ethereum system processing are listed in
@@ -142,7 +142,7 @@ EEST_SHARD_COUNT=4 EEST_SHARD_INDEX=3 npm run test:eest:nightly
 
 Test node IDs are deterministically hashed across shards, so their union is the
 complete selection with no overlap. At the pinned revision, four shards collect
-3,387, 3,355, 3,376, and 3,453 tests; shards 1 and 3 each skip one
+3,385, 3,354, 3,375, and 3,453 tests; shards 1 and 3 each skip one
 system-contract case at runtime. Sharded reports default to
 `eest-report/junit-shard-<index>.xml`. Start with
 `EEST_PARALLELISM=1` per chain; raising both chain count and per-chain workers

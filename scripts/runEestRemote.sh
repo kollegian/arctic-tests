@@ -12,6 +12,8 @@ EEST_EOA_FUND_AMOUNT_DEFAULT="${EEST_EOA_FUND_AMOUNT_DEFAULT:-100000000000000000
 EEST_SKIP_CLEANUP="${EEST_SKIP_CLEANUP:-1}"
 EEST_TOLERATE_MALFORMED_PENDING_TX="${EEST_TOLERATE_MALFORMED_PENDING_TX:-1}"
 EEST_POLL_INTERVAL="${EEST_POLL_INTERVAL:-0.2}"
+EEST_MAX_TX_PER_BATCH="${EEST_MAX_TX_PER_BATCH:-1}"
+EEST_TX_WAIT_TIMEOUT="${EEST_TX_WAIT_TIMEOUT:-120}"
 EEST_RPC_ENDPOINT="${EEST_RPC_ENDPOINT:-${SEI_EVM_JSON_RPC:-http://localhost:8545}}"
 EEST_RPC_WAIT_SECONDS="${EEST_RPC_WAIT_SECONDS:-120}"
 EEST_JUNIT_XML="${EEST_JUNIT_XML:-}"
@@ -20,6 +22,14 @@ if ! python3 -c \
     'import sys; value = float(sys.argv[1]); assert value > 0' \
     "${EEST_POLL_INTERVAL}" 2>/dev/null; then
     echo "EEST_POLL_INTERVAL must be a positive number of seconds." >&2
+    exit 2
+fi
+if [[ ! "${EEST_MAX_TX_PER_BATCH}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "EEST_MAX_TX_PER_BATCH must be a positive integer." >&2
+    exit 2
+fi
+if [[ ! "${EEST_TX_WAIT_TIMEOUT}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "EEST_TX_WAIT_TIMEOUT must be a positive integer." >&2
     exit 2
 fi
 
@@ -53,10 +63,10 @@ if [[ -z "${EEST_SEED_KEY:-}" ]]; then
             cd "${REPO_ROOT}"
             node -e '
                 const { HDNodeWallet } = require("ethers");
-                const config = require("./config/testConfig.json");
                 process.stdout.write(
                     HDNodeWallet.fromPhrase(
-                        config.adminMnemonic,
+                        process.env.EEST_LOCAL_ADMIN_MNEMONIC ||
+                            "cover brand danger absent gas worth sustain rural powder auction shadow find merge domain promote glimpse burger embody favorite lake rain plate present soda",
                         "",
                         "m/44'\''/118'\''/0'\''/0/0",
                     ).privateKey,
@@ -114,30 +124,32 @@ else
 fi
 echo "Running EEST ${eest_revision} ${test_scope} against chain ${EEST_CHAIN_ID} (${EEST_FORK})."
 
-execute_options=()
+execute_command=(
+    "${EEST_DIR}/.venv/bin/execute"
+    remote
+    --fork="${EEST_FORK}"
+    --chain-id="${EEST_CHAIN_ID}"
+    --rpc-endpoint="${EEST_RPC_ENDPOINT}"
+    --seed-account-sweep-amount="${EEST_SWEEP_AMOUNT}"
+    --default-max-fee-per-blob-gas="${EEST_MAX_FEE_PER_BLOB_GAS}"
+    --eoa-fund-amount-default="${EEST_EOA_FUND_AMOUNT_DEFAULT}"
+    --max-tx-per-batch="${EEST_MAX_TX_PER_BATCH}"
+    --tx-wait-timeout="${EEST_TX_WAIT_TIMEOUT}"
+)
 if [[ "${EEST_SKIP_CLEANUP}" == "1" ]]; then
-    execute_options+=(--skip-cleanup)
+    execute_command+=(--skip-cleanup)
 fi
 if [[ -n "${EEST_JUNIT_XML}" ]]; then
     mkdir -p "$(dirname "${EEST_JUNIT_XML}")"
-    execute_options+=(--junitxml="${EEST_JUNIT_XML}")
+    execute_command+=(--junitxml="${EEST_JUNIT_XML}")
 fi
-test_target_options=()
 if [[ -n "${EEST_TEST_TARGET}" ]]; then
-    test_target_options+=("${EEST_TEST_TARGET}")
+    execute_command+=("${EEST_TEST_TARGET}")
 fi
+execute_command+=("$@")
 
 cd "${EEST_DIR}"
 RPC_SEED_KEY="${EEST_SEED_KEY}" \
 EEST_TOLERATE_MALFORMED_PENDING_TX="${EEST_TOLERATE_MALFORMED_PENDING_TX}" \
 EEST_POLL_INTERVAL="${EEST_POLL_INTERVAL}" \
-exec "${EEST_DIR}/.venv/bin/execute" remote \
-    --fork="${EEST_FORK}" \
-    --chain-id="${EEST_CHAIN_ID}" \
-    --rpc-endpoint="${EEST_RPC_ENDPOINT}" \
-    --seed-account-sweep-amount="${EEST_SWEEP_AMOUNT}" \
-    --default-max-fee-per-blob-gas="${EEST_MAX_FEE_PER_BLOB_GAS}" \
-    --eoa-fund-amount-default="${EEST_EOA_FUND_AMOUNT_DEFAULT}" \
-    "${execute_options[@]}" \
-    "${test_target_options[@]}" \
-    "$@"
+exec "${execute_command[@]}"
